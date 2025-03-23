@@ -172,4 +172,9 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Ignore any downloaded remote files
 __remote_files__
+
+# Ignore NPM node modules
+node_modules
