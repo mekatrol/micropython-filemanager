@@ -178,3 +178,8 @@ __remote_files__
 
 # Ignore NPM node modules
 node_modules
+
+# Test data
+pyboard-extension/pyboarddev/.vscode-test
+pyboard-extension/pyboarddev/dist
+pyboard-extension/pyboarddev/out
