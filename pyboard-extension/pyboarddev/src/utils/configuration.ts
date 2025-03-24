@@ -76,15 +76,21 @@ export const createDefaultConfiguration = async (): Promise<[PyboardDevConfigura
   }
 
   try {
-    const folderUri = vscode.workspace.workspaceFolders[0].uri;
+    const workspaceFolder = vscode.workspace.workspaceFolders[0];
+
+    const folderUri = workspaceFolder.uri;
+
     const fileUri = folderUri.with({
       path: posix.join(folderUri.path, configurationFileName)
     });
 
+    // VS code prefixes windows paths with '/', e.g. '/c:/file.txt' so remove prefix and replace '/' with '\'
+    const path = process.platform === 'win32' ? fileUri.path.substring(1).replace(/\//g, '\\') : fileUri.path;
+
     // Does the file already exist?
     try {
       if ((await vscode.workspace.fs.stat(fileUri)) !== undefined) {
-        return [PyboardDevConfigurationResult.AlreadyExists, fileUri.path];
+        return [PyboardDevConfigurationResult.AlreadyExists, path];
       }
     } catch {
       /* ignore */
@@ -96,7 +102,7 @@ export const createDefaultConfiguration = async (): Promise<[PyboardDevConfigura
     const writeData = Buffer.from(content, 'utf8');
     await vscode.workspace.fs.writeFile(fileUri, writeData);
 
-    return [PyboardDevConfigurationResult.Created, fileUri.path];
+    return [PyboardDevConfigurationResult.Created, path];
   } catch (e) {
     /* ignore errors if config file does not exist */
     return [PyboardDevConfigurationResult.Error, e?.toString()];
