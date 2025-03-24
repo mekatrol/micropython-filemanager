@@ -64,7 +64,7 @@ export const createDefaultConfiguration = async (): Promise<[PyboardDevConfigura
     {
       meta: {
         version: 1,
-        help: 'See: https://github.com/mekatrol/micropython-filemanager/pyboarddev for description of configuration values.'
+        help: 'See: https://github.com/mekatrol/micropython-filemanager/blob/main/pyboard-extension/pyboarddev/README.md for description of configuration values.'
       }
     },
     defaultConfiguration
