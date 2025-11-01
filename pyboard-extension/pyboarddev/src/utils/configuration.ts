@@ -29,6 +29,24 @@ export const defaultConfiguration: PyboardDevConfiguration = {
   baudrate: 115200
 };
 
+export const getConfigurationFullFileName = (): string | undefined => {
+  if (!vscode.workspace.workspaceFolders) {
+    // Return undefined if there is no workspace for a configuration file
+    return undefined;
+  }
+
+  const folderUri = vscode.workspace.workspaceFolders[0].uri;
+  const fileUri = folderUri.with({
+    path: posix.join(folderUri.path, configurationFileName)
+  });
+
+  // VS code prefixes windows paths with '/', e.g. '/c:/file.txt' so remove prefix and replace '/' with '\'
+  const path = process.platform === 'win32' ? fileUri.path.substring(1).replace(/\//g, '\\') : fileUri.path;
+
+  // Return the configuration file path
+  return path;
+};
+
 export const loadConfiguration = async (): Promise<PyboardDevConfiguration> => {
   let configuration: PyboardDevConfiguration = Object.assign({}, defaultConfiguration);
 
