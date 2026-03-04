@@ -30,6 +30,7 @@ const commandSyncToDeviceId = 'mekatrol.pyboarddev.synctodevice';
 const commandOpenLocalItemId = 'mekatrol.pyboarddev.openlocalmirroritem';
 const commandPullAndOpenDeviceItemId = 'mekatrol.pyboarddev.pullandopendeviceitem';
 const commandOpenRemoteFileId = 'mekatrol.pyboarddev.openremotefile';
+const commandCompareRemoteWithLocalId = 'mekatrol.pyboarddev.compareremotewithlocal';
 const commandCreateRemoteFileId = 'mekatrol.pyboarddev.createremotefile';
 const commandCreateRemoteFolderId = 'mekatrol.pyboarddev.createremotefolder';
 const commandRenameRemotePathId = 'mekatrol.pyboarddev.renameremotepath';
@@ -344,6 +345,53 @@ class DeviceMirrorModel {
     await this.pullDeviceNodeAndOpen(quickPickNode);
   }
 
+  async compareRemoteWithLocal(node?: MirrorNode): Promise<void> {
+    if (node) {
+      await this.openRemoteDiff(node);
+      return;
+    }
+
+    const board = getConnectedBoard();
+    if (!board) {
+      vscode.window.showWarningMessage('Connect to a board before comparing a remote file.');
+      return;
+    }
+
+    const files = this.deviceEntries
+      .filter((entry) => !entry.isDirectory && entry.relativePath.length > 0)
+      .sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+
+    if (files.length === 0) {
+      vscode.window.showInformationMessage('No remote files available to compare.');
+      return;
+    }
+
+    const selected = await vscode.window.showQuickPick(
+      files.map((item) => ({ label: item.relativePath })),
+      {
+        placeHolder: 'Select a remote file to compare',
+        canPickMany: false,
+        ignoreFocusOut: true
+      }
+    );
+
+    if (!selected) {
+      return;
+    }
+
+    const quickPickNode = new MirrorNode(
+      {
+        side: 'device',
+        relativePath: selected.label,
+        isDirectory: false
+      },
+      selected.label,
+      vscode.TreeItemCollapsibleState.None
+    );
+
+    await this.openRemoteDiff(quickPickNode);
+  }
+
   async createRemoteFile(node?: MirrorNode): Promise<void> {
     const board = getConnectedBoard();
     if (!board) {
@@ -603,6 +651,38 @@ class DeviceMirrorModel {
     }
 
     await this.refresh(false);
+  }
+
+  private async openRemoteDiff(node: MirrorNode): Promise<void> {
+    if (!getConnectedBoard()) {
+      vscode.window.showWarningMessage('Connect to a board before comparing a device file.');
+      return;
+    }
+
+    if (!this.mirrorRootPath) {
+      await this.refresh(false);
+    }
+
+    if (!this.mirrorRootPath || node.data.isDirectory) {
+      return;
+    }
+
+    const relativePath = toRelativePath(node.data.relativePath);
+    const localPath = path.join(this.mirrorRootPath, relativePath);
+    try {
+      const stat = await fs.stat(localPath);
+      if (!stat.isFile()) {
+        throw new Error('Not a file');
+      }
+    } catch {
+      vscode.window.showWarningMessage(`No host mirror file exists for "${relativePath}". Sync from device first.`);
+      return;
+    }
+
+    const localUri = vscode.Uri.file(localPath);
+    const remoteUri = vscode.Uri.parse(`${remoteDocumentScheme}:/${relativePath}`);
+    const title = `${relativePath} (Host <-> Device)`;
+    await vscode.commands.executeCommand('vscode.diff', localUri, remoteUri, title, { preview: false });
   }
 }
 
@@ -1173,6 +1253,7 @@ export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext)
   context.subscriptions.push(vscode.commands.registerCommand(commandOpenLocalItemId, async (node: MirrorNode) => model.openLocalNode(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandPullAndOpenDeviceItemId, async (node: MirrorNode) => model.pullDeviceNodeAndOpen(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandOpenRemoteFileId, async (node?: MirrorNode) => model.openRemoteFile(node)));
+  context.subscriptions.push(vscode.commands.registerCommand(commandCompareRemoteWithLocalId, async (node?: MirrorNode) => model.compareRemoteWithLocal(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandCreateRemoteFileId, async (node?: MirrorNode) => model.createRemoteFile(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandCreateRemoteFolderId, async (node?: MirrorNode) => model.createRemoteFolder(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandRenameRemotePathId, async (node?: MirrorNode) => model.renameRemotePath(node)));

@@ -80,6 +80,11 @@
         "title": "Open Remote Device File"
       },
       {
+        "command": "mekatrol.pyboarddev.compareremotewithlocal",
+        "title": "Compare Device File With Host",
+        "icon": "$(diff)"
+      },
+      {
         "command": "mekatrol.pyboarddev.openrepl",
         "title": "Pyboard Dev: Open REPL console"
       },
@@ -157,24 +162,29 @@
           "group": "navigation@1"
         },
         {
-          "command": "mekatrol.pyboarddev.createremotefile",
-          "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && viewItem == pyboarddev.deviceFolder",
+          "command": "mekatrol.pyboarddev.compareremotewithlocal",
+          "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && viewItem == pyboarddev.deviceFile",
           "group": "navigation@2"
         },
         {
-          "command": "mekatrol.pyboarddev.createremotefolder",
+          "command": "mekatrol.pyboarddev.createremotefile",
           "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && viewItem == pyboarddev.deviceFolder",
           "group": "navigation@3"
         },
         {
+          "command": "mekatrol.pyboarddev.createremotefolder",
+          "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && viewItem == pyboarddev.deviceFolder",
+          "group": "navigation@4"
+        },
+        {
           "command": "mekatrol.pyboarddev.renameremotepath",
           "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && (viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFolder)",
-          "group": "navigation@4"
+          "group": "navigation@5"
         },
         {
           "command": "mekatrol.pyboarddev.deleteremotepath",
           "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && (viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFolder)",
-          "group": "navigation@5"
+          "group": "navigation@6"
         }
       ]
     },
@@ -188,6 +198,12 @@
         "command": "mekatrol.pyboarddev.deleteremotepath",
         "key": "delete",
         "mac": "backspace",
+        "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && listFocus"
+      },
+      {
+        "command": "mekatrol.pyboarddev.compareremotewithlocal",
+        "key": "ctrl+alt+d",
+        "mac": "cmd+alt+d",
         "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && listFocus"
       }
     ],
