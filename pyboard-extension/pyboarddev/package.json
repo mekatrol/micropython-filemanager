@@ -68,8 +68,12 @@
     "views": {
       "explorer": [
         {
-          "id": "mekatrol.pyboarddev.deviceMirrorExplorer",
-          "name": "Pyboard Device Mirror"
+          "id": "mekatrol.pyboarddev.localMirrorExplorer",
+          "name": "Pyboard Mirror (Host)"
+        },
+        {
+          "id": "mekatrol.pyboarddev.deviceFilesystemExplorer",
+          "name": "Pyboard Device (Remote)"
         }
       ]
     },
@@ -77,17 +81,17 @@
       "view/title": [
         {
           "command": "mekatrol.pyboarddev.refreshmirrorview",
-          "when": "view == mekatrol.pyboarddev.deviceMirrorExplorer",
+          "when": "view == mekatrol.pyboarddev.localMirrorExplorer || view == mekatrol.pyboarddev.deviceFilesystemExplorer",
           "group": "navigation@1"
         },
         {
           "command": "mekatrol.pyboarddev.syncfromdevice",
-          "when": "view == mekatrol.pyboarddev.deviceMirrorExplorer",
+          "when": "view == mekatrol.pyboarddev.localMirrorExplorer || view == mekatrol.pyboarddev.deviceFilesystemExplorer",
           "group": "navigation@2"
         },
         {
           "command": "mekatrol.pyboarddev.synctodevice",
-          "when": "view == mekatrol.pyboarddev.deviceMirrorExplorer",
+          "when": "view == mekatrol.pyboarddev.localMirrorExplorer || view == mekatrol.pyboarddev.deviceFilesystemExplorer",
           "group": "navigation@3"
         }
       ]

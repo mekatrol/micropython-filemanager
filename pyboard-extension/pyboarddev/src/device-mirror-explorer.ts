@@ -18,7 +18,8 @@ import {
   writeDeviceFile
 } from './utils/device-filesystem';
 
-const viewId = 'mekatrol.pyboarddev.deviceMirrorExplorer';
+const localViewId = 'mekatrol.pyboarddev.localMirrorExplorer';
+const deviceViewId = 'mekatrol.pyboarddev.deviceFilesystemExplorer';
 const commandRefreshId = 'mekatrol.pyboarddev.refreshmirrorview';
 const commandSyncFromDeviceId = 'mekatrol.pyboarddev.syncfromdevice';
 const commandSyncToDeviceId = 'mekatrol.pyboarddev.synctodevice';
@@ -33,7 +34,6 @@ interface NodeData {
   side: NodeSide;
   relativePath: string;
   isDirectory: boolean;
-  isRoot: boolean;
 }
 
 class MirrorNode extends vscode.TreeItem {
@@ -45,9 +45,9 @@ class MirrorNode extends vscode.TreeItem {
   }
 }
 
-class DeviceMirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.Disposable {
-  private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<MirrorNode | undefined>();
-  readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
+class DeviceMirrorModel {
+  private readonly onDidChangeDataEmitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeData = this.onDidChangeDataEmitter.event;
 
   private workspaceFolder: vscode.WorkspaceFolder | undefined;
   private mirrorRootPath: string | undefined;
@@ -57,29 +57,13 @@ class DeviceMirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, v
   private deviceEntries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
   private syncStates: Map<string, SyncState> = new Map();
 
-  private readonly disposables: vscode.Disposable[] = [];
-
-  constructor(private readonly context: vscode.ExtensionContext) {
-    this.disposables.push(onBoardConnectionStateChanged(() => this.refresh()));
-    this.disposables.push(vscode.workspace.onDidSaveTextDocument((document) => this.handlePossibleMirrorFileSave(document.uri.fsPath)));
-    this.disposables.push(vscode.workspace.onDidDeleteFiles((event) => event.files.forEach((uri) => this.handlePossibleMirrorFileSave(uri.fsPath))));
-    this.disposables.push(vscode.workspace.onDidCreateFiles((event) => event.files.forEach((uri) => this.handlePossibleMirrorFileSave(uri.fsPath))));
-  }
-
-  dispose(): void {
-    this.onDidChangeTreeDataEmitter.dispose();
-    for (const disposable of this.disposables) {
-      disposable.dispose();
-    }
-  }
-
   async refresh(fetchDevice: boolean = true): Promise<void> {
     this.workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!this.workspaceFolder) {
       this.localEntries = [{ relativePath: '', isDirectory: true }];
       this.deviceEntries = [{ relativePath: '', isDirectory: true }];
       this.syncStates = new Map();
-      this.onDidChangeTreeDataEmitter.fire(undefined);
+      this.onDidChangeDataEmitter.fire();
       return;
     }
 
@@ -105,7 +89,7 @@ class DeviceMirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, v
     }
 
     this.syncStates = buildSyncStateMap(this.localEntries, this.deviceEntries, this.obfuscationSet);
-    this.onDidChangeTreeDataEmitter.fire(undefined);
+    this.onDidChangeDataEmitter.fire();
   }
 
   async syncFromDevice(): Promise<void> {
@@ -150,7 +134,7 @@ class DeviceMirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, v
     this.deviceEntries = deviceEntries;
     this.localEntries = await scanLocalMirrorEntries(this.mirrorRootPath);
     this.syncStates = buildSyncStateMap(this.localEntries, this.deviceEntries, this.obfuscationSet);
-    this.onDidChangeTreeDataEmitter.fire(undefined);
+    this.onDidChangeDataEmitter.fire();
 
     const msg = 'Sync from device complete.';
     vscode.window.showInformationMessage(msg);
@@ -192,7 +176,7 @@ class DeviceMirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, v
     this.localEntries = localEntries;
     this.deviceEntries = await listDeviceEntries(board);
     this.syncStates = buildSyncStateMap(this.localEntries, this.deviceEntries, this.obfuscationSet);
-    this.onDidChangeTreeDataEmitter.fire(undefined);
+    this.onDidChangeDataEmitter.fire();
 
     const msg = 'Sync to device complete.';
     vscode.window.showInformationMessage(msg);
@@ -225,11 +209,7 @@ class DeviceMirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, v
       await this.refresh(false);
     }
 
-    if (!this.mirrorRootPath) {
-      return;
-    }
-
-    if (node.data.isDirectory) {
+    if (!this.mirrorRootPath || node.data.isDirectory) {
       return;
     }
 
@@ -249,29 +229,84 @@ class DeviceMirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, v
     await vscode.window.showTextDocument(document, { preview: false });
   }
 
-  getTreeItem(element: MirrorNode): vscode.TreeItem {
-    const { data } = element;
+  getNodeChildren(side: NodeSide, parentRelativePath: string): MirrorNode[] {
+    const sourceEntries = side === 'device' ? this.deviceEntries : this.localEntries;
+    const nodes: MirrorNode[] = [];
 
-    if (data.isRoot) {
-      if (data.side === 'device') {
-        const connected = getConnectedBoard() !== undefined;
-        element.description = connected ? 'connected' : 'disconnected';
-        element.iconPath = new vscode.ThemeIcon('plug');
-        element.contextValue = 'pyboarddev.deviceRoot';
-      } else {
-        element.description = this.mirrorRootPath ? path.basename(this.mirrorRootPath) : 'no workspace';
-        element.iconPath = new vscode.ThemeIcon('folder-library');
-        element.contextValue = 'pyboarddev.localRoot';
+    for (const entry of sourceEntries) {
+      if (entry.relativePath.length === 0) {
+        continue;
       }
 
-      return element;
+      const parent = path.posix.dirname(entry.relativePath);
+      const directParent = parent === '.' ? '' : toRelativePath(parent);
+      if (directParent !== parentRelativePath) {
+        continue;
+      }
+
+      const name = path.posix.basename(entry.relativePath);
+      nodes.push(
+        new MirrorNode(
+          {
+            side,
+            relativePath: entry.relativePath,
+            isDirectory: entry.isDirectory
+          },
+          name,
+          entry.isDirectory ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
+        )
+      );
     }
 
+    return nodes.sort((a, b) => {
+      if (a.data.isDirectory !== b.data.isDirectory) {
+        return a.data.isDirectory ? -1 : 1;
+      }
+
+      return a.label!.toString().localeCompare(b.label!.toString());
+    });
+  }
+
+  getSyncState(relativePath: string): SyncState | undefined {
+    return this.syncStates.get(relativePath);
+  }
+
+  async handlePossibleMirrorFileChange(fsPath: string): Promise<void> {
+    if (!this.mirrorRootPath) {
+      return;
+    }
+
+    const normalised = toRelativePath(path.relative(this.mirrorRootPath, fsPath));
+    if (normalised.startsWith('..')) {
+      return;
+    }
+
+    await this.refresh(false);
+  }
+}
+
+class SideTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.Disposable {
+  private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<MirrorNode | undefined>();
+  readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
+
+  private readonly modelDisposable: vscode.Disposable;
+
+  constructor(private readonly side: NodeSide, private readonly model: DeviceMirrorModel) {
+    this.modelDisposable = model.onDidChangeData(() => this.onDidChangeTreeDataEmitter.fire(undefined));
+  }
+
+  dispose(): void {
+    this.modelDisposable.dispose();
+    this.onDidChangeTreeDataEmitter.dispose();
+  }
+
+  getTreeItem(element: MirrorNode): vscode.TreeItem {
+    const data = element.data;
     element.contextValue = data.side === 'device' ? 'pyboarddev.deviceNode' : 'pyboarddev.localNode';
     element.iconPath = data.isDirectory ? vscode.ThemeIcon.Folder : vscode.ThemeIcon.File;
 
     if (!data.isDirectory) {
-      const sync = this.syncStates.get(data.relativePath);
+      const sync = this.model.getSyncState(data.relativePath);
       switch (sync) {
         case 'synced':
           element.description = 'synced';
@@ -313,101 +348,36 @@ class DeviceMirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, v
   }
 
   getChildren(element?: MirrorNode): MirrorNode[] {
-    if (!element) {
-      return [
-        new MirrorNode({ side: 'device', relativePath: '', isDirectory: true, isRoot: true }, 'Device', vscode.TreeItemCollapsibleState.Expanded),
-        new MirrorNode({ side: 'local', relativePath: '', isDirectory: true, isRoot: true }, 'Mirror', vscode.TreeItemCollapsibleState.Expanded)
-      ];
-    }
-
-    if (!element.data.isDirectory) {
+    const parentRelativePath = element ? element.data.relativePath : '';
+    if (element && !element.data.isDirectory) {
       return [];
     }
 
-    const sourceEntries = element.data.side === 'device' ? this.deviceEntries : this.localEntries;
-    const parentPath = element.data.relativePath;
-    const children = this.findDirectChildren(sourceEntries, parentPath, element.data.side);
-
-    return children.sort((a, b) => {
-      if (a.data.isDirectory !== b.data.isDirectory) {
-        return a.data.isDirectory ? -1 : 1;
-      }
-
-      return a.label!.toString().localeCompare(b.label!.toString());
-    });
-  }
-
-  private findDirectChildren(entries: FileEntry[], parentRelativePath: string, side: NodeSide): MirrorNode[] {
-    const nodes: MirrorNode[] = [];
-
-    for (const entry of entries) {
-      if (entry.relativePath.length === 0) {
-        continue;
-      }
-
-      const parent = path.posix.dirname(entry.relativePath);
-      const directParent = parent === '.' ? '' : toRelativePath(parent);
-      if (directParent !== parentRelativePath) {
-        continue;
-      }
-
-      const name = path.posix.basename(entry.relativePath);
-      nodes.push(
-        new MirrorNode(
-          {
-            side,
-            relativePath: entry.relativePath,
-            isDirectory: entry.isDirectory,
-            isRoot: false
-          },
-          name,
-          entry.isDirectory ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
-        )
-      );
-    }
-
-    return nodes;
-  }
-
-  private async handlePossibleMirrorFileSave(fsPath: string): Promise<void> {
-    if (!this.mirrorRootPath) {
-      return;
-    }
-
-    const normalised = toRelativePath(path.relative(this.mirrorRootPath, fsPath));
-    if (normalised.startsWith('..')) {
-      return;
-    }
-
-    await this.refresh(false);
+    return this.model.getNodeChildren(this.side, parentRelativePath);
   }
 }
 
 export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext): Promise<void> => {
-  const provider = new DeviceMirrorTreeProvider(context);
+  const model = new DeviceMirrorModel();
 
-  context.subscriptions.push(provider);
-  context.subscriptions.push(vscode.window.registerTreeDataProvider(viewId, provider));
+  const localProvider = new SideTreeProvider('local', model);
+  const deviceProvider = new SideTreeProvider('device', model);
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand(commandRefreshId, async () => provider.refresh(true))
-  );
+  context.subscriptions.push(localProvider);
+  context.subscriptions.push(deviceProvider);
+  context.subscriptions.push(vscode.window.registerTreeDataProvider(localViewId, localProvider));
+  context.subscriptions.push(vscode.window.registerTreeDataProvider(deviceViewId, deviceProvider));
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand(commandSyncFromDeviceId, async () => provider.syncFromDevice())
-  );
+  context.subscriptions.push(onBoardConnectionStateChanged(() => model.refresh()));
+  context.subscriptions.push(vscode.workspace.onDidSaveTextDocument((document) => model.handlePossibleMirrorFileChange(document.uri.fsPath)));
+  context.subscriptions.push(vscode.workspace.onDidDeleteFiles((event) => event.files.forEach((uri) => model.handlePossibleMirrorFileChange(uri.fsPath))));
+  context.subscriptions.push(vscode.workspace.onDidCreateFiles((event) => event.files.forEach((uri) => model.handlePossibleMirrorFileChange(uri.fsPath))));
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand(commandSyncToDeviceId, async () => provider.syncToDevice())
-  );
+  context.subscriptions.push(vscode.commands.registerCommand(commandRefreshId, async () => model.refresh(true)));
+  context.subscriptions.push(vscode.commands.registerCommand(commandSyncFromDeviceId, async () => model.syncFromDevice()));
+  context.subscriptions.push(vscode.commands.registerCommand(commandSyncToDeviceId, async () => model.syncToDevice()));
+  context.subscriptions.push(vscode.commands.registerCommand(commandOpenLocalItemId, async (node: MirrorNode) => model.openLocalNode(node)));
+  context.subscriptions.push(vscode.commands.registerCommand(commandPullAndOpenDeviceItemId, async (node: MirrorNode) => model.pullDeviceNodeAndOpen(node)));
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand(commandOpenLocalItemId, async (node: MirrorNode) => provider.openLocalNode(node))
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand(commandPullAndOpenDeviceItemId, async (node: MirrorNode) => provider.pullDeviceNodeAndOpen(node))
-  );
-
-  await provider.refresh();
+  await model.refresh();
 };
