@@ -4,9 +4,11 @@ import { Pyboard } from '../utils/pyboard';
 
 const selectedSerialPortStateKey = 'selectedSerialPort';
 const selectedBaudRateStateKey = 'selectedBaudRate';
+const reconnectLastSessionStateKey = 'reconnectLastSession';
 const defaultBaudRate = 115200;
 
 let connectedBoard: Pyboard | undefined;
+let extensionContext: vscode.ExtensionContext | undefined;
 const boardConnectionStateEmitter = new vscode.EventEmitter<boolean>();
 
 export const onBoardConnectionStateChanged = boardConnectionStateEmitter.event;
@@ -17,7 +19,15 @@ const notifyBoardConnectionStateChanged = (): void => {
   boardConnectionStateEmitter.fire(isBoardConnected());
 };
 
-export const closeConnectedBoard = async (showSuccessMessage = true): Promise<void> => {
+const updateReconnectState = async (shouldReconnectOnStartup: boolean): Promise<void> => {
+  if (!extensionContext) {
+    return;
+  }
+
+  await extensionContext.workspaceState.update(reconnectLastSessionStateKey, shouldReconnectOnStartup);
+};
+
+export const closeConnectedBoard = async (showSuccessMessage = true, preserveReconnectState = false): Promise<void> => {
   if (!connectedBoard) {
     if (showSuccessMessage) {
       const msg = 'No active board connection to close.';
@@ -30,6 +40,9 @@ export const closeConnectedBoard = async (showSuccessMessage = true): Promise<vo
   try {
     await connectedBoard.close();
     connectedBoard = undefined;
+    if (!preserveReconnectState) {
+      await updateReconnectState(false);
+    }
     notifyBoardConnectionStateChanged();
 
     if (showSuccessMessage) {
@@ -47,6 +60,8 @@ export const closeConnectedBoard = async (showSuccessMessage = true): Promise<vo
 };
 
 export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
+  extensionContext = context;
+
   const command = vscode.commands.registerCommand('mekatrol.pyboarddev.connectboard', async () => {
     const device = context.workspaceState.get<string>(selectedSerialPortStateKey);
     const baudRate = context.workspaceState.get<number>(selectedBaudRateStateKey) ?? defaultBaudRate;
@@ -66,6 +81,7 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
       const board = new Pyboard(device, baudRate);
       await board.open();
       connectedBoard = board;
+      await updateReconnectState(true);
       notifyBoardConnectionStateChanged();
 
       const msg = `Connected to board on ${device} @ ${baudRate}.`;
@@ -83,6 +99,8 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
 };
 
 export const initDisconnectBoardCommand = (context: vscode.ExtensionContext) => {
+  extensionContext = context;
+
   const command = vscode.commands.registerCommand('mekatrol.pyboarddev.disconnectboard', async () => {
     await closeConnectedBoard(true);
   });
@@ -91,6 +109,8 @@ export const initDisconnectBoardCommand = (context: vscode.ExtensionContext) => 
 };
 
 export const initToggleBoardConnectionCommand = (context: vscode.ExtensionContext) => {
+  extensionContext = context;
+
   const command = vscode.commands.registerCommand('mekatrol.pyboarddev.toggleboardconnection', async () => {
     if (isBoardConnected()) {
       await closeConnectedBoard(true);
@@ -101,4 +121,23 @@ export const initToggleBoardConnectionCommand = (context: vscode.ExtensionContex
   });
 
   context.subscriptions.push(command);
+};
+
+export const tryReconnectBoardOnStartup = async (context: vscode.ExtensionContext): Promise<void> => {
+  extensionContext = context;
+
+  const autoReconnectEnabled = vscode.workspace
+    .getConfiguration('mekatrol.pyboarddev')
+    .get<boolean>('autoReconnectLastDevice', false);
+
+  if (!autoReconnectEnabled || isBoardConnected()) {
+    return;
+  }
+
+  const shouldReconnect = context.workspaceState.get<boolean>(reconnectLastSessionStateKey) ?? false;
+  if (!shouldReconnect) {
+    return;
+  }
+
+  await vscode.commands.executeCommand('mekatrol.pyboarddev.connectboard');
 };

@@ -106,6 +106,16 @@
           "group": "inline@1"
         }
       ]
+    },
+    "configuration": {
+      "title": "Mekatrol Pyboard Dev",
+      "properties": {
+        "mekatrol.pyboarddev.autoReconnectLastDevice": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically reconnect to the last selected device on startup if it was still connected when VS Code exited."
+        }
+      }
     }
   },
   "scripts": {

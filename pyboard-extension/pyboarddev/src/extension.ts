@@ -6,7 +6,8 @@ import {
   closeConnectedBoard,
   initConnectBoardCommand,
   initDisconnectBoardCommand,
-  initToggleBoardConnectionCommand
+  initToggleBoardConnectionCommand,
+  tryReconnectBoardOnStartup
 } from './commands/connect-board-command';
 import { initDeviceMirrorExplorer } from './device-mirror-explorer';
 import { initTerminal } from './terminal';
@@ -23,6 +24,7 @@ export const activate = async (context: vscode.ExtensionContext) => {
   initConnectBoardCommand(context);
   initDisconnectBoardCommand(context);
   initToggleBoardConnectionCommand(context);
+  await tryReconnectBoardOnStartup(context);
 
   // Init status bar
   await initStatusBar(context);
@@ -36,5 +38,5 @@ export const activate = async (context: vscode.ExtensionContext) => {
 
 // This method is called when your extension is deactivated
 export async function deactivate() {
-  await closeConnectedBoard(false);
+  await closeConnectedBoard(false, true);
 }

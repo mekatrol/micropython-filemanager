@@ -38,6 +38,7 @@ interface NodeData {
   side: NodeSide;
   relativePath: string;
   isDirectory: boolean;
+  isIndicator?: boolean;
 }
 
 class MirrorNode extends vscode.TreeItem {
@@ -261,8 +262,8 @@ class DeviceMirrorModel {
 
     await this.refresh();
     const deviceName = (path.basename(board.device) || board.device).replace(/[^\w.-]/g, '_');
-    const _pythonTypePrefix = this.normalisePythonType(this.pythonType);
-    // const remotePath = `${_pythonTypePrefix}:/${deviceName}/${toRelativePath(relativePath)}`;
+    const pythonTypePrefix = this.normalisePythonType(this.pythonType);
+    // const remotePath = `${pythonTypePrefix}:/${deviceName}/${toRelativePath(relativePath)}`;
     const remotePath = `/${deviceName}/${toRelativePath(relativePath)}`;
     const remoteUri = vscode.Uri.parse(`${remoteDocumentScheme}:${remotePath}`);
 
@@ -360,6 +361,10 @@ class DeviceMirrorModel {
     return this.syncStates.get(relativePath);
   }
 
+  isBoardConnected(): boolean {
+    return getConnectedBoard() !== undefined;
+  }
+
   async handlePossibleMirrorFileChange(fsPath: string): Promise<void> {
     if (!this.mirrorRootPath) {
       return;
@@ -391,6 +396,17 @@ class SideTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.Di
 
   getTreeItem(element: MirrorNode): vscode.TreeItem {
     const data = element.data;
+    if (data.isIndicator) {
+      element.contextValue = 'pyboarddev.deviceIndicator';
+      element.iconPath = new vscode.ThemeIcon('warning');
+      element.description = 'connect to view files';
+      element.command = {
+        command: 'mekatrol.pyboarddev.toggleboardconnection',
+        title: 'Connect to board'
+      };
+      return element;
+    }
+
     element.contextValue = data.side === 'device' ? 'pyboarddev.deviceNode' : 'pyboarddev.localNode';
     element.iconPath = data.isDirectory ? vscode.ThemeIcon.Folder : vscode.ThemeIcon.File;
 
@@ -440,6 +456,21 @@ class SideTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.Di
     const parentRelativePath = element ? element.data.relativePath : '';
     if (element && !element.data.isDirectory) {
       return [];
+    }
+
+    if (!element && this.side === 'device' && !this.model.isBoardConnected()) {
+      return [
+        new MirrorNode(
+          {
+            side: 'device',
+            relativePath: '',
+            isDirectory: false,
+            isIndicator: true
+          },
+          'Device not connected',
+          vscode.TreeItemCollapsibleState.None
+        )
+      ];
     }
 
     return this.model.getNodeChildren(this.side, parentRelativePath);
