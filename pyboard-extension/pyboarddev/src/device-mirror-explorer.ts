@@ -29,6 +29,9 @@ const commandPullAndOpenDeviceItemId = 'mekatrol.pyboarddev.pullandopendeviceite
 const commandOpenRemoteFileId = 'mekatrol.pyboarddev.openremotefile';
 const remoteDocumentScheme = 'pyboarddev-remote';
 const selectedPythonTypeStateKey = 'selectedPythonType';
+const selectedSerialPortStateKey = 'selectedSerialPort';
+const selectedBaudRateStateKey = 'selectedBaudRate';
+const defaultBaudRate = 115200;
 
 const obfuscatedPlaceholder = '# pyboarddev: obfuscated on pull\n';
 
@@ -407,7 +410,17 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
   }
 
   async readFile(uri: vscode.Uri): Promise<Uint8Array> {
-    const board = await this.getConnectedBoardOrWait();
+    let board: NonNullable<ReturnType<typeof getConnectedBoard>>;
+    try {
+      board = await this.getConnectedBoardOrWait();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const friendlyMessage = `device no longer available for the file. ${this.getDeviceDetails()}`;
+      vscode.window.showWarningMessage(friendlyMessage);
+      await this.closeRemoteTabsForUri(uri);
+      throw vscode.FileSystemError.Unavailable(`${friendlyMessage} (${message})`);
+    }
+
     const relativePath = this.toRelativeRemotePath(uri, board);
     try {
       const content = await readDeviceFile(board, relativePath);
@@ -424,8 +437,12 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/no such file|enoent|not found/i.test(message)) {
-        throw vscode.FileSystemError.FileNotFound(`Remote file not found: ${relativePath}`);
+        const friendlyMessage = `the file no longer exists on the device. ${this.getDeviceDetails(board)}`;
+        vscode.window.showWarningMessage(friendlyMessage);
+        await this.closeRemoteTabsForUri(uri);
+        throw vscode.FileSystemError.FileNotFound(friendlyMessage);
       }
+      await this.closeRemoteTabsForUri(uri);
       throw vscode.FileSystemError.Unavailable(`Failed to read remote file: ${relativePath}. ${message}`);
     }
   }
@@ -614,6 +631,37 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         throw error;
       }
+    }
+  }
+
+  private getDeviceDetails(board?: NonNullable<ReturnType<typeof getConnectedBoard>>): string {
+    const selectedDevice = this.context.workspaceState.get<string>(selectedSerialPortStateKey);
+    const selectedBaudRate = this.context.workspaceState.get<number>(selectedBaudRateStateKey) ?? defaultBaudRate;
+    const activeBoard = board ?? getConnectedBoard();
+    const device = activeBoard?.device ?? selectedDevice ?? 'unknown device';
+    const baudRate = activeBoard?.baudrate ?? selectedBaudRate;
+    const connectionState = activeBoard ? 'connected' : 'disconnected';
+    return `Device: ${device} @ ${baudRate} (${connectionState})`;
+  }
+
+  private async closeRemoteTabsForUri(uri: vscode.Uri): Promise<void> {
+    const tabsToClose: vscode.Tab[] = [];
+    for (const group of vscode.window.tabGroups.all) {
+      for (const tab of group.tabs) {
+        if (!(tab.input instanceof vscode.TabInputText)) {
+          continue;
+        }
+
+        if (tab.input.uri.toString() !== uri.toString()) {
+          continue;
+        }
+
+        tabsToClose.push(tab);
+      }
+    }
+
+    if (tabsToClose.length > 0) {
+      await vscode.window.tabGroups.close(tabsToClose, true);
     }
   }
 }
