@@ -12,7 +12,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onFileSystem:pyboarddev-remote"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -151,6 +152,12 @@
           "type": "boolean",
           "default": false,
           "description": "Show low-level REPL TX/RX transport logs in the extension output channel (for troubleshooting)."
+        },
+        "mekatrol.pyboarddev.remoteFileOpenWaitForConnectionMs": {
+          "type": "number",
+          "default": 120000,
+          "minimum": 0,
+          "description": "How long to wait for board connection before opening/saving remote device files fails. Set to 0 to wait indefinitely."
         }
       }
     },

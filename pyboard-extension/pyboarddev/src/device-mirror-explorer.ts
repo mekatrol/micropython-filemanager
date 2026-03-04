@@ -371,6 +371,8 @@ class DeviceMirrorModel {
 class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
   private readonly onDidChangeFileEmitter = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
   readonly onDidChangeFile = this.onDidChangeFileEmitter.event;
+  private static readonly waitForConnectionSettingKey = 'remoteFileOpenWaitForConnectionMs';
+  private static readonly defaultWaitForConnectionMs = 120000;
 
   watch(): vscode.Disposable {
     return new vscode.Disposable(() => undefined);
@@ -395,26 +397,31 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
   }
 
   async readFile(uri: vscode.Uri): Promise<Uint8Array> {
-    const board = getConnectedBoard();
-    if (!board) {
-      throw vscode.FileSystemError.Unavailable('Board not connected.');
+    const board = await this.getConnectedBoardOrWait();
+    const relativePath = this.toRelativeRemotePath(uri, board);
+    try {
+      const content = await readDeviceFile(board, relativePath);
+      return new Uint8Array(content);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/no such file|enoent|not found/i.test(message)) {
+        throw vscode.FileSystemError.FileNotFound(`Remote file not found: ${relativePath}`);
+      }
+      throw vscode.FileSystemError.Unavailable(`Failed to read remote file: ${relativePath}. ${message}`);
     }
-
-    const relativePath = this.toRelativeRemotePath(uri);
-    const content = await readDeviceFile(board, relativePath);
-    return new Uint8Array(content);
   }
 
   async writeFile(uri: vscode.Uri, content: Uint8Array): Promise<void> {
-    const board = getConnectedBoard();
-    if (!board) {
-      throw vscode.FileSystemError.Unavailable('Board not connected.');
+    const board = await this.getConnectedBoardOrWait();
+    const relativePath = this.toRelativeRemotePath(uri, board);
+    try {
+      await writeDeviceFile(board, relativePath, Buffer.from(content));
+      logChannelOutput(`Saved to device: ${relativePath}`, true);
+      this.onDidChangeFileEmitter.fire([{ type: vscode.FileChangeType.Changed, uri }]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw vscode.FileSystemError.Unavailable(`Failed to write remote file: ${relativePath}. ${message}`);
     }
-
-    const relativePath = this.toRelativeRemotePath(uri);
-    await writeDeviceFile(board, relativePath, Buffer.from(content));
-    logChannelOutput(`Saved to device: ${relativePath}`, true);
-    this.onDidChangeFileEmitter.fire([{ type: vscode.FileChangeType.Changed, uri }]);
   }
 
   delete(): void {
@@ -425,13 +432,75 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     throw vscode.FileSystemError.NoPermissions('Renaming on remote URI is not supported.');
   }
 
-  private toRelativeRemotePath(uri: vscode.Uri): string {
-    const relativePath = toRelativePath(uri.path.replace(/^\/+/, ''));
+  private toRelativeRemotePath(uri: vscode.Uri, board: NonNullable<ReturnType<typeof getConnectedBoard>>): string {
+    const rawPath = toRelativePath(uri.path.replace(/^\/+/, ''));
+    const segments = rawPath
+      .split('/')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+
+    if (segments.length === 0) {
+      throw vscode.FileSystemError.FileNotFound('Remote file path is empty.');
+    }
+
+    // Backward compatibility with older remote URI formats:
+    // - /MicroPython:/<device>/<path>
+    // - /<device>/<path>
+    if (segments[0].endsWith(':') && segments.length > 1) {
+      segments.shift();
+    }
+
+    const deviceName = (path.basename(board.device) || board.device).replace(/[^\w.-]/g, '_');
+    if (segments[0] === deviceName && segments.length > 1) {
+      segments.shift();
+    }
+
+    const relativePath = toRelativePath(segments.join('/'));
     if (!relativePath) {
       throw vscode.FileSystemError.FileNotFound('Remote file path is empty.');
     }
 
     return relativePath;
+  }
+
+  private async getConnectedBoardOrWait(): Promise<NonNullable<ReturnType<typeof getConnectedBoard>>> {
+    const connected = getConnectedBoard();
+    if (connected) {
+      return connected;
+    }
+
+    const configuredWait = vscode.workspace
+      .getConfiguration('mekatrol.pyboarddev')
+      .get<number>(
+        RemoteDeviceFileSystemProvider.waitForConnectionSettingKey,
+        RemoteDeviceFileSystemProvider.defaultWaitForConnectionMs
+      );
+    const timeoutMs = Number.isFinite(configuredWait)
+      ? Math.max(0, configuredWait)
+      : RemoteDeviceFileSystemProvider.defaultWaitForConnectionMs;
+
+    return await new Promise((resolve, reject) => {
+      let timeout: NodeJS.Timeout | undefined;
+      const disposable = onBoardConnectionStateChanged(() => {
+        const board = getConnectedBoard();
+        if (!board) {
+          return;
+        }
+
+        if (timeout) {
+          clearTimeout(timeout);
+        }
+        disposable.dispose();
+        resolve(board);
+      });
+
+      if (timeoutMs > 0) {
+        timeout = setTimeout(() => {
+          disposable.dispose();
+          reject(vscode.FileSystemError.Unavailable(`Board not connected within ${timeoutMs}ms.`));
+        }, timeoutMs);
+      }
+    });
   }
 }
 
