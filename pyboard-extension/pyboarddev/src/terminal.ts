@@ -1,8 +1,15 @@
 import * as vscode from 'vscode';
-import { getConnectedBoard, onBoardConnectionStateChanged } from './commands/connect-board-command';
+import {
+  getConnectedBoard,
+  getConnectedBoardRuntimeInfo,
+  onBoardConnectionStateChanged,
+  onConnectedBoardRuntimeInfoChanged
+} from './commands/connect-board-command';
 import { Pyboard } from './utils/pyboard';
 
 const openReplCommandId = 'mekatrol.pyboarddev.openrepl';
+const replPrompt = '>>> ';
+const promptFallbackDelayMs = 1200;
 const formatForTerminal = (text: string): string => text.replace(/\n/g, '\r\n');
 const formatInputForEcho = (text: string): string => text.replace(/\r/g, '\r\n');
 
@@ -12,8 +19,11 @@ class ReplTerminalManager implements vscode.Disposable {
   private readonly pty: vscode.Pseudoterminal;
   private terminal: vscode.Terminal | undefined;
   private boardStateDisposable: vscode.Disposable | undefined;
+  private boardRuntimeInfoDisposable: vscode.Disposable | undefined;
   private isPtyOpen = false;
   private currentLine = '';
+  private hasRenderedConnectedIntro = false;
+  private promptFallbackTimer: NodeJS.Timeout | undefined;
 
   constructor() {
     this.pty = {
@@ -48,11 +58,13 @@ class ReplTerminalManager implements vscode.Disposable {
           this.currentLine = '';
 
           if (command.trim().length === 0) {
+            this.emitPrompt();
             return;
           }
 
           try {
             const result = await board.execRawCapture(`${command}\n`);
+            const combinedOutput = `${result.stdout ?? ''}${result.stderr ?? ''}`;
             if (result.stdout && result.stdout.length > 0) {
               this.writeEmitter.fire(formatForTerminal(result.stdout));
             }
@@ -60,9 +72,15 @@ class ReplTerminalManager implements vscode.Disposable {
             if (result.stderr && result.stderr.length > 0) {
               this.writeEmitter.fire(formatForTerminal(result.stderr));
             }
+
+            if (combinedOutput.length > 0 && !combinedOutput.endsWith('\n') && !combinedOutput.endsWith('\r')) {
+              this.writeEmitter.fire('\r\n');
+            }
+            this.emitPrompt();
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             this.writeEmitter.fire(`\r\n[execution failed] ${message}\r\n`);
+            this.emitPrompt();
           }
 
           return;
@@ -75,14 +93,24 @@ class ReplTerminalManager implements vscode.Disposable {
 
     this.boardStateDisposable = onBoardConnectionStateChanged((connected) => {
       if (connected) {
+        this.hasRenderedConnectedIntro = false;
         this.show();
+      } else {
+        this.hasRenderedConnectedIntro = false;
+        this.clearPromptFallbackTimer();
       }
+      this.renderConnectionStatus();
+    });
+
+    this.boardRuntimeInfoDisposable = onConnectedBoardRuntimeInfoChanged(() => {
       this.renderConnectionStatus();
     });
   }
 
   dispose(): void {
     this.boardStateDisposable?.dispose();
+    this.boardRuntimeInfoDisposable?.dispose();
+    this.clearPromptFallbackTimer();
     this.writeEmitter.dispose();
     this.closeEmitter.dispose();
   }
@@ -102,12 +130,53 @@ class ReplTerminalManager implements vscode.Disposable {
 
     const board = getConnectedBoard();
     if (board) {
-      this.writeEmitter.fire(`\r\n[connected ${board.device} @ ${board.baudrate}]\r\n`);
+      if (this.hasRenderedConnectedIntro) {
+        return;
+      }
+
+      const runtimeInfo = getConnectedBoardRuntimeInfo();
+      if (runtimeInfo) {
+        this.clearPromptFallbackTimer();
+        this.writeEmitter.fire(`\r\n${runtimeInfo.banner}\r\n`);
+        this.writeEmitter.fire('Type "help()" for more information.\r\n');
+        this.emitPrompt();
+        this.hasRenderedConnectedIntro = true;
+      } else {
+        this.ensurePromptFallbackTimer();
+      }
     } else {
       this.writeEmitter.fire('\r\n[device not connected; connect from status bar]\r\n');
     }
   }
 
+  private emitPrompt(): void {
+    this.writeEmitter.fire(replPrompt);
+  }
+
+  private ensurePromptFallbackTimer(): void {
+    if (this.promptFallbackTimer || this.hasRenderedConnectedIntro) {
+      return;
+    }
+
+    this.promptFallbackTimer = setTimeout(() => {
+      this.promptFallbackTimer = undefined;
+      if (!this.isPtyOpen || !getConnectedBoard() || this.hasRenderedConnectedIntro) {
+        return;
+      }
+
+      this.emitPrompt();
+      this.hasRenderedConnectedIntro = true;
+    }, promptFallbackDelayMs);
+  }
+
+  private clearPromptFallbackTimer(): void {
+    if (!this.promptFallbackTimer) {
+      return;
+    }
+
+    clearTimeout(this.promptFallbackTimer);
+    this.promptFallbackTimer = undefined;
+  }
 }
 
 export const initTerminal = (context: vscode.ExtensionContext): void => {
