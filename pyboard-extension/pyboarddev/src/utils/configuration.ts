@@ -12,6 +12,8 @@ export enum PyboardDevConfigurationResult {
 
 export interface PyboardDevConfiguration {
   pythonType: string;
+  mirrorFolder: string;
+  obfuscateOnPull: string[];
 }
 
 export interface MetaPyboardDevConfiguration {
@@ -24,7 +26,9 @@ export interface PyboardDevConfigurationWithMeta extends PyboardDevConfiguration
 }
 
 export const defaultConfiguration: PyboardDevConfiguration = {
-  pythonType: 'MicroPython'
+  pythonType: 'MicroPython',
+  mirrorFolder: '.pyboard-mirror',
+  obfuscateOnPull: []
 };
 
 export const getConfigurationFullFileName = (): string | undefined => {

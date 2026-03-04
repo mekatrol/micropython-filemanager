@@ -11,6 +11,7 @@ const boardConnectionStateEmitter = new vscode.EventEmitter<boolean>();
 
 export const onBoardConnectionStateChanged = boardConnectionStateEmitter.event;
 export const isBoardConnected = (): boolean => connectedBoard !== undefined;
+export const getConnectedBoard = (): Pyboard | undefined => connectedBoard;
 
 const notifyBoardConnectionStateChanged = (): void => {
   boardConnectionStateEmitter.fire(isBoardConnected());

@@ -40,8 +40,58 @@
       {
         "command": "mekatrol.pyboarddev.toggleboardconnection",
         "title": "Pyboard Dev: Toggle board connection"
+      },
+      {
+        "command": "mekatrol.pyboarddev.refreshmirrorview",
+        "title": "Pyboard Dev: Refresh mirror explorer",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mekatrol.pyboarddev.syncfromdevice",
+        "title": "Pyboard Dev: Sync from device",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "mekatrol.pyboarddev.synctodevice",
+        "title": "Pyboard Dev: Sync to device",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "mekatrol.pyboarddev.openlocalmirroritem",
+        "title": "Pyboard Dev: Open local mirror item"
+      },
+      {
+        "command": "mekatrol.pyboarddev.pullandopendeviceitem",
+        "title": "Pyboard Dev: Pull and open device item"
       }
-    ]
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "mekatrol.pyboarddev.deviceMirrorExplorer",
+          "name": "Pyboard Device Mirror"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "mekatrol.pyboarddev.refreshmirrorview",
+          "when": "view == mekatrol.pyboarddev.deviceMirrorExplorer",
+          "group": "navigation@1"
+        },
+        {
+          "command": "mekatrol.pyboarddev.syncfromdevice",
+          "when": "view == mekatrol.pyboarddev.deviceMirrorExplorer",
+          "group": "navigation@2"
+        },
+        {
+          "command": "mekatrol.pyboarddev.synctodevice",
+          "when": "view == mekatrol.pyboarddev.deviceMirrorExplorer",
+          "group": "navigation@3"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",

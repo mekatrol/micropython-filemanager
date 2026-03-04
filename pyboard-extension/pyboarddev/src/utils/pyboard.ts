@@ -289,6 +289,92 @@ export class Pyboard {
   }
 
   /**
+   * Execute a Python snippet in raw REPL and capture stdout/stderr.
+   * The board must already be connected.
+   */
+  async execRawCapture(command: string, timeoutMs: number = 10000): Promise<{ stdout: string; stderr: string }> {
+    this.assertPortOpen();
+
+    const rawPrompt = Buffer.from('raw REPL; CTRL-B to exit\r\n>');
+
+    await this.write('\r\x03');
+    await this.delay(this.waitDelay);
+    await this.readAllRaw();
+
+    await this.write('\r\x01');
+    await this.delay(this.waitDelay);
+    await this.readUntilSuffix(rawPrompt, timeoutMs);
+
+    await this.write(command);
+    await this.write('\x04');
+
+    const response = await this.readUntilSuffix(Buffer.from([0x04, 0x3e]), timeoutMs);
+
+    await this.write('\r\x02');
+    await this.delay(this.waitDelay);
+    await this.readAllRaw();
+
+    let payload = response;
+    if (payload.length >= 2 && payload[0] === 'O'.charCodeAt(0) && payload[1] === 'K'.charCodeAt(0)) {
+      payload = payload.slice(2);
+    }
+
+    const firstEot = payload.indexOf(0x04);
+    if (firstEot < 0) {
+      return { stdout: Buffer.from(payload).toString('utf8'), stderr: '' };
+    }
+
+    const stdoutBytes = payload.slice(0, firstEot);
+    const remainder = payload.slice(firstEot + 1);
+    const secondEot = remainder.lastIndexOf(0x04);
+    const stderrBytes = secondEot >= 0 ? remainder.slice(0, secondEot) : remainder;
+
+    return {
+      stdout: Buffer.from(stdoutBytes).toString('utf8'),
+      stderr: Buffer.from(stderrBytes).toString('utf8')
+    };
+  }
+
+  private async readUntilSuffix(suffix: Buffer, timeoutMs: number): Promise<number[]> {
+    this.assertPortOpen();
+
+    const deadline = Date.now() + timeoutMs;
+    const bytes: number[] = [];
+
+    while (Date.now() < deadline) {
+      const next = await this.serialPort!.read(1);
+      if (!next || next.length === 0) {
+        await this.delay(5);
+        continue;
+      }
+
+      for (const value of next.values()) {
+        bytes.push(value);
+      }
+
+      if (bytes.length >= suffix.length) {
+        let match = true;
+        const start = bytes.length - suffix.length;
+        for (let i = 0; i < suffix.length; i += 1) {
+          if (bytes[start + i] !== suffix[i]) {
+            match = false;
+            break;
+          }
+        }
+
+        if (match) {
+          return bytes.slice(0, -suffix.length);
+        }
+      }
+    }
+
+    throw this.reportError(
+      `Timed out waiting for serial response suffix ${JSON.stringify(Array.from(suffix.values()))}`,
+      new Error(`Timeout after ${timeoutMs}ms`)
+    );
+  }
+
+  /**
    * Asserts that the serial port is open.
    * Throws an error if port is not open.
    */

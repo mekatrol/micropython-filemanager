@@ -8,6 +8,7 @@ import {
   initDisconnectBoardCommand,
   initToggleBoardConnectionCommand
 } from './commands/connect-board-command';
+import { initDeviceMirrorExplorer } from './device-mirror-explorer';
 import { initTerminal } from './terminal';
 
 // This method is called when your extension is activated
@@ -25,6 +26,9 @@ export const activate = async (context: vscode.ExtensionContext) => {
 
   // Init status bar
   await initStatusBar(context);
+
+  // Init device mirror explorer
+  await initDeviceMirrorExplorer(context);
 
   // Init REPL terminal
   initTerminal();
