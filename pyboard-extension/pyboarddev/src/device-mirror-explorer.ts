@@ -66,7 +66,10 @@ class DeviceMirrorModel {
   private deviceEntries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
   private syncStates: Map<string, SyncState> = new Map();
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly notifyRemoteFilesChanged?: (relativePaths: string[]) => Promise<void>
+  ) {}
 
   private normalisePythonType(value: string | undefined): 'MicroPython' | 'CircuitPython' {
     const lowered = (value ?? '').toLowerCase();
@@ -131,6 +134,7 @@ class DeviceMirrorModel {
     }
 
     const deviceEntries = await listDeviceEntries(board);
+    const updatedDeviceFiles: string[] = [];
 
     for (const entry of deviceEntries) {
       if (entry.relativePath.length === 0) {
@@ -151,12 +155,16 @@ class DeviceMirrorModel {
 
       const content = await readDeviceFile(board, entry.relativePath);
       await fs.writeFile(localPath, content);
+      updatedDeviceFiles.push(entry.relativePath);
     }
 
     this.deviceEntries = deviceEntries;
     this.localEntries = await scanLocalMirrorEntries(this.mirrorRootPath);
     this.syncStates = buildSyncStateMap(this.localEntries, this.deviceEntries, this.obfuscationSet);
     this.onDidChangeDataEmitter.fire();
+    if (this.notifyRemoteFilesChanged) {
+      await this.notifyRemoteFilesChanged(updatedDeviceFiles);
+    }
 
     const msg = 'Sync from device complete.';
     vscode.window.showInformationMessage(msg);
@@ -180,6 +188,7 @@ class DeviceMirrorModel {
     }
 
     const localEntries = await scanLocalMirrorEntries(this.mirrorRootPath);
+    const writtenDeviceFiles: string[] = [];
     for (const entry of localEntries) {
       if (entry.isDirectory || entry.relativePath.length === 0) {
         continue;
@@ -193,12 +202,16 @@ class DeviceMirrorModel {
       const localPath = path.join(this.mirrorRootPath, entry.relativePath);
       const content = await fs.readFile(localPath);
       await writeDeviceFile(board, entry.relativePath, Buffer.from(content));
+      writtenDeviceFiles.push(entry.relativePath);
     }
 
     this.localEntries = localEntries;
     this.deviceEntries = await listDeviceEntries(board);
     this.syncStates = buildSyncStateMap(this.localEntries, this.deviceEntries, this.obfuscationSet);
     this.onDidChangeDataEmitter.fire();
+    if (this.notifyRemoteFilesChanged) {
+      await this.notifyRemoteFilesChanged(writtenDeviceFiles);
+    }
 
     const msg = 'Sync to device complete.';
     vscode.window.showInformationMessage(msg);
@@ -482,6 +495,26 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     throw vscode.FileSystemError.NoPermissions('Renaming on remote URI is not supported.');
   }
 
+  async notifyRemoteFilesChanged(relativePaths: string[]): Promise<void> {
+    if (relativePaths.length === 0) {
+      return;
+    }
+
+    const uniqueRelativePaths = [...new Set(relativePaths.map((item) => toRelativePath(item)).filter((item) => item.length > 0))];
+    if (uniqueRelativePaths.length === 0) {
+      return;
+    }
+
+    const events: vscode.FileChangeEvent[] = [];
+    for (const relativePath of uniqueRelativePaths) {
+      const uri = this.toRemoteUri(relativePath);
+      this.statCache.delete(uri.toString());
+      events.push({ type: vscode.FileChangeType.Changed, uri });
+    }
+
+    this.onDidChangeFileEmitter.fire(events);
+  }
+
   private toRelativeRemotePath(uri: vscode.Uri, board: NonNullable<ReturnType<typeof getConnectedBoard>>): string {
     const rawPath = toRelativePath(uri.path.replace(/^\/+/, ''));
     const segments = rawPath
@@ -511,6 +544,11 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     }
 
     return relativePath;
+  }
+
+  private toRemoteUri(relativePath: string): vscode.Uri {
+    const normalised = toRelativePath(relativePath).replace(/^\/+/, '');
+    return vscode.Uri.parse(`${remoteDocumentScheme}:/${normalised}`);
   }
 
   async updateWorkingCopyFromDocument(document: vscode.TextDocument): Promise<void> {
@@ -812,8 +850,10 @@ class SideTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.Di
 }
 
 export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext): Promise<void> => {
-  const model = new DeviceMirrorModel(context);
   const remoteFsProvider = new RemoteDeviceFileSystemProvider(context);
+  const model = new DeviceMirrorModel(context, async (relativePaths: string[]) => {
+    await remoteFsProvider.notifyRemoteFilesChanged(relativePaths);
+  });
 
   const localProvider = new SideTreeProvider('local', model);
   const deviceProvider = new SideTreeProvider('device', model);
