@@ -32,6 +32,10 @@
       {
         "command": "mekatrol.pyboarddev.connectboard",
         "title": "Pyboard Dev: Connect to board"
+      },
+      {
+        "command": "mekatrol.pyboarddev.disconnectboard",
+        "title": "Pyboard Dev: Disconnect from board"
       }
     ]
   },

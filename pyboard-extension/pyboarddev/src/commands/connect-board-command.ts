@@ -8,6 +8,34 @@ const defaultBaudRate = 115200;
 
 let connectedBoard: Pyboard | undefined;
 
+export const closeConnectedBoard = async (showSuccessMessage = true): Promise<void> => {
+  if (!connectedBoard) {
+    if (showSuccessMessage) {
+      const msg = 'No active board connection to close.';
+      vscode.window.showInformationMessage(msg);
+      logChannelOutput(msg, true);
+    }
+    return;
+  }
+
+  try {
+    await connectedBoard.close();
+    connectedBoard = undefined;
+
+    if (showSuccessMessage) {
+      const msg = 'Board connection closed.';
+      vscode.window.showInformationMessage(msg);
+      logChannelOutput(msg, true);
+    } else {
+      logChannelOutput('Board connection closed during extension shutdown.', false);
+    }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    const msg = `Failed to close board connection. ${reason}`;
+    logChannelOutput(msg, true);
+  }
+};
+
 export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
   const command = vscode.commands.registerCommand('mekatrol.pyboarddev.connectboard', async () => {
     const device = context.workspaceState.get<string>(selectedSerialPortStateKey);
@@ -22,7 +50,7 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
 
     try {
       if (connectedBoard) {
-        await connectedBoard.close();
+        await closeConnectedBoard(false);
       }
 
       const board = new Pyboard(device, baudRate);
@@ -38,6 +66,14 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
       vscode.window.showErrorMessage(msg);
       logChannelOutput(msg, true);
     }
+  });
+
+  context.subscriptions.push(command);
+};
+
+export const initDisconnectBoardCommand = (context: vscode.ExtensionContext) => {
+  const command = vscode.commands.registerCommand('mekatrol.pyboarddev.disconnectboard', async () => {
+    await closeConnectedBoard(true);
   });
 
   context.subscriptions.push(command);
