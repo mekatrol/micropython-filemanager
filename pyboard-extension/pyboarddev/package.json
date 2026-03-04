@@ -180,6 +180,11 @@
     },
     "keybindings": [
       {
+        "command": "mekatrol.pyboarddev.renameremotepath",
+        "key": "f2",
+        "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && listFocus"
+      },
+      {
         "command": "mekatrol.pyboarddev.deleteremotepath",
         "key": "delete",
         "mac": "backspace",

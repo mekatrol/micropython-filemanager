@@ -406,6 +406,7 @@ class DeviceMirrorModel {
   }
 
   async renameRemotePath(node?: MirrorNode): Promise<void> {
+    node = node ?? this.selectedRemoteNode;
     if (!node || node.data.side !== 'device') {
       vscode.window.showWarningMessage('Select a remote file or folder to rename.');
       return;
