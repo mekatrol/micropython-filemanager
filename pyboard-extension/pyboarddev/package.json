@@ -20,6 +20,10 @@
       {
         "command": "mekatrol.pyboarddev.initconfig",
         "title": "Pyboard Dev: Create configuration file"
+      },
+      {
+        "command": "mekatrol.pyboarddev.selectdevice",
+        "title": "Pyboard Dev: Select serial port"
       }
     ]
   },
