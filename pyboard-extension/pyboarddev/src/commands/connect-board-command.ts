@@ -71,10 +71,42 @@ const saveDirtyRemoteDocumentsBeforeDisconnect = async (): Promise<boolean> => {
   return true;
 };
 
+const getOpenRemoteTabs = (): vscode.Tab[] => {
+  const tabs: vscode.Tab[] = [];
+  for (const group of vscode.window.tabGroups.all) {
+    for (const tab of group.tabs) {
+      if (!(tab.input instanceof vscode.TabInputText)) {
+        continue;
+      }
+
+      if (tab.input.uri.scheme !== remoteDocumentScheme) {
+        continue;
+      }
+
+      tabs.push(tab);
+    }
+  }
+
+  return tabs;
+};
+
+const closeOpenRemoteTabsAfterDisconnect = async (): Promise<void> => {
+  const remoteTabs = getOpenRemoteTabs();
+  if (remoteTabs.length === 0) {
+    return;
+  }
+
+  const closed = await vscode.window.tabGroups.close(remoteTabs, true);
+  if (!closed) {
+    logChannelOutput('Disconnected, but some remote device tabs could not be closed.', true);
+  }
+};
+
 export const closeConnectedBoard = async (
   showSuccessMessage = true,
   preserveReconnectState = false,
-  promptToSaveDirtyDeviceFiles = true
+  promptToSaveDirtyDeviceFiles = true,
+  closeRemoteTabsAfterDisconnect = true
 ): Promise<boolean> => {
   if (!connectedBoard) {
     if (showSuccessMessage) {
@@ -101,6 +133,9 @@ export const closeConnectedBoard = async (
     }
     notifyBoardConnectionStateChanged();
     notifyBoardRuntimeInfoChanged();
+    if (closeRemoteTabsAfterDisconnect) {
+      await closeOpenRemoteTabsAfterDisconnect();
+    }
 
     if (showSuccessMessage) {
       const msg = 'Board connection closed.';

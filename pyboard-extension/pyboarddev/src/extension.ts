@@ -46,5 +46,13 @@ export const activate = async (context: vscode.ExtensionContext) => {
 
 // This method is called when your extension is deactivated
 export async function deactivate() {
-  await closeConnectedBoard(false, true, false);
+  const hasDirtyRemoteDocuments = vscode.workspace.textDocuments.some(
+    (document) => document.uri.scheme === 'pyboarddev-remote' && document.isDirty
+  );
+
+  if (hasDirtyRemoteDocuments) {
+    return;
+  }
+
+  await closeConnectedBoard(false, true, false, false);
 }

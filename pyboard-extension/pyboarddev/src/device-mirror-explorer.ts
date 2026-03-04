@@ -373,6 +373,12 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
   readonly onDidChangeFile = this.onDidChangeFileEmitter.event;
   private static readonly waitForConnectionSettingKey = 'remoteFileOpenWaitForConnectionMs';
   private static readonly defaultWaitForConnectionMs = 120000;
+  private readonly statCache = new Map<string, vscode.FileStat>();
+  private readonly backupRootPath: string;
+
+  constructor(private readonly context: vscode.ExtensionContext) {
+    this.backupRootPath = path.join(this.context.globalStorageUri.fsPath, 'remote-working-copy');
+  }
 
   watch(): vscode.Disposable {
     return new vscode.Disposable(() => undefined);
@@ -380,12 +386,16 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
 
   async stat(uri: vscode.Uri): Promise<vscode.FileStat> {
     const file = await this.readFile(uri);
-    return {
+    const key = uri.toString();
+    const previous = this.statCache.get(key);
+    const next: vscode.FileStat = {
       type: vscode.FileType.File,
-      ctime: 0,
-      mtime: Date.now(),
+      ctime: previous?.ctime ?? 0,
+      mtime: previous?.mtime ?? 0,
       size: file.length
     };
+    this.statCache.set(key, next);
+    return next;
   }
 
   readDirectory(): [string, vscode.FileType][] {
@@ -401,7 +411,16 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     const relativePath = this.toRelativeRemotePath(uri, board);
     try {
       const content = await readDeviceFile(board, relativePath);
-      return new Uint8Array(content);
+      const data = new Uint8Array(content);
+      const key = uri.toString();
+      const previous = this.statCache.get(key);
+      this.statCache.set(key, {
+        type: vscode.FileType.File,
+        ctime: previous?.ctime ?? 0,
+        mtime: previous?.mtime ?? 0,
+        size: data.length
+      });
+      return data;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/no such file|enoent|not found/i.test(message)) {
@@ -416,6 +435,15 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     const relativePath = this.toRelativeRemotePath(uri, board);
     try {
       await writeDeviceFile(board, relativePath, Buffer.from(content));
+      await this.removeWorkingCopy(uri);
+      const key = uri.toString();
+      const previous = this.statCache.get(key);
+      this.statCache.set(key, {
+        type: vscode.FileType.File,
+        ctime: previous?.ctime ?? Date.now(),
+        mtime: Date.now(),
+        size: content.length
+      });
       logChannelOutput(`Saved to device: ${relativePath}`, true);
       this.onDidChangeFileEmitter.fire([{ type: vscode.FileChangeType.Changed, uri }]);
     } catch (error) {
@@ -463,6 +491,60 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     return relativePath;
   }
 
+  async updateWorkingCopyFromDocument(document: vscode.TextDocument): Promise<void> {
+    if (document.uri.scheme !== remoteDocumentScheme) {
+      return;
+    }
+
+    if (!document.isDirty) {
+      await this.removeWorkingCopy(document.uri);
+      return;
+    }
+
+    const content = Buffer.from(document.getText(), 'utf8');
+    await this.writeWorkingCopy(document.uri, content);
+
+    const now = Date.now();
+    this.statCache.set(document.uri.toString(), {
+      type: vscode.FileType.File,
+      ctime: now,
+      mtime: now,
+      size: content.length
+    });
+  }
+
+  async clearWorkingCopy(uri: vscode.Uri): Promise<void> {
+    if (uri.scheme !== remoteDocumentScheme) {
+      return;
+    }
+
+    await this.removeWorkingCopy(uri);
+  }
+
+  async restoreWorkingCopyToDocument(document: vscode.TextDocument): Promise<void> {
+    if (document.uri.scheme !== remoteDocumentScheme || document.isClosed) {
+      return;
+    }
+
+    const workingCopy = await this.readWorkingCopy(document.uri);
+    if (!workingCopy) {
+      return;
+    }
+
+    const restoredText = Buffer.from(workingCopy).toString('utf8');
+    if (document.getText() === restoredText) {
+      return;
+    }
+
+    const fullRange = new vscode.Range(
+      document.positionAt(0),
+      document.positionAt(document.getText().length)
+    );
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(document.uri, fullRange, restoredText);
+    await vscode.workspace.applyEdit(edit);
+  }
+
   private async getConnectedBoardOrWait(): Promise<NonNullable<ReturnType<typeof getConnectedBoard>>> {
     const connected = getConnectedBoard();
     if (connected) {
@@ -501,6 +583,38 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
         }, timeoutMs);
       }
     });
+  }
+
+  private workingCopyPath(uri: vscode.Uri): string {
+    const key = Buffer.from(uri.toString(), 'utf8').toString('base64url');
+    return path.join(this.backupRootPath, `${key}.txt`);
+  }
+
+  private async readWorkingCopy(uri: vscode.Uri): Promise<Uint8Array | undefined> {
+    try {
+      const content = await fs.readFile(this.workingCopyPath(uri));
+      return new Uint8Array(content);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return undefined;
+      }
+      throw error;
+    }
+  }
+
+  private async writeWorkingCopy(uri: vscode.Uri, content: Uint8Array): Promise<void> {
+    await fs.mkdir(this.backupRootPath, { recursive: true });
+    await fs.writeFile(this.workingCopyPath(uri), Buffer.from(content));
+  }
+
+  private async removeWorkingCopy(uri: vscode.Uri): Promise<void> {
+    try {
+      await fs.unlink(this.workingCopyPath(uri));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error;
+      }
+    }
   }
 }
 
@@ -604,7 +718,7 @@ class SideTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.Di
 
 export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext): Promise<void> => {
   const model = new DeviceMirrorModel(context);
-  const remoteFsProvider = new RemoteDeviceFileSystemProvider();
+  const remoteFsProvider = new RemoteDeviceFileSystemProvider(context);
 
   const localProvider = new SideTreeProvider('local', model);
   const deviceProvider = new SideTreeProvider('device', model);
@@ -618,6 +732,15 @@ export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext)
   context.subscriptions.push(onBoardConnectionStateChanged(() => model.refresh()));
   context.subscriptions.push(onPythonTypeChanged(() => model.refresh(false)));
   context.subscriptions.push(vscode.workspace.onDidSaveTextDocument((document) => model.handleDocumentSaved(document)));
+  context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => void remoteFsProvider.updateWorkingCopyFromDocument(event.document)));
+  context.subscriptions.push(vscode.workspace.onDidOpenTextDocument((document) => void remoteFsProvider.restoreWorkingCopyToDocument(document)));
+  context.subscriptions.push(
+    vscode.workspace.onDidCloseTextDocument((document) => {
+      if (document.uri.scheme === remoteDocumentScheme && !document.isDirty) {
+        void remoteFsProvider.clearWorkingCopy(document.uri);
+      }
+    })
+  );
   context.subscriptions.push(vscode.workspace.onDidDeleteFiles((event) => event.files.forEach((uri) => model.handlePossibleMirrorFileChange(uri.fsPath))));
   context.subscriptions.push(vscode.workspace.onDidCreateFiles((event) => event.files.forEach((uri) => model.handlePossibleMirrorFileChange(uri.fsPath))));
 
