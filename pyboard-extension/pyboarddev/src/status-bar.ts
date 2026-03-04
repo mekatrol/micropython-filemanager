@@ -59,6 +59,10 @@ export const updateStatusBarItem = async (): Promise<void> => {
   const connected = isBoardConnected();
 
   deviceStatusBarItem.text = `$(circuit-board) ${selectedDevice ?? '<select device>'} [${selectedBaudRate}]`;
+  deviceStatusBarItem.command = connected ? undefined : statusBarSelectCommunicationId;
+  deviceStatusBarItem.tooltip = connected
+    ? 'Serial port selection is disabled while connected. Disconnect to change the device.'
+    : 'Select serial port';
   deviceStatusBarItem.backgroundColor = selectedDevice ? undefined : new vscode.ThemeColor('statusBarItem.errorBackground');
   deviceStatusBarItem.show();
 
@@ -160,6 +164,13 @@ const getActivePythonType = async (): Promise<PythonType> => {
 };
 
 const selectSerialDevice = async (): Promise<void> => {
+  if (isBoardConnected()) {
+    const msg = 'Disconnect from the board before selecting a different serial port.';
+    vscode.window.showWarningMessage(msg);
+    logChannelOutput(msg, true);
+    return;
+  }
+
   let ports: Awaited<ReturnType<typeof listSerialDevices>>;
   try {
     ports = await listSerialDevices();
@@ -199,6 +210,13 @@ const selectSerialDevice = async (): Promise<void> => {
   });
 
   if (!selected) {
+    return;
+  }
+
+  if (isBoardConnected()) {
+    const msg = 'Board connected while selecting serial port. Disconnect before changing the selected device.';
+    vscode.window.showWarningMessage(msg);
+    logChannelOutput(msg, true);
     return;
   }
 

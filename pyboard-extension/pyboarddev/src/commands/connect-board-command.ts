@@ -21,6 +21,7 @@ export const getConnectedBoard = (): Pyboard | undefined => connectedBoard;
 export const getConnectedBoardRuntimeInfo = (): BoardRuntimeInfo | undefined => connectedBoardRuntimeInfo;
 
 const notifyBoardConnectionStateChanged = (): void => {
+  void vscode.commands.executeCommand('setContext', 'mekatrol.pyboarddev.boardConnected', isBoardConnected());
   boardConnectionStateEmitter.fire(isBoardConnected());
 };
 

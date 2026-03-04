@@ -23,7 +23,8 @@
       },
       {
         "command": "mekatrol.pyboarddev.selectdevice",
-        "title": "Pyboard Dev: Select serial port"
+        "title": "Pyboard Dev: Select serial port",
+        "enablement": "!mekatrol.pyboarddev.boardConnected"
       },
       {
         "command": "mekatrol.pyboarddev.selectpythontype",
