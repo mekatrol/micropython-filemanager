@@ -7,6 +7,14 @@ const selectedBaudRateStateKey = 'selectedBaudRate';
 const defaultBaudRate = 115200;
 
 let connectedBoard: Pyboard | undefined;
+const boardConnectionStateEmitter = new vscode.EventEmitter<boolean>();
+
+export const onBoardConnectionStateChanged = boardConnectionStateEmitter.event;
+export const isBoardConnected = (): boolean => connectedBoard !== undefined;
+
+const notifyBoardConnectionStateChanged = (): void => {
+  boardConnectionStateEmitter.fire(isBoardConnected());
+};
 
 export const closeConnectedBoard = async (showSuccessMessage = true): Promise<void> => {
   if (!connectedBoard) {
@@ -21,6 +29,7 @@ export const closeConnectedBoard = async (showSuccessMessage = true): Promise<vo
   try {
     await connectedBoard.close();
     connectedBoard = undefined;
+    notifyBoardConnectionStateChanged();
 
     if (showSuccessMessage) {
       const msg = 'Board connection closed.';
@@ -56,6 +65,7 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
       const board = new Pyboard(device, baudRate);
       await board.open();
       connectedBoard = board;
+      notifyBoardConnectionStateChanged();
 
       const msg = `Connected to board on ${device} @ ${baudRate}.`;
       vscode.window.showInformationMessage(msg);
@@ -74,6 +84,19 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
 export const initDisconnectBoardCommand = (context: vscode.ExtensionContext) => {
   const command = vscode.commands.registerCommand('mekatrol.pyboarddev.disconnectboard', async () => {
     await closeConnectedBoard(true);
+  });
+
+  context.subscriptions.push(command);
+};
+
+export const initToggleBoardConnectionCommand = (context: vscode.ExtensionContext) => {
+  const command = vscode.commands.registerCommand('mekatrol.pyboarddev.toggleboardconnection', async () => {
+    if (isBoardConnected()) {
+      await closeConnectedBoard(true);
+      return;
+    }
+
+    await vscode.commands.executeCommand('mekatrol.pyboarddev.connectboard');
   });
 
   context.subscriptions.push(command);

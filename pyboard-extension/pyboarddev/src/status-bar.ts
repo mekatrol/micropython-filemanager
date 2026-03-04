@@ -1,10 +1,12 @@
 import * as vscode from 'vscode';
+import { isBoardConnected, onBoardConnectionStateChanged } from './commands/connect-board-command';
 import { configurationFileName, loadConfiguration } from './utils/configuration';
 import { listSerialDevices } from './utils/serial-port';
 import { logChannelOutput } from './output-channel';
 
 const statusBarSelectCommunicationId = 'mekatrol.pyboarddev.selectdevice';
 const statusBarSelectPythonTypeId = 'mekatrol.pyboarddev.selectpythontype';
+const statusBarToggleBoardConnectionId = 'mekatrol.pyboarddev.toggleboardconnection';
 const selectedSerialPortStateKey = 'selectedSerialPort';
 const selectedBaudRateStateKey = 'selectedBaudRate';
 const selectedPythonTypeStateKey = 'selectedPythonType';
@@ -14,6 +16,7 @@ type PythonType = typeof pythonTypes[number];
 
 let deviceStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 let pythonTypeStatusBarItem: vscode.StatusBarItem | undefined = undefined;
+let boardConnectionStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 let extensionContext: vscode.ExtensionContext | undefined = undefined;
 
 export const initStatusBar = async (context: vscode.ExtensionContext): Promise<void> => {
@@ -22,6 +25,7 @@ export const initStatusBar = async (context: vscode.ExtensionContext): Promise<v
   // Create device name status bar item
   createDeviceNameStatusBarItem(context);
   createPythonTypeStatusBarItem(context);
+  createBoardConnectionStatusBarItem(context);
 
   // Update status bar item once at start
   await updateStatusBarItem();
@@ -31,16 +35,18 @@ export const initStatusBar = async (context: vscode.ExtensionContext): Promise<v
   watcher.onDidChange((_uri) => updateStatusBarItem());
   watcher.onDidDelete((_uri) => updateStatusBarItem());
   context.subscriptions.push(watcher);
+  context.subscriptions.push(onBoardConnectionStateChanged(() => updateStatusBarItem()));
 };
 
 export const updateStatusBarItem = async (): Promise<void> => {
-  if (!deviceStatusBarItem || !pythonTypeStatusBarItem) {
+  if (!deviceStatusBarItem || !pythonTypeStatusBarItem || !boardConnectionStatusBarItem) {
     return;
   }
 
   const selectedDevice = getActiveDevice();
   const selectedBaudRate = getActiveBaudRate();
   const selectedPythonType = await getActivePythonType();
+  const connected = isBoardConnected();
 
   deviceStatusBarItem.text = `$(circuit-board) ${selectedDevice ?? '<select device>'} [${selectedBaudRate}]`;
   deviceStatusBarItem.backgroundColor = selectedDevice ? undefined : new vscode.ThemeColor('statusBarItem.errorBackground');
@@ -48,6 +54,13 @@ export const updateStatusBarItem = async (): Promise<void> => {
 
   pythonTypeStatusBarItem.text = `$(symbol-class) ${selectedPythonType}`;
   pythonTypeStatusBarItem.show();
+
+  boardConnectionStatusBarItem.text = connected ? '$(debug-disconnect) Board: Connected' : '$(plug) Board: Disconnected';
+  boardConnectionStatusBarItem.tooltip = connected ? 'Disconnect from board' : 'Connect to board';
+  boardConnectionStatusBarItem.backgroundColor = !connected && !selectedDevice
+    ? new vscode.ThemeColor('statusBarItem.warningBackground')
+    : undefined;
+  boardConnectionStatusBarItem.show();
 };
 
 const createDeviceNameStatusBarItem = (context: vscode.ExtensionContext) => {
@@ -78,6 +91,12 @@ const createPythonTypeStatusBarItem = (context: vscode.ExtensionContext) => {
   pythonTypeStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
   pythonTypeStatusBarItem.command = statusBarSelectPythonTypeId;
   context.subscriptions.push(pythonTypeStatusBarItem);
+};
+
+const createBoardConnectionStatusBarItem = (context: vscode.ExtensionContext) => {
+  boardConnectionStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 98);
+  boardConnectionStatusBarItem.command = statusBarToggleBoardConnectionId;
+  context.subscriptions.push(boardConnectionStatusBarItem);
 };
 
 const getActiveDevice = (): string | undefined => {

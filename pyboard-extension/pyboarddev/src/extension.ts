@@ -2,7 +2,12 @@ import * as vscode from 'vscode';
 import { initStatusBar } from './status-bar';
 import { initOutputChannel, logChannelOutput as logChannelOutput } from './output-channel';
 import { initCreateConfigCommand } from './commands/create-config-command';
-import { closeConnectedBoard, initConnectBoardCommand, initDisconnectBoardCommand } from './commands/connect-board-command';
+import {
+  closeConnectedBoard,
+  initConnectBoardCommand,
+  initDisconnectBoardCommand,
+  initToggleBoardConnectionCommand
+} from './commands/connect-board-command';
 import { initTerminal } from './terminal';
 
 // This method is called when your extension is activated
@@ -16,6 +21,7 @@ export const activate = async (context: vscode.ExtensionContext) => {
   initCreateConfigCommand(context);
   initConnectBoardCommand(context);
   initDisconnectBoardCommand(context);
+  initToggleBoardConnectionCommand(context);
 
   // Init status bar
   await initStatusBar(context);
