@@ -63,6 +63,10 @@
       {
         "command": "mekatrol.pyboarddev.pullandopendeviceitem",
         "title": "Pyboard Dev: Pull and open device item"
+      },
+      {
+        "command": "mekatrol.pyboarddev.openremotefile",
+        "title": "Pyboard Dev: Open remote device file"
       }
     ],
     "views": {
@@ -93,6 +97,13 @@
           "command": "mekatrol.pyboarddev.synctodevice",
           "when": "view == mekatrol.pyboarddev.localMirrorExplorer || view == mekatrol.pyboarddev.deviceFilesystemExplorer",
           "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "mekatrol.pyboarddev.openremotefile",
+          "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && viewItem == pyboarddev.deviceNode",
+          "group": "inline@1"
         }
       ]
     }

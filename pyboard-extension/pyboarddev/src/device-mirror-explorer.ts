@@ -25,6 +25,7 @@ const commandSyncFromDeviceId = 'mekatrol.pyboarddev.syncfromdevice';
 const commandSyncToDeviceId = 'mekatrol.pyboarddev.synctodevice';
 const commandOpenLocalItemId = 'mekatrol.pyboarddev.openlocalmirroritem';
 const commandPullAndOpenDeviceItemId = 'mekatrol.pyboarddev.pullandopendeviceitem';
+const commandOpenRemoteFileId = 'mekatrol.pyboarddev.openremotefile';
 
 const obfuscatedPlaceholder = '# pyboarddev: obfuscated on pull\n';
 
@@ -229,6 +230,53 @@ class DeviceMirrorModel {
     await vscode.window.showTextDocument(document, { preview: false });
   }
 
+  async openRemoteFile(node?: MirrorNode): Promise<void> {
+    if (node) {
+      await this.pullDeviceNodeAndOpen(node);
+      return;
+    }
+
+    const board = getConnectedBoard();
+    if (!board) {
+      vscode.window.showWarningMessage('Connect to a board before opening a remote file.');
+      return;
+    }
+
+    const files = this.deviceEntries
+      .filter((entry) => !entry.isDirectory && entry.relativePath.length > 0)
+      .sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+
+    if (files.length === 0) {
+      vscode.window.showInformationMessage('No remote files available to open.');
+      return;
+    }
+
+    const selected = await vscode.window.showQuickPick(
+      files.map((item) => ({ label: item.relativePath })),
+      {
+        placeHolder: 'Select a remote file to open',
+        canPickMany: false,
+        ignoreFocusOut: true
+      }
+    );
+
+    if (!selected) {
+      return;
+    }
+
+    const quickPickNode = new MirrorNode(
+      {
+        side: 'device',
+        relativePath: selected.label,
+        isDirectory: false
+      },
+      selected.label,
+      vscode.TreeItemCollapsibleState.None
+    );
+
+    await this.pullDeviceNodeAndOpen(quickPickNode);
+  }
+
   getNodeChildren(side: NodeSide, parentRelativePath: string): MirrorNode[] {
     const sourceEntries = side === 'device' ? this.deviceEntries : this.localEntries;
     const nodes: MirrorNode[] = [];
@@ -338,8 +386,8 @@ class SideTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.Di
 
     if (!data.isDirectory && data.side === 'device') {
       element.command = {
-        command: commandPullAndOpenDeviceItemId,
-        title: 'Pull and open device file',
+        command: commandOpenRemoteFileId,
+        title: 'Open remote device file',
         arguments: [element]
       };
     }
@@ -378,6 +426,7 @@ export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext)
   context.subscriptions.push(vscode.commands.registerCommand(commandSyncToDeviceId, async () => model.syncToDevice()));
   context.subscriptions.push(vscode.commands.registerCommand(commandOpenLocalItemId, async (node: MirrorNode) => model.openLocalNode(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandPullAndOpenDeviceItemId, async (node: MirrorNode) => model.pullDeviceNodeAndOpen(node)));
+  context.subscriptions.push(vscode.commands.registerCommand(commandOpenRemoteFileId, async (node?: MirrorNode) => model.openRemoteFile(node)));
 
   await model.refresh();
 };

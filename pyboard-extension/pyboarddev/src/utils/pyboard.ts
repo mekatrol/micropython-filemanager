@@ -281,10 +281,22 @@ export class Pyboard {
       buffer[i] = data.charCodeAt(i);
     }
 
-    this.serialPort!.write(buffer, undefined, (err) => {
-      if (err) {
-        this.reportError('Failed to write to serial port', err);
-      }
+    await new Promise<void>((resolve, reject) => {
+      this.serialPort!.write(buffer, undefined, (err) => {
+        if (err) {
+          reject(this.reportError('Failed to write to serial port', err));
+          return;
+        }
+
+        this.serialPort!.drain((drainError) => {
+          if (drainError) {
+            reject(this.reportError('Failed to flush serial write buffer', drainError));
+            return;
+          }
+
+          resolve();
+        });
+      });
     });
   }
 
@@ -295,24 +307,22 @@ export class Pyboard {
   async execRawCapture(command: string, timeoutMs: number = 10000): Promise<{ stdout: string; stderr: string }> {
     this.assertPortOpen();
 
-    const rawPrompt = Buffer.from('raw REPL; CTRL-B to exit\r\n>');
+    const rawPromptText = Buffer.from('raw REPL; CTRL-B to exit');
 
-    await this.write('\r\x03');
-    await this.delay(this.waitDelay);
-    await this.readAllRaw();
+    // Stop any running code and clear pending output before entering raw REPL.
+    await this.write('\r\x03\x03');
+    await this.readUntilIdle(120, 600);
 
     await this.write('\r\x01');
-    await this.delay(this.waitDelay);
-    await this.readUntilSuffix(rawPrompt, timeoutMs);
+    await this.waitForDataContains([rawPromptText], timeoutMs);
 
     await this.write(command);
     await this.write('\x04');
 
-    const response = await this.readUntilSuffix(Buffer.from([0x04, 0x3e]), timeoutMs);
+    const response = await this.waitForDataEndingWith(Buffer.from([0x04, 0x3e]), timeoutMs);
 
     await this.write('\r\x02');
-    await this.delay(this.waitDelay);
-    await this.readAllRaw();
+    await this.readUntilIdle(100, 600);
 
     let payload = response;
     if (payload.length >= 2 && payload[0] === 'O'.charCodeAt(0) && payload[1] === 'K'.charCodeAt(0)) {
@@ -335,43 +345,148 @@ export class Pyboard {
     };
   }
 
-  private async readUntilSuffix(suffix: Buffer, timeoutMs: number): Promise<number[]> {
+  private async waitForDataContains(patterns: Buffer[], timeoutMs: number): Promise<number[]> {
     this.assertPortOpen();
 
-    const deadline = Date.now() + timeoutMs;
     const bytes: number[] = [];
+    return await new Promise<number[]>((resolve, reject) => {
+      const onData = (chunk: Buffer) => {
+        for (const value of chunk.values()) {
+          bytes.push(value);
+        }
 
-    while (Date.now() < deadline) {
-      const next = await this.serialPort!.read(1);
-      if (!next || next.length === 0) {
-        await this.delay(5);
-        continue;
-      }
+        const buffer = Buffer.from(bytes);
+        for (const pattern of patterns) {
+          if (buffer.indexOf(pattern) >= 0) {
+            cleanup();
+            resolve(bytes);
+            return;
+          }
+        }
+      };
 
-      for (const value of next.values()) {
-        bytes.push(value);
-      }
+      const onError = (error: Error) => {
+        cleanup();
+        reject(this.reportError('Serial read failed while waiting for prompt', error));
+      };
 
-      if (bytes.length >= suffix.length) {
-        let match = true;
+      const onTimeout = () => {
+        cleanup();
+        reject(
+          this.reportError(
+            `Timed out waiting for serial response containing ${patterns.map((item) => JSON.stringify(Array.from(item.values()))).join(', ')}`,
+            new Error(`Timeout after ${timeoutMs}ms`)
+          )
+        );
+      };
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        this.serialPort!.off('data', onData);
+        this.serialPort!.off('error', onError);
+      };
+
+      const timer = setTimeout(onTimeout, timeoutMs);
+      this.serialPort!.on('data', onData);
+      this.serialPort!.on('error', onError);
+    });
+  }
+
+  private async waitForDataEndingWith(suffix: Buffer, timeoutMs: number): Promise<number[]> {
+    this.assertPortOpen();
+
+    const bytes: number[] = [];
+    return await new Promise<number[]>((resolve, reject) => {
+      const onData = (chunk: Buffer) => {
+        for (const value of chunk.values()) {
+          bytes.push(value);
+        }
+
+        if (bytes.length < suffix.length) {
+          return;
+        }
+
         const start = bytes.length - suffix.length;
         for (let i = 0; i < suffix.length; i += 1) {
           if (bytes[start + i] !== suffix[i]) {
-            match = false;
-            break;
+            return;
           }
         }
 
-        if (match) {
-          return bytes.slice(0, -suffix.length);
-        }
-      }
-    }
+        cleanup();
+        resolve(bytes.slice(0, -suffix.length));
+      };
 
-    throw this.reportError(
-      `Timed out waiting for serial response suffix ${JSON.stringify(Array.from(suffix.values()))}`,
-      new Error(`Timeout after ${timeoutMs}ms`)
-    );
+      const onError = (error: Error) => {
+        cleanup();
+        reject(this.reportError('Serial read failed while waiting for command response', error));
+      };
+
+      const onTimeout = () => {
+        cleanup();
+        reject(
+          this.reportError(
+            `Timed out waiting for serial response suffix ${JSON.stringify(Array.from(suffix.values()))}`,
+            new Error(`Timeout after ${timeoutMs}ms`)
+          )
+        );
+      };
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        this.serialPort!.off('data', onData);
+        this.serialPort!.off('error', onError);
+      };
+
+      const timer = setTimeout(onTimeout, timeoutMs);
+      this.serialPort!.on('data', onData);
+      this.serialPort!.on('error', onError);
+    });
+  }
+
+  private async readUntilIdle(idleMs: number, maxMs: number): Promise<void> {
+    this.assertPortOpen();
+
+    await new Promise<void>((resolve) => {
+      let idleTimer: NodeJS.Timeout | undefined;
+      let maxTimer: NodeJS.Timeout | undefined;
+
+      const cleanup = () => {
+        if (idleTimer) {
+          clearTimeout(idleTimer);
+        }
+
+        if (maxTimer) {
+          clearTimeout(maxTimer);
+        }
+
+        this.serialPort!.off('data', onData);
+        this.serialPort!.off('error', onError);
+      };
+
+      const finish = () => {
+        cleanup();
+        resolve();
+      };
+
+      const onData = () => {
+        if (idleTimer) {
+          clearTimeout(idleTimer);
+        }
+
+        idleTimer = setTimeout(finish, idleMs);
+      };
+
+      const onError = () => {
+        finish();
+      };
+
+      idleTimer = setTimeout(finish, idleMs);
+      maxTimer = setTimeout(finish, maxMs);
+
+      this.serialPort!.on('data', onData);
+      this.serialPort!.on('error', onError);
+    });
   }
 
   /**
