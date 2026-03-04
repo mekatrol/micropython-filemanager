@@ -50,18 +50,6 @@ class MirrorNode extends vscode.TreeItem {
   }
 }
 
-class RemoteDeviceDocumentProvider implements vscode.TextDocumentContentProvider {
-  private readonly documents = new Map<string, string>();
-
-  setContent(uri: vscode.Uri, content: string): void {
-    this.documents.set(uri.toString(), content);
-  }
-
-  provideTextDocumentContent(uri: vscode.Uri): string {
-    return this.documents.get(uri.toString()) ?? '';
-  }
-}
-
 class DeviceMirrorModel {
   private readonly onDidChangeDataEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeData = this.onDidChangeDataEmitter.event;
@@ -75,10 +63,7 @@ class DeviceMirrorModel {
   private deviceEntries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
   private syncStates: Map<string, SyncState> = new Map();
 
-  constructor(
-    private readonly context: vscode.ExtensionContext,
-    private readonly remoteDocumentProvider: RemoteDeviceDocumentProvider
-  ) {}
+  constructor(private readonly context: vscode.ExtensionContext) {}
 
   private normalisePythonType(value: string | undefined): 'MicroPython' | 'CircuitPython' {
     const lowered = (value ?? '').toLowerCase();
@@ -233,8 +218,7 @@ class DeviceMirrorModel {
   }
 
   async pullDeviceNodeAndOpen(node: MirrorNode): Promise<void> {
-    const board = getConnectedBoard();
-    if (!board) {
+    if (!getConnectedBoard()) {
       vscode.window.showWarningMessage('Connect to a board before opening a device file.');
       return;
     }
@@ -247,27 +231,8 @@ class DeviceMirrorModel {
       return;
     }
 
-    const relativePath = node.data.relativePath;
-    const localPath = path.join(this.mirrorRootPath, relativePath);
-    await fs.mkdir(path.dirname(localPath), { recursive: true });
-
-    let editorContent: Buffer;
-    if (this.obfuscationSet.has(relativePath)) {
-      editorContent = Buffer.from(obfuscatedPlaceholder, 'utf8');
-      await fs.writeFile(localPath, editorContent);
-    } else {
-      editorContent = await readDeviceFile(board, relativePath);
-      await fs.writeFile(localPath, editorContent);
-    }
-
-    await this.refresh();
-    const deviceName = (path.basename(board.device) || board.device).replace(/[^\w.-]/g, '_');
-    const pythonTypePrefix = this.normalisePythonType(this.pythonType);
-    // const remotePath = `${pythonTypePrefix}:/${deviceName}/${toRelativePath(relativePath)}`;
-    const remotePath = `/${deviceName}/${toRelativePath(relativePath)}`;
-    const remoteUri = vscode.Uri.parse(`${remoteDocumentScheme}:${remotePath}`);
-
-    this.remoteDocumentProvider.setContent(remoteUri, editorContent.toString('utf8'));
+    const relativePath = toRelativePath(node.data.relativePath);
+    const remoteUri = vscode.Uri.parse(`${remoteDocumentScheme}:/${relativePath}`);
     const document = await vscode.workspace.openTextDocument(remoteUri);
     await vscode.window.showTextDocument(document, { preview: false });
   }
@@ -365,17 +330,108 @@ class DeviceMirrorModel {
     return getConnectedBoard() !== undefined;
   }
 
-  async handlePossibleMirrorFileChange(fsPath: string): Promise<void> {
+  private toMirrorRelativePath(fsPath: string): string | undefined {
     if (!this.mirrorRootPath) {
-      return;
+      return undefined;
     }
 
     const normalised = toRelativePath(path.relative(this.mirrorRootPath, fsPath));
     if (normalised.startsWith('..')) {
+      return undefined;
+    }
+
+    return normalised;
+  }
+
+  async handleDocumentSaved(document: vscode.TextDocument): Promise<void> {
+    if (document.uri.scheme === remoteDocumentScheme) {
+      await this.refresh(true);
+      return;
+    }
+
+    if (document.uri.scheme === 'file') {
+      const relativePath = this.toMirrorRelativePath(document.uri.fsPath);
+      if (!relativePath) {
+        return;
+      }
+
+      await this.refresh(false);
+    }
+  }
+
+  async handlePossibleMirrorFileChange(fsPath: string): Promise<void> {
+    if (!this.toMirrorRelativePath(fsPath)) {
       return;
     }
 
     await this.refresh(false);
+  }
+}
+
+class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
+  private readonly onDidChangeFileEmitter = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
+  readonly onDidChangeFile = this.onDidChangeFileEmitter.event;
+
+  watch(): vscode.Disposable {
+    return new vscode.Disposable(() => undefined);
+  }
+
+  async stat(uri: vscode.Uri): Promise<vscode.FileStat> {
+    const file = await this.readFile(uri);
+    return {
+      type: vscode.FileType.File,
+      ctime: 0,
+      mtime: Date.now(),
+      size: file.length
+    };
+  }
+
+  readDirectory(): [string, vscode.FileType][] {
+    return [];
+  }
+
+  createDirectory(): void {
+    throw vscode.FileSystemError.NoPermissions('Creating directories on remote URI is not supported.');
+  }
+
+  async readFile(uri: vscode.Uri): Promise<Uint8Array> {
+    const board = getConnectedBoard();
+    if (!board) {
+      throw vscode.FileSystemError.Unavailable('Board not connected.');
+    }
+
+    const relativePath = this.toRelativeRemotePath(uri);
+    const content = await readDeviceFile(board, relativePath);
+    return new Uint8Array(content);
+  }
+
+  async writeFile(uri: vscode.Uri, content: Uint8Array): Promise<void> {
+    const board = getConnectedBoard();
+    if (!board) {
+      throw vscode.FileSystemError.Unavailable('Board not connected.');
+    }
+
+    const relativePath = this.toRelativeRemotePath(uri);
+    await writeDeviceFile(board, relativePath, Buffer.from(content));
+    logChannelOutput(`Saved to device: ${relativePath}`, true);
+    this.onDidChangeFileEmitter.fire([{ type: vscode.FileChangeType.Changed, uri }]);
+  }
+
+  delete(): void {
+    throw vscode.FileSystemError.NoPermissions('Deleting on remote URI is not supported.');
+  }
+
+  rename(): void {
+    throw vscode.FileSystemError.NoPermissions('Renaming on remote URI is not supported.');
+  }
+
+  private toRelativeRemotePath(uri: vscode.Uri): string {
+    const relativePath = toRelativePath(uri.path.replace(/^\/+/, ''));
+    if (!relativePath) {
+      throw vscode.FileSystemError.FileNotFound('Remote file path is empty.');
+    }
+
+    return relativePath;
   }
 }
 
@@ -478,8 +534,8 @@ class SideTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.Di
 }
 
 export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext): Promise<void> => {
-  const remoteDocumentProvider = new RemoteDeviceDocumentProvider();
-  const model = new DeviceMirrorModel(context, remoteDocumentProvider);
+  const model = new DeviceMirrorModel(context);
+  const remoteFsProvider = new RemoteDeviceFileSystemProvider();
 
   const localProvider = new SideTreeProvider('local', model);
   const deviceProvider = new SideTreeProvider('device', model);
@@ -488,11 +544,11 @@ export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext)
   context.subscriptions.push(deviceProvider);
   context.subscriptions.push(vscode.window.registerTreeDataProvider(localViewId, localProvider));
   context.subscriptions.push(vscode.window.registerTreeDataProvider(deviceViewId, deviceProvider));
-  context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider(remoteDocumentScheme, remoteDocumentProvider));
+  context.subscriptions.push(vscode.workspace.registerFileSystemProvider(remoteDocumentScheme, remoteFsProvider, { isCaseSensitive: true }));
 
   context.subscriptions.push(onBoardConnectionStateChanged(() => model.refresh()));
   context.subscriptions.push(onPythonTypeChanged(() => model.refresh(false)));
-  context.subscriptions.push(vscode.workspace.onDidSaveTextDocument((document) => model.handlePossibleMirrorFileChange(document.uri.fsPath)));
+  context.subscriptions.push(vscode.workspace.onDidSaveTextDocument((document) => model.handleDocumentSaved(document)));
   context.subscriptions.push(vscode.workspace.onDidDeleteFiles((event) => event.files.forEach((uri) => model.handlePossibleMirrorFileChange(uri.fsPath))));
   context.subscriptions.push(vscode.workspace.onDidCreateFiles((event) => event.files.forEach((uri) => model.handlePossibleMirrorFileChange(uri.fsPath))));
 
