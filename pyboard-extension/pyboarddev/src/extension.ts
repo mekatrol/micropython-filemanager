@@ -35,7 +35,7 @@ export const activate = async (context: vscode.ExtensionContext) => {
   await initDeviceMirrorExplorer(context);
 
   // Init REPL terminal
-  initTerminal();
+  initTerminal(context);
 };
 
 // This method is called when your extension is deactivated

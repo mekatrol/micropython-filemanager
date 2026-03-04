@@ -1,5 +1,10 @@
 import * as vscode from 'vscode';
-import { isBoardConnected, onBoardConnectionStateChanged } from './commands/connect-board-command';
+import {
+  getConnectedBoardRuntimeInfo,
+  isBoardConnected,
+  onBoardConnectionStateChanged,
+  onConnectedBoardRuntimeInfoChanged
+} from './commands/connect-board-command';
 import { configurationFileName, loadConfiguration } from './utils/configuration';
 import { listSerialDevices } from './utils/serial-port';
 import { logChannelOutput } from './output-channel';
@@ -19,6 +24,7 @@ export const onPythonTypeChanged = pythonTypeChangedEmitter.event;
 let deviceStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 let pythonTypeStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 let boardConnectionStatusBarItem: vscode.StatusBarItem | undefined = undefined;
+let boardRuntimeStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 let extensionContext: vscode.ExtensionContext | undefined = undefined;
 
 export const initStatusBar = async (context: vscode.ExtensionContext): Promise<void> => {
@@ -28,6 +34,7 @@ export const initStatusBar = async (context: vscode.ExtensionContext): Promise<v
   createDeviceNameStatusBarItem(context);
   createPythonTypeStatusBarItem(context);
   createBoardConnectionStatusBarItem(context);
+  createBoardRuntimeStatusBarItem(context);
 
   // Update status bar item once at start
   await updateStatusBarItem();
@@ -38,10 +45,11 @@ export const initStatusBar = async (context: vscode.ExtensionContext): Promise<v
   watcher.onDidDelete((_uri) => updateStatusBarItem());
   context.subscriptions.push(watcher);
   context.subscriptions.push(onBoardConnectionStateChanged(() => updateStatusBarItem()));
+  context.subscriptions.push(onConnectedBoardRuntimeInfoChanged(() => updateStatusBarItem()));
 };
 
 export const updateStatusBarItem = async (): Promise<void> => {
-  if (!deviceStatusBarItem || !pythonTypeStatusBarItem || !boardConnectionStatusBarItem) {
+  if (!deviceStatusBarItem || !pythonTypeStatusBarItem || !boardConnectionStatusBarItem || !boardRuntimeStatusBarItem) {
     return;
   }
 
@@ -63,6 +71,20 @@ export const updateStatusBarItem = async (): Promise<void> => {
     ? new vscode.ThemeColor('statusBarItem.warningBackground')
     : undefined;
   boardConnectionStatusBarItem.show();
+
+  const runtimeInfo = getConnectedBoardRuntimeInfo();
+  if (connected && runtimeInfo) {
+    const shortText = runtimeInfo.banner.length > 48 ? `${runtimeInfo.banner.slice(0, 45)}...` : runtimeInfo.banner;
+    boardRuntimeStatusBarItem.text = `$(info) ${shortText}`;
+    boardRuntimeStatusBarItem.tooltip = runtimeInfo.banner;
+    boardRuntimeStatusBarItem.show();
+  } else if (connected) {
+    boardRuntimeStatusBarItem.text = '$(sync~spin) Reading board runtime info...';
+    boardRuntimeStatusBarItem.tooltip = 'Fetching MicroPython runtime details from device';
+    boardRuntimeStatusBarItem.show();
+  } else {
+    boardRuntimeStatusBarItem.hide();
+  }
 };
 
 const createDeviceNameStatusBarItem = (context: vscode.ExtensionContext) => {
@@ -99,6 +121,11 @@ const createBoardConnectionStatusBarItem = (context: vscode.ExtensionContext) =>
   boardConnectionStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 98);
   boardConnectionStatusBarItem.command = statusBarToggleBoardConnectionId;
   context.subscriptions.push(boardConnectionStatusBarItem);
+};
+
+const createBoardRuntimeStatusBarItem = (context: vscode.ExtensionContext) => {
+  boardRuntimeStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 97);
+  context.subscriptions.push(boardRuntimeStatusBarItem);
 };
 
 const getActiveDevice = (): string | undefined => {

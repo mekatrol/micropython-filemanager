@@ -12,6 +12,17 @@ import * as vscode from 'vscode';
 import { SerialPort } from 'serialport';
 import { logChannelOutput } from '../output-channel';
 
+export interface PyboardIOEvent {
+  direction: 'tx' | 'rx';
+  data: Buffer;
+}
+
+export interface BoardRuntimeInfo {
+  version: string;
+  machine: string;
+  banner: string;
+}
+
 export class Pyboard {
   device: string;              // Serial device path (e.g., "COM5", "/dev/ttyUSB0")
   baudrate: number;            // Serial baud rate, default 115200
@@ -24,6 +35,8 @@ export class Pyboard {
 
   useRawPaste: boolean = true; // Whether to attempt raw-paste mode
   waitDelay: number = 100;     // Milliseconds to wait after certain commands
+  private ioEmitter = new vscode.EventEmitter<PyboardIOEvent>();
+  readonly onDidIO = this.ioEmitter.event;
 
   /**
    * Constructor for Pyboard class.
@@ -142,6 +155,7 @@ export class Pyboard {
 
       // Send as many bytes as window allows
       const bytes = commandBytes.slice(i, Math.min(i + windowRemain, commandBytes.length));
+      this.emitIO('tx', Buffer.from(bytes));
       this.serialPort!.write(bytes);
       windowRemain -= bytes.length;
       i += bytes.length;
@@ -219,6 +233,9 @@ export class Pyboard {
   async readNextRaw(length: number): Promise<number[]> {
     this.assertPortOpen();
     const bytes = await this.serialPort!.read(length);
+    if (bytes && bytes.length > 0) {
+      this.emitIO('rx', Buffer.from(bytes));
+    }
     return bytes ?? [];
   }
 
@@ -244,6 +261,7 @@ export class Pyboard {
       if (!bytes) {
         break;
       }
+      this.emitIO('rx', Buffer.from(bytes));
       response = response.concat(...bytes);
     }
 
@@ -280,6 +298,7 @@ export class Pyboard {
     for (let i = 0; i < data.length; i++) {
       buffer[i] = data.charCodeAt(i);
     }
+    this.emitIO('tx', Buffer.from(buffer));
 
     await new Promise<void>((resolve, reject) => {
       this.serialPort!.write(buffer, undefined, (err) => {
@@ -345,12 +364,44 @@ export class Pyboard {
     };
   }
 
+  async getBoardRuntimeInfo(timeoutMs: number = 5000): Promise<BoardRuntimeInfo> {
+    const { stdout, stderr } = await this.execRawCapture(
+      "import os\nu=os.uname()\nprint(u.version)\nprint(u.machine)\n",
+      timeoutMs
+    );
+
+    if (stderr.trim().length > 0) {
+      throw new Error(stderr.trim());
+    }
+
+    const lines = stdout
+      .replace(/\r/g, '\n')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    if (lines.length < 2) {
+      throw new Error(`Unexpected runtime info response: ${stdout}`);
+    }
+
+    const machine = lines[lines.length - 1];
+    const version = lines[lines.length - 2];
+    const banner = `MicroPython ${version}; ${machine}`;
+
+    return {
+      version,
+      machine,
+      banner
+    };
+  }
+
   private async waitForDataContains(patterns: Buffer[], timeoutMs: number): Promise<number[]> {
     this.assertPortOpen();
 
     const bytes: number[] = [];
     return await new Promise<number[]>((resolve, reject) => {
       const onData = (chunk: Buffer) => {
+        this.emitIO('rx', chunk);
         for (const value of chunk.values()) {
           bytes.push(value);
         }
@@ -398,6 +449,7 @@ export class Pyboard {
     const bytes: number[] = [];
     return await new Promise<number[]>((resolve, reject) => {
       const onData = (chunk: Buffer) => {
+        this.emitIO('rx', chunk);
         for (const value of chunk.values()) {
           bytes.push(value);
         }
@@ -469,7 +521,8 @@ export class Pyboard {
         resolve();
       };
 
-      const onData = () => {
+      const onData = (chunk: Buffer) => {
+        this.emitIO('rx', chunk);
         if (idleTimer) {
           clearTimeout(idleTimer);
         }
@@ -505,5 +558,38 @@ export class Pyboard {
     vscode.window.showErrorMessage(message);
     logChannelOutput(message, true);
     return new Error(message);
+  }
+
+  private emitIO(direction: 'tx' | 'rx', data: Buffer): void {
+    if (data.length === 0) {
+      return;
+    }
+
+    this.ioEmitter.fire({ direction, data });
+    logChannelOutput(`[REPL ${direction.toUpperCase()}] ${this.formatBytesForLog(data)}`, false);
+  }
+
+  private formatBytesForLog(data: Buffer): string {
+    let output = '';
+    for (const value of data.values()) {
+      if (value === 10) {
+        output += '\\n';
+        continue;
+      }
+
+      if (value === 13) {
+        output += '\\r';
+        continue;
+      }
+
+      if (value >= 32 && value <= 126) {
+        output += String.fromCharCode(value);
+        continue;
+      }
+
+      output += `\\x${value.toString(16).padStart(2, '0')}`;
+    }
+
+    return output;
   }
 }

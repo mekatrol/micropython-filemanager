@@ -71,6 +71,10 @@
       {
         "command": "mekatrol.pyboarddev.openremotefile",
         "title": "Pyboard Dev: Open remote device file"
+      },
+      {
+        "command": "mekatrol.pyboarddev.openrepl",
+        "title": "Pyboard Dev: Open REPL console"
       }
     ],
     "views": {

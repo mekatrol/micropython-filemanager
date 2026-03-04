@@ -1,83 +1,156 @@
 import * as vscode from 'vscode';
+import { getConnectedBoard, onBoardConnectionStateChanged } from './commands/connect-board-command';
+import { Pyboard, PyboardIOEvent } from './utils/pyboard';
 
-let terminal: vscode.Terminal;
+const openReplCommandId = 'mekatrol.pyboarddev.openrepl';
 
-const formatText = (text: string) => `\r${text.split(/(\r?\n)/g).join('\r')}\r`;
+const formatForTerminal = (text: string): string => text.replace(/\n/g, '\r\n');
+const formatInputForEcho = (text: string): string => text.replace(/\r/g, '\r\n');
 
-export const initTerminal = () => {
-  const writeEmitter = new vscode.EventEmitter<string>();
+class ReplTerminalManager implements vscode.Disposable {
+  private readonly writeEmitter = new vscode.EventEmitter<string>();
+  private readonly closeEmitter = new vscode.EventEmitter<void>();
+  private readonly pty: vscode.Pseudoterminal;
+  private terminal: vscode.Terminal | undefined;
+  private boardIoDisposable: vscode.Disposable | undefined;
+  private boardStateDisposable: vscode.Disposable | undefined;
+  private isPtyOpen = false;
+  private currentLine = '';
 
-  const defaultLine = '→ ';
-  const keys = {
-    enter: '\r',
-    backspace: '\x7f'
-  };
+  constructor() {
+    this.pty = {
+      onDidWrite: this.writeEmitter.event,
+      onDidClose: this.closeEmitter.event,
+      open: () => {
+        this.isPtyOpen = true;
+        this.writeEmitter.fire('Pyboard Dev REPL\r\n');
+        this.renderConnectionStatus();
+        this.attachToCurrentBoard();
+      },
+      close: () => {
+        this.isPtyOpen = false;
+        this.detachBoardListener();
+      },
+      handleInput: async (data: string) => {
+        const board = getConnectedBoard();
+        if (!board) {
+          return;
+        }
 
-  const actions = {
-    cursorBack: '\x1b[D',
-    deleteChar: '\x1b[P',
-    clear: '\x1b[2J\x1b[3J\x1b[;H'
-  };
-
-  let content = defaultLine;
-
-  // handle workspaces
-  const workspaceRoots: readonly vscode.WorkspaceFolder[] | undefined = vscode.workspace.workspaceFolders;
-  if (!workspaceRoots || !workspaceRoots.length) {
-    // no workspace root
-    return '';
-  }
-  const workspaceRoot: string = workspaceRoots[0].uri.fsPath || '';
-
-  const pty = {
-    onDidWrite: writeEmitter.event,
-    open: () => writeEmitter.fire(content),
-    close: () => {},
-    handleInput: async (char: string) => {
-      switch (char) {
-        case keys.enter:
-          // preserve the run command line for history
-          writeEmitter.fire(`\r${content}\r\n`);
-          // trim off leading default prompt
-          const command = content.slice(defaultLine.length);
-          try {
-            // run the command
-            // const { stdout, stderr } = await exec(command, {
-            //   encoding: 'utf8',
-            //   cwd: workspaceRoot
-            // });
-            // if (stdout) {
-            //   writeEmitter.fire(formatText(stdout));
-            // }
-            // if (stderr && stderr.length) {
-            //   writeEmitter.fire(formatText(stderr));
-            // }
-          } catch (error: any) {
-            writeEmitter.fire(`\r${formatText(error.message)}`);
+        // Handle line editing locally and execute on Enter.
+        if (data === '\x7f') {
+          if (this.currentLine.length > 0) {
+            this.currentLine = this.currentLine.slice(0, -1);
           }
-          content = defaultLine;
-          writeEmitter.fire(`\r${content}`);
-        case keys.backspace:
-          if (content.length <= defaultLine.length) {
+          this.writeEmitter.fire('\b \b');
+          return;
+        }
+
+        if (data === '\r') {
+          this.writeEmitter.fire('\r\n');
+          const command = this.currentLine;
+          this.currentLine = '';
+
+          if (command.trim().length === 0) {
             return;
           }
-          // remove last character
-          content = content.substring(0, content.length - 1);
-          writeEmitter.fire(actions.cursorBack);
-          writeEmitter.fire(actions.deleteChar);
+
+          try {
+            const result = await board.execRawCapture(`${command}\n`);
+            if (result.stdout && result.stdout.length > 0) {
+              this.writeEmitter.fire(formatForTerminal(result.stdout));
+            }
+
+            if (result.stderr && result.stderr.length > 0) {
+              this.writeEmitter.fire(formatForTerminal(result.stderr));
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.writeEmitter.fire(`\r\n[execution failed] ${message}\r\n`);
+          }
+
           return;
-        default:
-          // typing a new character
-          content += char;
-          writeEmitter.fire(char);
+        }
+
+        this.currentLine += data;
+        this.writeEmitter.fire(formatInputForEcho(data));
       }
+    };
+
+    this.boardStateDisposable = onBoardConnectionStateChanged(() => {
+      this.renderConnectionStatus();
+      this.attachToCurrentBoard();
+    });
+  }
+
+  dispose(): void {
+    this.detachBoardListener();
+    this.boardStateDisposable?.dispose();
+    this.writeEmitter.dispose();
+    this.closeEmitter.dispose();
+  }
+
+  show(): void {
+    if (!this.terminal) {
+      this.terminal = vscode.window.createTerminal({ name: 'Pyboard Dev REPL', pty: this.pty });
     }
-  };
-  // Create output channel for logging
-  terminal = vscode.window.createTerminal({ name: 'Pyboard Dev REPL', pty: pty });
 
-  let execCommand = 'pwd\r\n';
-  terminal.sendText(execCommand);
+    this.terminal.show(true);
+  }
 
-  terminal.show();
+  private renderConnectionStatus(): void {
+    if (!this.isPtyOpen) {
+      return;
+    }
+
+    const board = getConnectedBoard();
+    if (board) {
+      this.writeEmitter.fire(`\r\n[connected ${board.device} @ ${board.baudrate}]\r\n`);
+    } else {
+      this.writeEmitter.fire('\r\n[device not connected; connect from status bar]\r\n');
+    }
+  }
+
+  private attachToCurrentBoard(): void {
+    if (!this.isPtyOpen) {
+      return;
+    }
+
+    this.detachBoardListener();
+
+    const board = getConnectedBoard();
+    if (!board) {
+      return;
+    }
+
+    this.boardIoDisposable = board.onDidIO((event) => this.onBoardIo(event));
+  }
+
+  private detachBoardListener(): void {
+    this.boardIoDisposable?.dispose();
+    this.boardIoDisposable = undefined;
+  }
+
+  private onBoardIo(event: PyboardIOEvent): void {
+    if (!this.isPtyOpen) {
+      return;
+    }
+
+    if (event.direction === 'tx') {
+      return;
+    }
+
+    this.writeEmitter.fire(formatForTerminal(event.data.toString('utf8')));
+  }
+}
+
+export const initTerminal = (context: vscode.ExtensionContext): void => {
+  const manager = new ReplTerminalManager();
+
+  context.subscriptions.push(manager);
+  context.subscriptions.push(
+    vscode.commands.registerCommand(openReplCommandId, () => {
+      manager.show();
+    })
+  );
 };

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { logChannelOutput } from '../output-channel';
-import { Pyboard } from '../utils/pyboard';
+import { BoardRuntimeInfo, Pyboard } from '../utils/pyboard';
 
 const selectedSerialPortStateKey = 'selectedSerialPort';
 const selectedBaudRateStateKey = 'selectedBaudRate';
@@ -9,15 +9,23 @@ const defaultBaudRate = 115200;
 const autoReconnectSettingKey = 'autoReconnectLastDevice';
 
 let connectedBoard: Pyboard | undefined;
+let connectedBoardRuntimeInfo: BoardRuntimeInfo | undefined;
 let extensionContext: vscode.ExtensionContext | undefined;
 const boardConnectionStateEmitter = new vscode.EventEmitter<boolean>();
+const boardRuntimeInfoChangedEmitter = new vscode.EventEmitter<BoardRuntimeInfo | undefined>();
 
 export const onBoardConnectionStateChanged = boardConnectionStateEmitter.event;
+export const onConnectedBoardRuntimeInfoChanged = boardRuntimeInfoChangedEmitter.event;
 export const isBoardConnected = (): boolean => connectedBoard !== undefined;
 export const getConnectedBoard = (): Pyboard | undefined => connectedBoard;
+export const getConnectedBoardRuntimeInfo = (): BoardRuntimeInfo | undefined => connectedBoardRuntimeInfo;
 
 const notifyBoardConnectionStateChanged = (): void => {
   boardConnectionStateEmitter.fire(isBoardConnected());
+};
+
+const notifyBoardRuntimeInfoChanged = (): void => {
+  boardRuntimeInfoChangedEmitter.fire(connectedBoardRuntimeInfo);
 };
 
 const updateReconnectState = async (shouldReconnectOnStartup: boolean): Promise<void> => {
@@ -41,10 +49,12 @@ export const closeConnectedBoard = async (showSuccessMessage = true, preserveRec
   try {
     await connectedBoard.close();
     connectedBoard = undefined;
+    connectedBoardRuntimeInfo = undefined;
     if (!preserveReconnectState) {
       await updateReconnectState(false);
     }
     notifyBoardConnectionStateChanged();
+    notifyBoardRuntimeInfoChanged();
 
     if (showSuccessMessage) {
       const msg = 'Board connection closed.';
@@ -84,6 +94,16 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
       connectedBoard = board;
       await updateReconnectState(true);
       notifyBoardConnectionStateChanged();
+      connectedBoardRuntimeInfo = undefined;
+      notifyBoardRuntimeInfoChanged();
+
+      try {
+        connectedBoardRuntimeInfo = await board.getBoardRuntimeInfo();
+        notifyBoardRuntimeInfoChanged();
+      } catch (infoError) {
+        const reason = infoError instanceof Error ? infoError.message : String(infoError);
+        logChannelOutput(`Connected, but failed to read board runtime info: ${reason}`, false);
+      }
 
       const msg = `Connected to board on ${device} @ ${baudRate}.`;
       vscode.window.showInformationMessage(msg);
