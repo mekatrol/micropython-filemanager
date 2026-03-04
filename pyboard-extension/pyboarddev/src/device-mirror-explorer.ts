@@ -39,6 +39,7 @@ const selectedPythonTypeStateKey = 'selectedPythonType';
 const selectedSerialPortStateKey = 'selectedSerialPort';
 const selectedBaudRateStateKey = 'selectedBaudRate';
 const defaultBaudRate = 115200;
+const remoteExplorerAutoRefreshIntervalMs = 5000;
 
 const obfuscatedPlaceholder = '# pyboarddev: obfuscated on pull\n';
 
@@ -144,6 +145,17 @@ class DeviceMirrorModel {
 
     const deviceEntries = await listDeviceEntries(board);
     const updatedDeviceFiles: string[] = [];
+    const desiredDevicePaths = new Set(deviceEntries.map((entry) => toRelativePath(entry.relativePath)));
+
+    // Remove local mirror entries that no longer exist on the device.
+    const existingLocalEntries = await scanLocalMirrorEntries(this.mirrorRootPath);
+    const staleLocalEntries = existingLocalEntries
+      .filter((entry) => entry.relativePath.length > 0 && !desiredDevicePaths.has(entry.relativePath))
+      .sort((a, b) => b.relativePath.length - a.relativePath.length);
+    for (const staleEntry of staleLocalEntries) {
+      const stalePath = path.join(this.mirrorRootPath, staleEntry.relativePath);
+      await fs.rm(stalePath, { recursive: true, force: true });
+    }
 
     for (const entry of deviceEntries) {
       if (entry.relativePath.length === 0) {
@@ -152,10 +164,26 @@ class DeviceMirrorModel {
 
       const localPath = path.join(this.mirrorRootPath, entry.relativePath);
       if (entry.isDirectory) {
+        try {
+          const stat = await fs.stat(localPath);
+          if (!stat.isDirectory()) {
+            await fs.rm(localPath, { recursive: true, force: true });
+          }
+        } catch {
+          // Path does not exist; create it below.
+        }
         await fs.mkdir(localPath, { recursive: true });
         continue;
       }
 
+      try {
+        const stat = await fs.stat(localPath);
+        if (stat.isDirectory()) {
+          await fs.rm(localPath, { recursive: true, force: true });
+        }
+      } catch {
+        // Path does not exist; create parent below.
+      }
       await fs.mkdir(path.dirname(localPath), { recursive: true });
       if (this.obfuscationSet.has(entry.relativePath)) {
         await fs.writeFile(localPath, obfuscatedPlaceholder, 'utf8');
@@ -1105,6 +1133,23 @@ export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext)
 
     await model.openRemoteFile(node);
   }));
+
+  context.subscriptions.push(deviceTreeView.onDidChangeVisibility((event) => {
+    if (!event.visible || !model.isBoardConnected()) {
+      return;
+    }
+
+    void model.refresh(true);
+  }));
+
+  const remoteExplorerAutoRefreshTimer = setInterval(() => {
+    if (!deviceTreeView.visible || !model.isBoardConnected()) {
+      return;
+    }
+
+    void model.refresh(true);
+  }, remoteExplorerAutoRefreshIntervalMs);
+  context.subscriptions.push(new vscode.Disposable(() => clearInterval(remoteExplorerAutoRefreshTimer)));
 
   context.subscriptions.push(onBoardConnectionStateChanged(() => model.refresh()));
   context.subscriptions.push(onPythonTypeChanged(() => model.refresh(false)));
