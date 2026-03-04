@@ -410,14 +410,16 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
   }
 
   async readFile(uri: vscode.Uri): Promise<Uint8Array> {
+    const fallbackFilePath = this.describeRemotePath(uri);
     let board: NonNullable<ReturnType<typeof getConnectedBoard>>;
     try {
       board = await this.getConnectedBoardOrWait();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const friendlyMessage = `device no longer available for the file. ${this.getDeviceDetails()}`;
+      const friendlyMessage = `device no longer available for the file. File: ${fallbackFilePath}. ${this.getDeviceDetails()}`;
       vscode.window.showWarningMessage(friendlyMessage);
-      await this.closeRemoteTabsForUri(uri);
+      logChannelOutput(`Remote file not opened. ${friendlyMessage}`, true);
+      await this.closeRemoteTabsForUriWithRetry(uri);
       throw vscode.FileSystemError.Unavailable(`${friendlyMessage} (${message})`);
     }
 
@@ -437,12 +439,15 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/no such file|enoent|not found/i.test(message)) {
-        const friendlyMessage = `the file no longer exists on the device. ${this.getDeviceDetails(board)}`;
+        const friendlyMessage = `the file no longer exists on the device. File: ${relativePath}. ${this.getDeviceDetails(board)}`;
         vscode.window.showWarningMessage(friendlyMessage);
-        await this.closeRemoteTabsForUri(uri);
+        logChannelOutput(`Remote file not opened. ${friendlyMessage}`, true);
+        await this.closeRemoteTabsForUriWithRetry(uri);
         throw vscode.FileSystemError.FileNotFound(friendlyMessage);
       }
-      await this.closeRemoteTabsForUri(uri);
+      const readFailureMessage = `failed to open remote file. File: ${relativePath}. ${this.getDeviceDetails(board)}. ${message}`;
+      logChannelOutput(`Remote file not opened. ${readFailureMessage}`, true);
+      await this.closeRemoteTabsForUriWithRetry(uri);
       throw vscode.FileSystemError.Unavailable(`Failed to read remote file: ${relativePath}. ${message}`);
     }
   }
@@ -644,25 +649,67 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     return `Device: ${device} @ ${baudRate} (${connectionState})`;
   }
 
+  private describeRemotePath(uri: vscode.Uri, board?: NonNullable<ReturnType<typeof getConnectedBoard>>): string {
+    if (board) {
+      return this.toRelativeRemotePath(uri, board);
+    }
+
+    const rawPath = toRelativePath(uri.path.replace(/^\/+/, ''));
+    return rawPath || '<unknown>';
+  }
+
+  private async closeRemoteTabsForUriWithRetry(uri: vscode.Uri): Promise<void> {
+    await this.closeRemoteTabsForUri(uri);
+    await this.delay(50);
+    await this.closeRemoteTabsForUri(uri);
+    await this.delay(250);
+    await this.closeRemoteTabsForUri(uri);
+  }
+
   private async closeRemoteTabsForUri(uri: vscode.Uri): Promise<void> {
     const tabsToClose: vscode.Tab[] = [];
     for (const group of vscode.window.tabGroups.all) {
       for (const tab of group.tabs) {
-        if (!(tab.input instanceof vscode.TabInputText)) {
+        if (tab.input instanceof vscode.TabInputText) {
+          if (tab.input.uri.toString() !== uri.toString()) {
+            continue;
+          }
+          tabsToClose.push(tab);
           continue;
         }
 
-        if (tab.input.uri.toString() !== uri.toString()) {
+        if (tab.input instanceof vscode.TabInputTextDiff) {
+          const originalMatches = tab.input.original.toString() === uri.toString();
+          const modifiedMatches = tab.input.modified.toString() === uri.toString();
+          if (!originalMatches && !modifiedMatches) {
+            continue;
+          }
+          tabsToClose.push(tab);
           continue;
         }
-
-        tabsToClose.push(tab);
       }
     }
 
     if (tabsToClose.length > 0) {
       await vscode.window.tabGroups.close(tabsToClose, true);
+      return;
     }
+
+    const visibleEditors = vscode.window.visibleTextEditors.filter(
+      (editor) => editor.document.uri.toString() === uri.toString()
+    );
+    for (const editor of visibleEditors) {
+      await vscode.window.showTextDocument(editor.document, {
+        viewColumn: editor.viewColumn,
+        preserveFocus: false,
+        preview: false
+      });
+      await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+    }
+  }
+
+  private async delay(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 
