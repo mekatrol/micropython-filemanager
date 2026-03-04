@@ -6,6 +6,7 @@ import {
   closeConnectedBoard,
   initConnectBoardCommand,
   initDisconnectBoardCommand,
+  initSetAutoReconnectCommand,
   initToggleBoardConnectionCommand,
   tryReconnectBoardOnStartup
 } from './commands/connect-board-command';
@@ -23,6 +24,7 @@ export const activate = async (context: vscode.ExtensionContext) => {
   initCreateConfigCommand(context);
   initConnectBoardCommand(context);
   initDisconnectBoardCommand(context);
+  initSetAutoReconnectCommand(context);
   initToggleBoardConnectionCommand(context);
   await tryReconnectBoardOnStartup(context);
 

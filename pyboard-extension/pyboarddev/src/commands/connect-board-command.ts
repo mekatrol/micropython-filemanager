@@ -6,6 +6,7 @@ const selectedSerialPortStateKey = 'selectedSerialPort';
 const selectedBaudRateStateKey = 'selectedBaudRate';
 const reconnectLastSessionStateKey = 'reconnectLastSession';
 const defaultBaudRate = 115200;
+const autoReconnectSettingKey = 'autoReconnectLastDevice';
 
 let connectedBoard: Pyboard | undefined;
 let extensionContext: vscode.ExtensionContext | undefined;
@@ -140,4 +141,44 @@ export const tryReconnectBoardOnStartup = async (context: vscode.ExtensionContex
   }
 
   await vscode.commands.executeCommand('mekatrol.pyboarddev.connectboard');
+};
+
+export const initSetAutoReconnectCommand = (context: vscode.ExtensionContext) => {
+  extensionContext = context;
+
+  const command = vscode.commands.registerCommand('mekatrol.pyboarddev.setautoreconnect', async () => {
+    const configuration = vscode.workspace.getConfiguration('mekatrol.pyboarddev');
+    const currentValue = configuration.get<boolean>(autoReconnectSettingKey, false);
+
+    const selected = await vscode.window.showQuickPick(
+      [
+        {
+          label: 'Enable',
+          description: 'Reconnect to last device on startup when last session was connected',
+          picked: currentValue
+        },
+        {
+          label: 'Disable',
+          description: 'Do not auto reconnect on startup',
+          picked: !currentValue
+        }
+      ],
+      {
+        placeHolder: 'Set auto reconnect behavior'
+      }
+    );
+
+    if (!selected) {
+      return;
+    }
+
+    const enabled = selected.label === 'Enable';
+    await configuration.update(autoReconnectSettingKey, enabled, vscode.ConfigurationTarget.Global);
+
+    const msg = `Auto reconnect is now ${enabled ? 'enabled' : 'disabled'}.`;
+    vscode.window.showInformationMessage(msg);
+    logChannelOutput(msg, true);
+  });
+
+  context.subscriptions.push(command);
 };

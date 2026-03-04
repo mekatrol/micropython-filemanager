@@ -42,6 +42,10 @@
         "title": "Pyboard Dev: Toggle board connection"
       },
       {
+        "command": "mekatrol.pyboarddev.setautoreconnect",
+        "title": "Pyboard Dev: Set auto reconnect"
+      },
+      {
         "command": "mekatrol.pyboarddev.refreshmirrorview",
         "title": "Pyboard Dev: Refresh mirror explorer",
         "icon": "$(refresh)"
