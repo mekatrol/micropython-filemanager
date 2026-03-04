@@ -37,6 +37,7 @@ export class Pyboard {
   waitDelay: number = 100;     // Milliseconds to wait after certain commands
   private ioEmitter = new vscode.EventEmitter<PyboardIOEvent>();
   readonly onDidIO = this.ioEmitter.event;
+  private execQueue: Promise<void> = Promise.resolve();
 
   /**
    * Constructor for Pyboard class.
@@ -324,6 +325,10 @@ export class Pyboard {
    * The board must already be connected.
    */
   async execRawCapture(command: string, timeoutMs: number = 10000): Promise<{ stdout: string; stderr: string }> {
+    return this.enqueueExclusive(() => this.execRawCaptureUnlocked(command, timeoutMs));
+  }
+
+  private async execRawCaptureUnlocked(command: string, timeoutMs: number = 10000): Promise<{ stdout: string; stderr: string }> {
     this.assertPortOpen();
 
     const rawPromptText = Buffer.from('raw REPL; CTRL-B to exit');
@@ -365,34 +370,89 @@ export class Pyboard {
   }
 
   async getBoardRuntimeInfo(timeoutMs: number = 5000): Promise<BoardRuntimeInfo> {
-    const { stdout, stderr } = await this.execRawCapture(
-      "import os\nu=os.uname()\nprint(u.version)\nprint(u.machine)\n",
-      timeoutMs
-    );
+    return this.enqueueExclusive(async () => {
+      await this.softRebootRawUnlocked(Math.max(timeoutMs, 8000));
 
-    if (stderr.trim().length > 0) {
-      throw new Error(stderr.trim());
-    }
+      const beginMarker = '__PYBOARDDEV_INFO_BEGIN__';
+      const endMarker = '__PYBOARDDEV_INFO_END__';
+      const script = [
+        'try:',
+        '  import os',
+        'except:',
+        '  import uos as os',
+        'u = os.uname()',
+        'try:',
+        '  version = u.version',
+        'except:',
+        '  try:',
+        '    version = u[3]',
+        '  except:',
+        "    version = ''",
+        'try:',
+        '  machine = u.machine',
+        'except:',
+        '  try:',
+        '    machine = u[4]',
+        '  except:',
+        "    machine = ''",
+        `print('${beginMarker}')`,
+        'print(version)',
+        'print(machine)',
+        `print('${endMarker}')`
+      ].join('\n');
 
-    const lines = stdout
-      .replace(/\r/g, '\n')
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
+      const { stdout, stderr } = await this.execRawCaptureUnlocked(`${script}\n`, timeoutMs);
 
-    if (lines.length < 2) {
-      throw new Error(`Unexpected runtime info response: ${stdout}`);
-    }
+      if (stderr.trim().length > 0) {
+        throw new Error(stderr.trim());
+      }
 
-    const machine = lines[lines.length - 1];
-    const version = lines[lines.length - 2];
-    const banner = `MicroPython ${version}; ${machine}`;
+      const normalised = stdout.replace(/\r/g, '\n');
+      const start = normalised.indexOf(beginMarker);
+      const end = normalised.indexOf(endMarker);
+      if (start < 0 || end < 0 || end <= start) {
+        throw new Error(`Unexpected runtime info response: ${stdout}`);
+      }
 
-    return {
-      version,
-      machine,
-      banner
-    };
+      const content = normalised
+        .slice(start + beginMarker.length, end)
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+
+      const version = content[0] ?? '';
+      const machine = content[1] ?? '';
+      if (!version || !machine) {
+        throw new Error(`Incomplete runtime info response: ${stdout}`);
+      }
+
+      const banner = `MicroPython ${version}; ${machine}`;
+
+      return {
+        version,
+        machine,
+        banner
+      };
+    });
+  }
+
+  private async softRebootRawUnlocked(timeoutMs: number): Promise<void> {
+    const rawPromptText = Buffer.from('raw REPL; CTRL-B to exit');
+    const softRebootText = Buffer.from('soft reboot');
+
+    await this.write('\r\x03\x03');
+    await this.readUntilIdle(120, 800);
+
+    await this.write('\r\x01');
+    await this.waitForDataContains([rawPromptText], timeoutMs);
+
+    // Ctrl-D triggers a soft reboot in raw REPL mode.
+    await this.write('\x04');
+    await this.waitForDataContains([softRebootText, rawPromptText], timeoutMs);
+
+    // Leave raw REPL so follow-up commands start from known normal REPL state.
+    await this.write('\r\x02');
+    await this.readUntilIdle(120, 800);
   }
 
   private async waitForDataContains(patterns: Buffer[], timeoutMs: number): Promise<number[]> {
@@ -591,5 +651,14 @@ export class Pyboard {
     }
 
     return output;
+  }
+
+  private async enqueueExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.execQueue.then(fn, fn);
+    this.execQueue = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
   }
 }
