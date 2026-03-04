@@ -7,6 +7,7 @@ import { logChannelOutput } from './output-channel';
 import { onPythonTypeChanged } from './status-bar';
 import { loadConfiguration } from './utils/configuration';
 import {
+  createDeviceDirectory,
   FileEntry,
   SyncState,
   buildSyncStateMap,
@@ -188,6 +189,13 @@ class DeviceMirrorModel {
     }
 
     const localEntries = await scanLocalMirrorEntries(this.mirrorRootPath);
+    const localDirectories = localEntries
+      .filter((entry) => entry.isDirectory && entry.relativePath.length > 0)
+      .sort((a, b) => a.relativePath.split('/').length - b.relativePath.split('/').length);
+    for (const directory of localDirectories) {
+      await createDeviceDirectory(board, directory.relativePath);
+    }
+
     const writtenDeviceFiles: string[] = [];
     for (const entry of localEntries) {
       if (entry.isDirectory || entry.relativePath.length === 0) {

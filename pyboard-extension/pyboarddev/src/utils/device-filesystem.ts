@@ -190,6 +190,32 @@ print('${endMarker}')
   await runDeviceScript(board, script);
 };
 
+export const createDeviceDirectory = async (board: Pyboard, relativePath: string): Promise<void> => {
+  const absolutePath = toDeviceAbsolutePath(relativePath);
+  const script = `
+import os
+
+path = ${JSON.stringify(absolutePath)}
+
+parts = path.split('/')
+current = ''
+for segment in parts:
+  if not segment:
+    continue
+  current += '/' + segment
+  try:
+    os.mkdir(current)
+  except:
+    pass
+
+print('${beginMarker}')
+print('OK')
+print('${endMarker}')
+`;
+
+  await runDeviceScript(board, script);
+};
+
 const walkLocalDirectory = async (basePath: string, currentRelativePath: string, entries: FileEntry[]): Promise<void> => {
   const currentPath = currentRelativePath.length === 0 ? basePath : path.join(basePath, currentRelativePath);
   const children = await fs.readdir(currentPath, { withFileTypes: true });
