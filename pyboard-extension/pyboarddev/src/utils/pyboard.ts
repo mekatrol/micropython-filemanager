@@ -640,6 +640,7 @@ export class Pyboard {
     }
 
     this.ioEmitter.fire({ direction, data });
+    console.debug(`[REPL ${direction.toUpperCase()}] ${this.formatBytesForLog(data)}`);
     if (this.isTransportLoggingEnabled()) {
       logChannelOutput(`[REPL ${direction.toUpperCase()}] ${this.formatBytesForLog(data)}`, false);
     }

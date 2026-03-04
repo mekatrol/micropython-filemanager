@@ -29,6 +29,7 @@ export const activate = async (context: vscode.ExtensionContext) => {
   initDisconnectBoardCommand(context);
   initSetAutoReconnectCommand(context);
   initToggleBoardConnectionCommand(context);
+  initTerminal(context);
   await tryReconnectBoardOnStartup(context);
 
   // Init status bar
@@ -40,8 +41,6 @@ export const activate = async (context: vscode.ExtensionContext) => {
   // Init Run/Debug integration
   initPyboardDebug(context);
 
-  // Init REPL terminal
-  initTerminal(context);
 };
 
 // This method is called when your extension is deactivated

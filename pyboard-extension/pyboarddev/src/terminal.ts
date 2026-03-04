@@ -1,9 +1,8 @@
 import * as vscode from 'vscode';
 import { getConnectedBoard, onBoardConnectionStateChanged } from './commands/connect-board-command';
-import { Pyboard, PyboardIOEvent } from './utils/pyboard';
+import { Pyboard } from './utils/pyboard';
 
 const openReplCommandId = 'mekatrol.pyboarddev.openrepl';
-
 const formatForTerminal = (text: string): string => text.replace(/\n/g, '\r\n');
 const formatInputForEcho = (text: string): string => text.replace(/\r/g, '\r\n');
 
@@ -12,7 +11,6 @@ class ReplTerminalManager implements vscode.Disposable {
   private readonly closeEmitter = new vscode.EventEmitter<void>();
   private readonly pty: vscode.Pseudoterminal;
   private terminal: vscode.Terminal | undefined;
-  private boardIoDisposable: vscode.Disposable | undefined;
   private boardStateDisposable: vscode.Disposable | undefined;
   private isPtyOpen = false;
   private currentLine = '';
@@ -25,11 +23,9 @@ class ReplTerminalManager implements vscode.Disposable {
         this.isPtyOpen = true;
         this.writeEmitter.fire('Pyboard Dev REPL\r\n');
         this.renderConnectionStatus();
-        this.attachToCurrentBoard();
       },
       close: () => {
         this.isPtyOpen = false;
-        this.detachBoardListener();
       },
       handleInput: async (data: string) => {
         const board = getConnectedBoard();
@@ -77,14 +73,15 @@ class ReplTerminalManager implements vscode.Disposable {
       }
     };
 
-    this.boardStateDisposable = onBoardConnectionStateChanged(() => {
+    this.boardStateDisposable = onBoardConnectionStateChanged((connected) => {
+      if (connected) {
+        this.show();
+      }
       this.renderConnectionStatus();
-      this.attachToCurrentBoard();
     });
   }
 
   dispose(): void {
-    this.detachBoardListener();
     this.boardStateDisposable?.dispose();
     this.writeEmitter.dispose();
     this.closeEmitter.dispose();
@@ -111,37 +108,6 @@ class ReplTerminalManager implements vscode.Disposable {
     }
   }
 
-  private attachToCurrentBoard(): void {
-    if (!this.isPtyOpen) {
-      return;
-    }
-
-    this.detachBoardListener();
-
-    const board = getConnectedBoard();
-    if (!board) {
-      return;
-    }
-
-    this.boardIoDisposable = board.onDidIO((event) => this.onBoardIo(event));
-  }
-
-  private detachBoardListener(): void {
-    this.boardIoDisposable?.dispose();
-    this.boardIoDisposable = undefined;
-  }
-
-  private onBoardIo(event: PyboardIOEvent): void {
-    if (!this.isPtyOpen) {
-      return;
-    }
-
-    if (event.direction === 'tx') {
-      return;
-    }
-
-    this.writeEmitter.fire(formatForTerminal(event.data.toString('utf8')));
-  }
 }
 
 export const initTerminal = (context: vscode.ExtensionContext): void => {
