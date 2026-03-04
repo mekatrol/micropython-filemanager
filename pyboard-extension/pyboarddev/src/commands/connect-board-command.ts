@@ -7,6 +7,7 @@ const selectedBaudRateStateKey = 'selectedBaudRate';
 const reconnectLastSessionStateKey = 'reconnectLastSession';
 const defaultBaudRate = 115200;
 const autoReconnectSettingKey = 'autoReconnectLastDevice';
+const remoteDocumentScheme = 'pyboarddev-remote';
 
 let connectedBoard: Pyboard | undefined;
 let connectedBoardRuntimeInfo: BoardRuntimeInfo | undefined;
@@ -37,14 +38,58 @@ const updateReconnectState = async (shouldReconnectOnStartup: boolean): Promise<
   await extensionContext.workspaceState.update(reconnectLastSessionStateKey, shouldReconnectOnStartup);
 };
 
-export const closeConnectedBoard = async (showSuccessMessage = true, preserveReconnectState = false): Promise<void> => {
+const getDirtyRemoteDocuments = (): vscode.TextDocument[] =>
+  vscode.workspace.textDocuments.filter((document) => document.uri.scheme === remoteDocumentScheme && document.isDirty);
+
+const saveDirtyRemoteDocumentsBeforeDisconnect = async (): Promise<boolean> => {
+  const dirtyDocuments = getDirtyRemoteDocuments();
+  if (dirtyDocuments.length === 0) {
+    return true;
+  }
+
+  const action = await vscode.window.showWarningMessage(
+    `You have ${dirtyDocuments.length} unsaved device file(s). Save all to device before disconnecting?`,
+    { modal: true },
+    'Save & Disconnect'
+  );
+
+  if (action !== 'Save & Disconnect') {
+    logChannelOutput('Disconnect cancelled by user: unsaved device files were not saved.', true);
+    return false;
+  }
+
+  for (const document of dirtyDocuments) {
+    const saved = await document.save();
+    if (!saved || document.isDirty) {
+      const msg = `Could not save device file before disconnect: ${document.uri.path}`;
+      vscode.window.showErrorMessage(msg);
+      logChannelOutput(msg, true);
+      return false;
+    }
+  }
+
+  return true;
+};
+
+export const closeConnectedBoard = async (
+  showSuccessMessage = true,
+  preserveReconnectState = false,
+  promptToSaveDirtyDeviceFiles = true
+): Promise<boolean> => {
   if (!connectedBoard) {
     if (showSuccessMessage) {
       const msg = 'No active board connection to close.';
       vscode.window.showInformationMessage(msg);
       logChannelOutput(msg, true);
     }
-    return;
+    return true;
+  }
+
+  if (promptToSaveDirtyDeviceFiles) {
+    const canClose = await saveDirtyRemoteDocumentsBeforeDisconnect();
+    if (!canClose) {
+      return false;
+    }
   }
 
   try {
@@ -68,7 +113,10 @@ export const closeConnectedBoard = async (showSuccessMessage = true, preserveRec
     const reason = error instanceof Error ? error.message : String(error);
     const msg = `Failed to close board connection. ${reason}`;
     logChannelOutput(msg, true);
+    return false;
   }
+
+  return true;
 };
 
 export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
@@ -87,7 +135,10 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
 
     try {
       if (connectedBoard) {
-        await closeConnectedBoard(false);
+        const closed = await closeConnectedBoard(false);
+        if (!closed) {
+          return;
+        }
       }
 
       const board = new Pyboard(device, baudRate);

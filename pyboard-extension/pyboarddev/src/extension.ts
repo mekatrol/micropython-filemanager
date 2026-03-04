@@ -46,5 +46,5 @@ export const activate = async (context: vscode.ExtensionContext) => {
 
 // This method is called when your extension is deactivated
 export async function deactivate() {
-  await closeConnectedBoard(false, true);
+  await closeConnectedBoard(false, true, false);
 }
