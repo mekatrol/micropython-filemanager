@@ -216,6 +216,93 @@ print('${endMarker}')
   await runDeviceScript(board, script);
 };
 
+export const renameDevicePath = async (board: Pyboard, fromRelativePath: string, toRelativePath: string): Promise<void> => {
+  const fromAbsolutePath = toDeviceAbsolutePath(fromRelativePath);
+  const toAbsolutePath = toDeviceAbsolutePath(toRelativePath);
+  const script = `
+import os
+
+src = ${JSON.stringify(fromAbsolutePath)}
+dst = ${JSON.stringify(toAbsolutePath)}
+
+def exists(p):
+  try:
+    os.stat(p)
+    return True
+  except:
+    return False
+
+if not exists(src):
+  raise Exception('Source path not found: ' + src)
+if exists(dst):
+  raise Exception('Target path already exists: ' + dst)
+
+parts = dst.split('/')
+current = ''
+for segment in parts[:-1]:
+  if not segment:
+    continue
+  current += '/' + segment
+  try:
+    os.mkdir(current)
+  except:
+    pass
+
+os.rename(src, dst)
+
+print('${beginMarker}')
+print('OK')
+print('${endMarker}')
+`;
+
+  await runDeviceScript(board, script);
+};
+
+export const deleteDevicePath = async (board: Pyboard, relativePath: string): Promise<void> => {
+  const absolutePath = toDeviceAbsolutePath(relativePath);
+  const script = `
+import os
+
+target = ${JSON.stringify(absolutePath)}
+
+def exists(p):
+  try:
+    os.stat(p)
+    return True
+  except:
+    return False
+
+def is_dir(p):
+  try:
+    os.listdir(p)
+    return True
+  except:
+    return False
+
+def remove_recursive(p):
+  if is_dir(p):
+    for name in os.listdir(p):
+      child = (p + '/' + name) if p != '/' else ('/' + name)
+      remove_recursive(child)
+    os.rmdir(p)
+    return
+  os.remove(p)
+
+if not exists(target):
+  raise Exception('Path not found: ' + target)
+if target == '/':
+  raise Exception('Deleting the device root is not allowed.')
+
+remove_recursive(target)
+
+print('${beginMarker}')
+print('OK')
+print('${endMarker}')
+`;
+
+  await runDeviceScript(board, script);
+};
+
 const walkLocalDirectory = async (basePath: string, currentRelativePath: string, entries: FileEntry[]): Promise<void> => {
   const currentPath = currentRelativePath.length === 0 ? basePath : path.join(basePath, currentRelativePath);
   const children = await fs.readdir(currentPath, { withFileTypes: true });

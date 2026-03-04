@@ -82,6 +82,24 @@
       {
         "command": "mekatrol.pyboarddev.openrepl",
         "title": "Pyboard Dev: Open REPL console"
+      },
+      {
+        "command": "mekatrol.pyboarddev.createremotefile",
+        "title": "Pyboard Dev: Create remote file",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "mekatrol.pyboarddev.createremotefolder",
+        "title": "Pyboard Dev: Create remote folder",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "mekatrol.pyboarddev.renameremotepath",
+        "title": "Pyboard Dev: Rename remote item"
+      },
+      {
+        "command": "mekatrol.pyboarddev.deleteremotepath",
+        "title": "Pyboard Dev: Delete remote item"
       }
     ],
     "views": {
@@ -135,11 +153,39 @@
       "view/item/context": [
         {
           "command": "mekatrol.pyboarddev.openremotefile",
-          "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && viewItem == pyboarddev.deviceNode",
-          "group": "inline@1"
+          "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && viewItem == pyboarddev.deviceFile",
+          "group": "navigation@1"
+        },
+        {
+          "command": "mekatrol.pyboarddev.createremotefile",
+          "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && viewItem == pyboarddev.deviceFolder",
+          "group": "navigation@2"
+        },
+        {
+          "command": "mekatrol.pyboarddev.createremotefolder",
+          "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && viewItem == pyboarddev.deviceFolder",
+          "group": "navigation@3"
+        },
+        {
+          "command": "mekatrol.pyboarddev.renameremotepath",
+          "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && (viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFolder)",
+          "group": "navigation@4"
+        },
+        {
+          "command": "mekatrol.pyboarddev.deleteremotepath",
+          "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && (viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFolder)",
+          "group": "navigation@5"
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "mekatrol.pyboarddev.deleteremotepath",
+        "key": "delete",
+        "mac": "backspace",
+        "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && listFocus"
+      }
+    ],
     "configuration": {
       "title": "Mekatrol Pyboard Dev",
       "properties": {
