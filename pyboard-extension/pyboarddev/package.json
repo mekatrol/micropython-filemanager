@@ -31,6 +31,11 @@
         "title": "Pyboard Dev: Select Python type"
       },
       {
+        "command": "mekatrol.pyboarddev.autodetectdevices",
+        "title": "Pyboard Dev: Auto detect serial devices",
+        "enablement": "!mekatrol.pyboarddev.boardConnected"
+      },
+      {
         "command": "mekatrol.pyboarddev.connectboard",
         "title": "Pyboard Dev: Connect to board"
       },
@@ -91,6 +96,24 @@
       ]
     },
     "menus": {
+      "commandPalette": [
+        {
+          "command": "mekatrol.pyboarddev.selectdevice",
+          "when": "!mekatrol.pyboarddev.boardConnected"
+        },
+        {
+          "command": "mekatrol.pyboarddev.autodetectdevices",
+          "when": "!mekatrol.pyboarddev.boardConnected"
+        },
+        {
+          "command": "mekatrol.pyboarddev.connectboard",
+          "when": "!mekatrol.pyboarddev.boardConnected"
+        },
+        {
+          "command": "mekatrol.pyboarddev.disconnectboard",
+          "when": "mekatrol.pyboarddev.boardConnected"
+        }
+      ],
       "view/title": [
         {
           "command": "mekatrol.pyboarddev.refreshmirrorview",

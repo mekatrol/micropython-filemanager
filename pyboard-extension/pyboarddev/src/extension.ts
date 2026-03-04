@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { initStatusBar } from './status-bar';
 import { initOutputChannel, logChannelOutput as logChannelOutput } from './output-channel';
 import { initCreateConfigCommand } from './commands/create-config-command';
+import { initAutoDetectDevicesCommand } from './commands/auto-detect-devices-command';
 import {
   closeConnectedBoard,
   initConnectBoardCommand,
@@ -22,6 +23,7 @@ export const activate = async (context: vscode.ExtensionContext) => {
 
   // Create commands
   initCreateConfigCommand(context);
+  initAutoDetectDevicesCommand(context);
   initConnectBoardCommand(context);
   initDisconnectBoardCommand(context);
   initSetAutoReconnectCommand(context);

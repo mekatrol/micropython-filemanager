@@ -372,68 +372,81 @@ export class Pyboard {
   async getBoardRuntimeInfo(timeoutMs: number = 5000): Promise<BoardRuntimeInfo> {
     return this.enqueueExclusive(async () => {
       await this.softRebootRawUnlocked(Math.max(timeoutMs, 8000));
-
-      const beginMarker = '__PYBOARDDEV_INFO_BEGIN__';
-      const endMarker = '__PYBOARDDEV_INFO_END__';
-      const script = [
-        'try:',
-        '  import os',
-        'except:',
-        '  import uos as os',
-        'u = os.uname()',
-        'try:',
-        '  version = u.version',
-        'except:',
-        '  try:',
-        '    version = u[3]',
-        '  except:',
-        "    version = ''",
-        'try:',
-        '  machine = u.machine',
-        'except:',
-        '  try:',
-        '    machine = u[4]',
-        '  except:',
-        "    machine = ''",
-        `print('${beginMarker}')`,
-        'print(version)',
-        'print(machine)',
-        `print('${endMarker}')`
-      ].join('\n');
-
-      const { stdout, stderr } = await this.execRawCaptureUnlocked(`${script}\n`, timeoutMs);
-
-      if (stderr.trim().length > 0) {
-        throw new Error(stderr.trim());
-      }
-
-      const normalised = stdout.replace(/\r/g, '\n');
-      const start = normalised.indexOf(beginMarker);
-      const end = normalised.indexOf(endMarker);
-      if (start < 0 || end < 0 || end <= start) {
-        throw new Error(`Unexpected runtime info response: ${stdout}`);
-      }
-
-      const content = normalised
-        .slice(start + beginMarker.length, end)
-        .split('\n')
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0);
-
-      const version = content[0] ?? '';
-      const machine = content[1] ?? '';
-      if (!version || !machine) {
-        throw new Error(`Incomplete runtime info response: ${stdout}`);
-      }
-
-      const banner = `MicroPython ${version}; ${machine}`;
-
-      return {
-        version,
-        machine,
-        banner
-      };
+      const { stdout, stderr } = await this.execRawCaptureUnlocked(`${this.buildRuntimeInfoScript()}\n`, timeoutMs);
+      return this.parseRuntimeInfo(stdout, stderr);
     });
+  }
+
+  async probeBoardRuntimeInfo(timeoutMs: number = 2500): Promise<BoardRuntimeInfo> {
+    return this.enqueueExclusive(async () => {
+      const { stdout, stderr } = await this.execRawCaptureUnlocked(`${this.buildRuntimeInfoScript()}\n`, timeoutMs);
+      return this.parseRuntimeInfo(stdout, stderr);
+    });
+  }
+
+  private buildRuntimeInfoScript(): string {
+    const beginMarker = '__PYBOARDDEV_INFO_BEGIN__';
+    const endMarker = '__PYBOARDDEV_INFO_END__';
+    return [
+      'try:',
+      '  import os',
+      'except:',
+      '  import uos as os',
+      'u = os.uname()',
+      'try:',
+      '  version = u.version',
+      'except:',
+      '  try:',
+      '    version = u[3]',
+      '  except:',
+      "    version = ''",
+      'try:',
+      '  machine = u.machine',
+      'except:',
+      '  try:',
+      '    machine = u[4]',
+      '  except:',
+      "    machine = ''",
+      `print('${beginMarker}')`,
+      'print(version)',
+      'print(machine)',
+      `print('${endMarker}')`
+    ].join('\n');
+  }
+
+  private parseRuntimeInfo(stdout: string, stderr: string): BoardRuntimeInfo {
+    if (stderr.trim().length > 0) {
+      throw new Error(stderr.trim());
+    }
+
+    const beginMarker = '__PYBOARDDEV_INFO_BEGIN__';
+    const endMarker = '__PYBOARDDEV_INFO_END__';
+    const normalised = stdout.replace(/\r/g, '\n');
+    const start = normalised.indexOf(beginMarker);
+    const end = normalised.indexOf(endMarker);
+    if (start < 0 || end < 0 || end <= start) {
+      throw new Error(`Unexpected runtime info response: ${stdout}`);
+    }
+
+    const content = normalised
+      .slice(start + beginMarker.length, end)
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    const version = content[0] ?? '';
+    const machine = content[1] ?? '';
+    if (!version || !machine) {
+      throw new Error(`Incomplete runtime info response: ${stdout}`);
+    }
+
+    const banner = `MicroPython ${version}; ${machine}`;
+
+    return {
+      version,
+      machine,
+      banner
+    };
   }
 
   private async softRebootRawUnlocked(timeoutMs: number): Promise<void> {

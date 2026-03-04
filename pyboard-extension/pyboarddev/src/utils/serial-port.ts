@@ -6,9 +6,9 @@ export interface PortInfo {
 }
 
 /**
- * List all connected serial devices that have vendorId and productId (e.g., ESP32)
+ * List all visible serial ports.
  */
-export const listSerialDevices = async (): Promise<PortInfo[]> => {
+export const listAllSerialPorts = async (): Promise<PortInfo[]> => {
     type SerialPortModule = typeof import('serialport');
     let SerialPort: SerialPortModule['SerialPort'];
 
@@ -21,12 +21,18 @@ export const listSerialDevices = async (): Promise<PortInfo[]> => {
 
     const ports = await SerialPort.list();
 
-    return ports
-        .filter(p => p.vendorId && p.productId)
-        .map(p => ({
-            path: p.path,
-            manufacturer: p.manufacturer,
-            vendorId: p.vendorId,
-            productId: p.productId,
-        }));
+    return ports.map((p) => ({
+        path: p.path,
+        manufacturer: p.manufacturer,
+        vendorId: p.vendorId,
+        productId: p.productId,
+    }));
+};
+
+/**
+ * List connected serial devices that expose VID/PID metadata (typical USB serial devices).
+ */
+export const listSerialDevices = async (): Promise<PortInfo[]> => {
+    const ports = await listAllSerialPorts();
+    return ports.filter((port) => port.vendorId && port.productId);
 };

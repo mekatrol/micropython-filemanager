@@ -118,6 +118,7 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
   });
 
   context.subscriptions.push(command);
+  notifyBoardConnectionStateChanged();
 };
 
 export const initDisconnectBoardCommand = (context: vscode.ExtensionContext) => {
