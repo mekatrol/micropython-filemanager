@@ -11,8 +11,7 @@ export enum PyboardDevConfigurationResult {
 }
 
 export interface PyboardDevConfiguration {
-  device: string;
-  baudrate: number;
+  pythonType: string;
 }
 
 export interface MetaPyboardDevConfiguration {
@@ -25,8 +24,7 @@ export interface PyboardDevConfigurationWithMeta extends PyboardDevConfiguration
 }
 
 export const defaultConfiguration: PyboardDevConfiguration = {
-  device: '',
-  baudrate: 115200
+  pythonType: 'MicroPython'
 };
 
 export const getConfigurationFullFileName = (): string | undefined => {

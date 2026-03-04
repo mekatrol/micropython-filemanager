@@ -1,12 +1,19 @@
 import * as vscode from 'vscode';
-import { configurationFileName, loadConfiguration, PyboardDevConfiguration } from './utils/configuration';
+import { configurationFileName, loadConfiguration } from './utils/configuration';
 import { listSerialDevices } from './utils/serial-port';
 import { logChannelOutput } from './output-channel';
 
 const statusBarSelectCommunicationId = 'mekatrol.pyboarddev.selectdevice';
+const statusBarSelectPythonTypeId = 'mekatrol.pyboarddev.selectpythontype';
 const selectedSerialPortStateKey = 'selectedSerialPort';
+const selectedBaudRateStateKey = 'selectedBaudRate';
+const selectedPythonTypeStateKey = 'selectedPythonType';
+const defaultBaudRate = 115200;
+const pythonTypes = ['MicroPython', 'CircuitPython'] as const;
+type PythonType = typeof pythonTypes[number];
 
-let statusBarItem: vscode.StatusBarItem | undefined = undefined;
+let deviceStatusBarItem: vscode.StatusBarItem | undefined = undefined;
+let pythonTypeStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 let extensionContext: vscode.ExtensionContext | undefined = undefined;
 
 export const initStatusBar = async (context: vscode.ExtensionContext): Promise<void> => {
@@ -14,6 +21,7 @@ export const initStatusBar = async (context: vscode.ExtensionContext): Promise<v
 
   // Create device name status bar item
   createDeviceNameStatusBarItem(context);
+  createPythonTypeStatusBarItem(context);
 
   // Update status bar item once at start
   await updateStatusBarItem();
@@ -26,16 +34,20 @@ export const initStatusBar = async (context: vscode.ExtensionContext): Promise<v
 };
 
 export const updateStatusBarItem = async (): Promise<void> => {
-  if (!statusBarItem) {
+  if (!deviceStatusBarItem || !pythonTypeStatusBarItem) {
     return;
   }
 
-  const config = await loadConfiguration();
-  const selectedDevice = getActiveDevice(config);
+  const selectedDevice = getActiveDevice();
+  const selectedBaudRate = getActiveBaudRate();
+  const selectedPythonType = await getActivePythonType();
 
-  statusBarItem.text = `$(circuit-board) ${selectedDevice ?? '<select device>'} [${config.baudrate}]`;
-  statusBarItem.backgroundColor = selectedDevice ? undefined : new vscode.ThemeColor('statusBarItem.errorBackground');
-  statusBarItem.show();
+  deviceStatusBarItem.text = `$(circuit-board) ${selectedDevice ?? '<select device>'} [${selectedBaudRate}]`;
+  deviceStatusBarItem.backgroundColor = selectedDevice ? undefined : new vscode.ThemeColor('statusBarItem.errorBackground');
+  deviceStatusBarItem.show();
+
+  pythonTypeStatusBarItem.text = `$(symbol-class) ${selectedPythonType}`;
+  pythonTypeStatusBarItem.show();
 };
 
 const createDeviceNameStatusBarItem = (context: vscode.ExtensionContext) => {
@@ -47,26 +59,56 @@ const createDeviceNameStatusBarItem = (context: vscode.ExtensionContext) => {
   );
 
   // Create select device status bar item
-  statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-  statusBarItem.command = statusBarSelectCommunicationId;
-  context.subscriptions.push(statusBarItem);
+  deviceStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  deviceStatusBarItem.command = statusBarSelectCommunicationId;
+  context.subscriptions.push(deviceStatusBarItem);
 
   // Register listeners for file updates
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(updateStatusBarItem));
   context.subscriptions.push(vscode.window.onDidChangeTextEditorSelection(updateStatusBarItem));
 };
 
-const getActiveDevice = (config: PyboardDevConfiguration): string | undefined => {
-  if (config.device && config.device.length) {
-    return config.device;
-  }
+const createPythonTypeStatusBarItem = (context: vscode.ExtensionContext) => {
+  context.subscriptions.push(
+    vscode.commands.registerCommand(statusBarSelectPythonTypeId, async () => {
+      await selectPythonType();
+    })
+  );
 
-  const selectedFromState = extensionContext?.globalState.get<string>(selectedSerialPortStateKey);
+  pythonTypeStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
+  pythonTypeStatusBarItem.command = statusBarSelectPythonTypeId;
+  context.subscriptions.push(pythonTypeStatusBarItem);
+};
+
+const getActiveDevice = (): string | undefined => {
+  const selectedFromState = extensionContext?.workspaceState.get<string>(selectedSerialPortStateKey);
   if (selectedFromState && selectedFromState.length) {
     return selectedFromState;
   }
 
   return undefined;
+};
+
+const getActiveBaudRate = (): number => {
+  return extensionContext?.workspaceState.get<number>(selectedBaudRateStateKey) ?? defaultBaudRate;
+};
+
+const isPythonType = (value: string): value is PythonType => {
+  return pythonTypes.includes(value as PythonType);
+};
+
+const getActivePythonType = async (): Promise<PythonType> => {
+  const selectedFromState = extensionContext?.workspaceState.get<string>(selectedPythonTypeStateKey);
+  if (selectedFromState && isPythonType(selectedFromState)) {
+    return selectedFromState;
+  }
+
+  const config = await loadConfiguration();
+  if (config.pythonType && isPythonType(config.pythonType)) {
+    return config.pythonType;
+  }
+
+  return 'MicroPython';
 };
 
 const selectSerialDevice = async (): Promise<void> => {
@@ -88,8 +130,7 @@ const selectSerialDevice = async (): Promise<void> => {
     return;
   }
 
-  const config = await loadConfiguration();
-  const activeDevice = getActiveDevice(config);
+  const activeDevice = getActiveDevice();
 
   const items = ports.map((port) => {
     const details = [port.manufacturer, `VID:${port.vendorId}`, `PID:${port.productId}`]
@@ -120,9 +161,43 @@ const selectSerialDevice = async (): Promise<void> => {
     return;
   }
 
-  await extensionContext.globalState.update(selectedSerialPortStateKey, selected.label);
+  await extensionContext.workspaceState.update(selectedSerialPortStateKey, selected.label);
+  await extensionContext.workspaceState.update(selectedBaudRateStateKey, getActiveBaudRate());
 
   const msg = `Selected serial device: ${selected.label}`;
+  vscode.window.showInformationMessage(msg);
+  logChannelOutput(msg, true);
+
+  await updateStatusBarItem();
+};
+
+const selectPythonType = async (): Promise<void> => {
+  const activePythonType = await getActivePythonType();
+  const items = pythonTypes.map((type) => ({
+    label: type,
+    picked: type === activePythonType
+  }));
+
+  const selected = await vscode.window.showQuickPick(items, {
+    placeHolder: 'Select Python type for Pyboard Dev',
+    canPickMany: false,
+    ignoreFocusOut: true
+  });
+
+  if (!selected) {
+    return;
+  }
+
+  if (!extensionContext) {
+    const msg = 'Extension context not initialised. Unable to persist selected python type.';
+    vscode.window.showErrorMessage(msg);
+    logChannelOutput(msg, true);
+    return;
+  }
+
+  await extensionContext.workspaceState.update(selectedPythonTypeStateKey, selected.label);
+
+  const msg = `Selected python type: ${selected.label}`;
   vscode.window.showInformationMessage(msg);
   logChannelOutput(msg, true);
 
