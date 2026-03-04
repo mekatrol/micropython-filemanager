@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConnectedBoard, onBoardConnectionStateChanged } from './commands/connect-board-command';
 import { logChannelOutput } from './output-channel';
+import { onPythonTypeChanged } from './status-bar';
 import { loadConfiguration } from './utils/configuration';
 import {
   FileEntry,
@@ -26,6 +27,8 @@ const commandSyncToDeviceId = 'mekatrol.pyboarddev.synctodevice';
 const commandOpenLocalItemId = 'mekatrol.pyboarddev.openlocalmirroritem';
 const commandPullAndOpenDeviceItemId = 'mekatrol.pyboarddev.pullandopendeviceitem';
 const commandOpenRemoteFileId = 'mekatrol.pyboarddev.openremotefile';
+const remoteDocumentScheme = 'pyboarddev-remote';
+const selectedPythonTypeStateKey = 'selectedPythonType';
 
 const obfuscatedPlaceholder = '# pyboarddev: obfuscated on pull\n';
 
@@ -46,6 +49,18 @@ class MirrorNode extends vscode.TreeItem {
   }
 }
 
+class RemoteDeviceDocumentProvider implements vscode.TextDocumentContentProvider {
+  private readonly documents = new Map<string, string>();
+
+  setContent(uri: vscode.Uri, content: string): void {
+    this.documents.set(uri.toString(), content);
+  }
+
+  provideTextDocumentContent(uri: vscode.Uri): string {
+    return this.documents.get(uri.toString()) ?? '';
+  }
+}
+
 class DeviceMirrorModel {
   private readonly onDidChangeDataEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeData = this.onDidChangeDataEmitter.event;
@@ -53,10 +68,25 @@ class DeviceMirrorModel {
   private workspaceFolder: vscode.WorkspaceFolder | undefined;
   private mirrorRootPath: string | undefined;
   private obfuscationSet: Set<string> = new Set();
+  private pythonType = 'MicroPython';
 
   private localEntries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
   private deviceEntries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
   private syncStates: Map<string, SyncState> = new Map();
+
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly remoteDocumentProvider: RemoteDeviceDocumentProvider
+  ) {}
+
+  private normalisePythonType(value: string | undefined): 'MicroPython' | 'CircuitPython' {
+    const lowered = (value ?? '').toLowerCase();
+    if (lowered === 'circuitpython') {
+      return 'CircuitPython';
+    }
+
+    return 'MicroPython';
+  }
 
   async refresh(fetchDevice: boolean = true): Promise<void> {
     this.workspaceFolder = vscode.workspace.workspaceFolders?.[0];
@@ -70,6 +100,8 @@ class DeviceMirrorModel {
 
     const config = await loadConfiguration();
     this.obfuscationSet = normaliseObfuscationSet(config.obfuscateOnPull ?? []);
+    const selectedPythonType = this.context.workspaceState.get<string>(selectedPythonTypeStateKey);
+    this.pythonType = this.normalisePythonType(selectedPythonType || config.pythonType);
     this.mirrorRootPath = await resolveMirrorRootPath(this.workspaceFolder, config.mirrorFolder);
 
     this.localEntries = await scanLocalMirrorEntries(this.mirrorRootPath);
@@ -218,15 +250,24 @@ class DeviceMirrorModel {
     const localPath = path.join(this.mirrorRootPath, relativePath);
     await fs.mkdir(path.dirname(localPath), { recursive: true });
 
+    let editorContent: Buffer;
     if (this.obfuscationSet.has(relativePath)) {
-      await fs.writeFile(localPath, obfuscatedPlaceholder, 'utf8');
+      editorContent = Buffer.from(obfuscatedPlaceholder, 'utf8');
+      await fs.writeFile(localPath, editorContent);
     } else {
-      const content = await readDeviceFile(board, relativePath);
-      await fs.writeFile(localPath, content);
+      editorContent = await readDeviceFile(board, relativePath);
+      await fs.writeFile(localPath, editorContent);
     }
 
     await this.refresh();
-    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(localPath));
+    const deviceName = (path.basename(board.device) || board.device).replace(/[^\w.-]/g, '_');
+    const _pythonTypePrefix = this.normalisePythonType(this.pythonType);
+    // const remotePath = `${_pythonTypePrefix}:/${deviceName}/${toRelativePath(relativePath)}`;
+    const remotePath = `/${deviceName}/${toRelativePath(relativePath)}`;
+    const remoteUri = vscode.Uri.parse(`${remoteDocumentScheme}:${remotePath}`);
+
+    this.remoteDocumentProvider.setContent(remoteUri, editorContent.toString('utf8'));
+    const document = await vscode.workspace.openTextDocument(remoteUri);
     await vscode.window.showTextDocument(document, { preview: false });
   }
 
@@ -406,7 +447,8 @@ class SideTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.Di
 }
 
 export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext): Promise<void> => {
-  const model = new DeviceMirrorModel();
+  const remoteDocumentProvider = new RemoteDeviceDocumentProvider();
+  const model = new DeviceMirrorModel(context, remoteDocumentProvider);
 
   const localProvider = new SideTreeProvider('local', model);
   const deviceProvider = new SideTreeProvider('device', model);
@@ -415,8 +457,10 @@ export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext)
   context.subscriptions.push(deviceProvider);
   context.subscriptions.push(vscode.window.registerTreeDataProvider(localViewId, localProvider));
   context.subscriptions.push(vscode.window.registerTreeDataProvider(deviceViewId, deviceProvider));
+  context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider(remoteDocumentScheme, remoteDocumentProvider));
 
   context.subscriptions.push(onBoardConnectionStateChanged(() => model.refresh()));
+  context.subscriptions.push(onPythonTypeChanged(() => model.refresh(false)));
   context.subscriptions.push(vscode.workspace.onDidSaveTextDocument((document) => model.handlePossibleMirrorFileChange(document.uri.fsPath)));
   context.subscriptions.push(vscode.workspace.onDidDeleteFiles((event) => event.files.forEach((uri) => model.handlePossibleMirrorFileChange(uri.fsPath))));
   context.subscriptions.push(vscode.workspace.onDidCreateFiles((event) => event.files.forEach((uri) => model.handlePossibleMirrorFileChange(uri.fsPath))));

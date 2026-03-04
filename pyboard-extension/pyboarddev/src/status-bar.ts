@@ -13,6 +13,8 @@ const selectedPythonTypeStateKey = 'selectedPythonType';
 const defaultBaudRate = 115200;
 const pythonTypes = ['MicroPython', 'CircuitPython'] as const;
 type PythonType = typeof pythonTypes[number];
+const pythonTypeChangedEmitter = new vscode.EventEmitter<PythonType>();
+export const onPythonTypeChanged = pythonTypeChangedEmitter.event;
 
 let deviceStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 let pythonTypeStatusBarItem: vscode.StatusBarItem | undefined = undefined;
@@ -215,6 +217,7 @@ const selectPythonType = async (): Promise<void> => {
   }
 
   await extensionContext.workspaceState.update(selectedPythonTypeStateKey, selected.label);
+  pythonTypeChangedEmitter.fire(selected.label);
 
   const msg = `Selected python type: ${selected.label}`;
   vscode.window.showInformationMessage(msg);
