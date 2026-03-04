@@ -68,6 +68,16 @@
         "icon": "$(cloud-upload)"
       },
       {
+        "command": "mekatrol.pyboarddev.syncnodefromdevice",
+        "title": "Sync From Device",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "mekatrol.pyboarddev.syncnodetodevice",
+        "title": "Sync To Device",
+        "icon": "$(cloud-upload)"
+      },
+      {
         "command": "mekatrol.pyboarddev.openlocalmirroritem",
         "title": "Open Local Mirror Item"
       },
@@ -89,33 +99,38 @@
         "title": "Pyboard Dev: Open REPL console"
       },
       {
-        "command": "mekatrol.pyboarddev.createremotefile",
-        "title": "Create Remote File",
+        "command": "mekatrol.pyboarddev.createmirrorfile",
+        "title": "Create File",
         "icon": "$(new-file)"
       },
       {
-        "command": "mekatrol.pyboarddev.createremotefolder",
-        "title": "Create Remote Folder",
+        "command": "mekatrol.pyboarddev.createmirrorfolder",
+        "title": "Create Folder",
         "icon": "$(new-folder)"
       },
       {
-        "command": "mekatrol.pyboarddev.renameremotepath",
-        "title": "Rename Remote Item"
+        "command": "mekatrol.pyboarddev.renamemirrorpath",
+        "title": "Rename"
       },
       {
-        "command": "mekatrol.pyboarddev.deleteremotepath",
-        "title": "Delete Remote Item"
+        "command": "mekatrol.pyboarddev.deletemirrorpath",
+        "title": "Delete"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "mekatrol-pyboarddev-sidebar",
+          "title": "Pyboard Dev",
+          "icon": "images/pyboarddev-sidebar.svg"
+        }
+      ]
+    },
     "views": {
-      "explorer": [
+      "mekatrol-pyboarddev-sidebar": [
         {
-          "id": "mekatrol.pyboarddev.localMirrorExplorer",
-          "name": "Pyboard Mirror (Host)"
-        },
-        {
-          "id": "mekatrol.pyboarddev.deviceFilesystemExplorer",
-          "name": "Pyboard Device (Remote)"
+          "id": "mekatrol.pyboarddev.mirrorExplorer",
+          "name": "Pyboard Explorer"
         }
       ]
     },
@@ -141,70 +156,85 @@
       "view/title": [
         {
           "command": "mekatrol.pyboarddev.refreshmirrorview",
-          "when": "view == mekatrol.pyboarddev.localMirrorExplorer || view == mekatrol.pyboarddev.deviceFilesystemExplorer",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer",
           "group": "navigation@1"
         },
         {
           "command": "mekatrol.pyboarddev.syncfromdevice",
-          "when": "view == mekatrol.pyboarddev.localMirrorExplorer || view == mekatrol.pyboarddev.deviceFilesystemExplorer",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer",
           "group": "navigation@2"
         },
         {
           "command": "mekatrol.pyboarddev.synctodevice",
-          "when": "view == mekatrol.pyboarddev.localMirrorExplorer || view == mekatrol.pyboarddev.deviceFilesystemExplorer",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer",
           "group": "navigation@3"
         }
       ],
       "view/item/context": [
         {
-          "command": "mekatrol.pyboarddev.openremotefile",
-          "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && viewItem == pyboarddev.deviceFile",
+          "command": "mekatrol.pyboarddev.openlocalmirroritem",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && viewItem == pyboarddev.hostFile",
           "group": "navigation@1"
         },
         {
-          "command": "mekatrol.pyboarddev.compareremotewithlocal",
-          "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && viewItem == pyboarddev.deviceFile",
+          "command": "mekatrol.pyboarddev.openremotefile",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && viewItem == pyboarddev.deviceFile",
           "group": "navigation@2"
         },
         {
-          "command": "mekatrol.pyboarddev.createremotefile",
-          "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && viewItem == pyboarddev.deviceFolder",
+          "command": "mekatrol.pyboarddev.compareremotewithlocal",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostFile || viewItem == pyboarddev.deviceFile)",
           "group": "navigation@3"
         },
         {
-          "command": "mekatrol.pyboarddev.createremotefolder",
-          "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && viewItem == pyboarddev.deviceFolder",
+          "command": "mekatrol.pyboarddev.syncnodefromdevice",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostRoot || viewItem == pyboarddev.deviceRoot || viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFolder)",
           "group": "navigation@4"
         },
         {
-          "command": "mekatrol.pyboarddev.renameremotepath",
-          "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && (viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFolder)",
+          "command": "mekatrol.pyboarddev.syncnodetodevice",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostRoot || viewItem == pyboarddev.deviceRoot || viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFolder)",
           "group": "navigation@5"
         },
         {
-          "command": "mekatrol.pyboarddev.deleteremotepath",
-          "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && (viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFolder)",
+          "command": "mekatrol.pyboarddev.createmirrorfile",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostRoot || viewItem == pyboarddev.deviceRoot || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.deviceFolder)",
           "group": "navigation@6"
+        },
+        {
+          "command": "mekatrol.pyboarddev.createmirrorfolder",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostRoot || viewItem == pyboarddev.deviceRoot || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.deviceFolder)",
+          "group": "navigation@7"
+        },
+        {
+          "command": "mekatrol.pyboarddev.renamemirrorpath",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFolder)",
+          "group": "navigation@8"
+        },
+        {
+          "command": "mekatrol.pyboarddev.deletemirrorpath",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFolder)",
+          "group": "navigation@9"
         }
       ]
     },
     "keybindings": [
       {
-        "command": "mekatrol.pyboarddev.renameremotepath",
+        "command": "mekatrol.pyboarddev.renamemirrorpath",
         "key": "f2",
-        "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && listFocus"
+        "when": "view == mekatrol.pyboarddev.mirrorExplorer && listFocus"
       },
       {
-        "command": "mekatrol.pyboarddev.deleteremotepath",
+        "command": "mekatrol.pyboarddev.deletemirrorpath",
         "key": "delete",
         "mac": "backspace",
-        "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && listFocus"
+        "when": "view == mekatrol.pyboarddev.mirrorExplorer && listFocus"
       },
       {
         "command": "mekatrol.pyboarddev.compareremotewithlocal",
         "key": "ctrl+alt+d",
         "mac": "cmd+alt+d",
-        "when": "view == mekatrol.pyboarddev.deviceFilesystemExplorer && listFocus"
+        "when": "view == mekatrol.pyboarddev.mirrorExplorer && listFocus"
       }
     ],
     "configuration": {
