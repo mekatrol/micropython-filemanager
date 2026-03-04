@@ -1,24 +1,34 @@
 /*
- * This code is adapted from: https://docs.micropython.org/en/latest/reference/pyboard.py.html
+ * Pyboard.ts
+ * 
+ * TypeScript class for communicating with MicroPython devices over a serial port.
+ * Adapted from: https://docs.micropython.org/en/latest/reference/pyboard.py.html
+ * 
+ * Provides methods to open/close serial ports, enter/exit raw REPL, execute commands,
+ * and perform raw-paste writes to the MicroPython device.
  */
 
 import { SerialPort } from 'serialport';
 
 export class Pyboard {
-  device: string;
-  baudrate: number;
-  user: string;
-  password: string;
+  device: string;              // Serial device path (e.g., "COM5", "/dev/ttyUSB0")
+  baudrate: number;            // Serial baud rate, default 115200
+  user: string;                // Device username (not used in this version)
+  password: string;            // Device password (not used in this version)
 
-  inRawRepl: boolean = false;
-  serialPort: SerialPort | undefined = undefined;
-  nextCommand: string | undefined = undefined;
+  inRawRepl: boolean = false;  // Flag indicating if currently in raw REPL mode
+  serialPort: SerialPort | undefined = undefined;  // Active SerialPort instance
+  nextCommand: string | undefined = undefined;     // Stores next command to send
 
-  useRawPaste: boolean = true;
+  useRawPaste: boolean = true; // Whether to attempt raw-paste mode
+  waitDelay: number = 100;     // Milliseconds to wait after certain commands
 
-  /*
-   * NOTE: only serial ports are currently supported as device string
-   *   eg: "COM5", "/dev/ttyAMA0", "/dev/ttyUSB0"
+  /**
+   * Constructor for Pyboard class.
+   * @param device Serial port device string
+   * @param baudrate Serial baud rate (default: 115200)
+   * @param user Optional username (default: "micro")
+   * @param password Optional password (default: "python")
    */
   constructor(device: string, baudrate: number = 115200, user: string = 'micro', password: string = 'python') {
     this.device = device;
@@ -27,10 +37,13 @@ export class Pyboard {
     this.password = password;
   }
 
+  /**
+   * Opens the serial port.
+   */
   async open(): Promise<void> {
     if (this.serialPort != undefined) {
-      // The serial port is already open, so close it first
-      this.close();
+      // If port already open, close first
+      await this.close();
     }
 
     this.serialPort = new SerialPort({
@@ -41,285 +54,237 @@ export class Pyboard {
 
     const serialPort = this.serialPort;
     return new Promise((resolve, reject) => {
-      serialPort.open((e) => {
-        if (e) {
-          reject(e);
+      serialPort.open((err) => {
+        if (err) {
+          reject(err);
         }
         resolve();
       });
     });
   }
 
+  /**
+   * Closes the serial port.
+   */
   async close(): Promise<void> {
-    // If the serial port is already undefned then nothing to close
     if (this.serialPort === undefined) {
       return;
     }
 
-    // Close and release the serial port
     const serialPort = this.serialPort;
 
-    const releaseSerialPortInstance = () => {
-      this.serialPort = undefined;
-    };
-
     return new Promise((resolve, reject) => {
-      serialPort.close((e) => {
-        if (e) {
-          reject(e);
+      serialPort.close((err) => {
+        if (err) {
+          reject(err);
         }
-
-        releaseSerialPortInstance();
+        this.serialPort = undefined;
         resolve();
       });
     });
   }
 
+  /**
+   * Delays execution for a given number of milliseconds.
+   * @param ms Milliseconds to wait
+   */
   async delay(ms: number): Promise<void> {
-    const delay = () => new Promise((resolve) => setTimeout(resolve, ms));
-    await delay();
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  /**
+   * Enter raw REPL mode on the MicroPython device.
+   */
   async enterRawRepl(): Promise<boolean> {
-    // Ctrl-C interrupt running program
-    await this.write('\r\x03');
+    await this.write('\r\x03');  // Ctrl-C to interrupt any running program
+    await this.delay(this.waitDelay);
+    await this.readAll();         // Clear any pending input
+    await this.write('\r\x01');  // Ctrl-A to enter raw REPL
+    await this.delay(this.waitDelay);
 
-    // Give board time to respond
-    await this.delay(10);
-
-    // Clear any unread data
-    await this.readAll();
-
-    // Ctrl-A enter raw REPL
-    await this.write('\r\x01');
-
-    // Give board time to respond
-    await this.delay(10);
-
-    // Return result of reading the expected response string
+    // Wait for device to respond with the raw REPL prompt
     return await this.readUntil('raw REPL; CTRL-B to exit\r\n>');
   }
 
+  /**
+   * Writes a command using raw-paste mode.
+   * @param commandBytes Command as byte array
+   */
   async rawPasteWrite(commandBytes: number[]): Promise<boolean> {
-    // Read initial header, with window size.
-    const x: number[] = await this.readNextRaw(2);
-
-    const windowSize = x[0];
-    let windowRemain = windowSize; // Window remaining starts at window size
+    // Read header with window size
+    const header = await this.readNextRaw(2);
+    const windowSize = header[0];
+    let windowRemain = windowSize;
 
     let i = 0;
-
     while (i < commandBytes.length) {
       while (windowRemain === 0) {
         const data = await this.serialPort!.read(1);
-
-        if (data.length === 0) {
-          // No data was read
-          continue;
-        }
+        if (!data || data.length === 0) continue;
 
         switch (data[0]) {
-          case 0x01:
-            // Device indicated that a new window of data can be sent.
+          case 0x01: // Window is ready for more data
             windowRemain += windowSize;
             continue;
-
-          case 0x04:
+          case 0x04: // End-of-data acknowledgment
             await this.write('\x04');
             continue;
-
           default:
-            throw new Error(`unexpected read during raw paste: ${data[0]}`);
+            throw new Error(`Unexpected byte during raw paste: ${data[0]}`);
         }
       }
 
-      // Send out as much data as possible that fits within the allowed window.
+      // Send as many bytes as window allows
       const bytes = commandBytes.slice(i, Math.min(i + windowRemain, commandBytes.length));
       this.serialPort!.write(bytes);
       windowRemain -= bytes.length;
       i += bytes.length;
     }
 
-    await this.delay(10);
+    await this.delay(this.waitDelay);
+    await this.readAllRaw();   // Clear buffer
+    await this.write('\x04');  // Signal end of data
+    await this.delay(this.waitDelay);
 
-    // Clear any unread data
-    await this.readAllRaw();
-
-    // Indicate end of data.
-    await this.write('\x04');
-
-    await this.delay(10);
-
-    const endOfDataResponse = await this.readNextRaw(1);
-    if (endOfDataResponse[endOfDataResponse.length - 1] !== 0x04) {
-      throw new Error(`could not complete raw paste: ${endOfDataResponse}`);
+    const endResponse = await this.readNextRaw(1);
+    if (endResponse[endResponse.length - 1] !== 0x04) {
+      throw new Error(`Raw paste did not complete successfully: ${endResponse}`);
     }
 
-    // Wait for device to acknowledge end of data.
     const data = await this.readAllRaw();
-    const filteredData = data.filter((b) => b != 0x04);
-    const str = String.fromCharCode(...filteredData);
-    console.log(str);
+    const str = String.fromCharCode(...data.filter((b) => b !== 0x04));
+    console.info(str);
 
     return true;
   }
 
+  /**
+   * Execute a command without following its output.
+   * @param command Command string or byte array
+   */
   async execRawNoFollow(command: string | number[]): Promise<boolean> {
     let commandBytes: number[] = [];
 
-    if (typeof command === typeof String) {
-      // Convert string to bytes
-      for (let i = 0; i < command.length; i++) {
-        commandBytes.push((command as string).charCodeAt(i));
-      }
+    if (typeof command === 'string') {
+      commandBytes = Array.from(command).map((c) => c.charCodeAt(0));
     } else {
-      // Already a byte array
-      commandBytes = command as number[];
+      commandBytes = command;
     }
 
     if (this.useRawPaste) {
-      // Enter raw past sequence
-      await this.write('\x05A\x01');
+      await this.write('\x05A\x01'); // Initiate raw-paste mode
+      await this.delay(this.waitDelay);
 
-      // Give board time to respond
-      await this.delay(10);
-
-      // Return result of reading the expected response string
       const response = await this.readNextRaw(2);
-
-      if (response.length < 2) {
-        // Did not get 2 bytes in response, so can't use raw paste
+      if (response.length < 2 || response[0] !== 'R'.charCodeAt(0)) {
+        this.useRawPaste = false;
+      } else if (response[1] === 1) {
+        return await this.rawPasteWrite(commandBytes);
+      } else {
         this.useRawPaste = false;
       }
-
-      // Expecting 'R' as first character
-      if (response[0] !== 'R'.charCodeAt(0)) {
-        return false;
-      }
-
-      if (response[1] === 1) {
-        // Device supports raw-paste mode, write out the command using this mode.
-        return await this.rawPasteWrite(commandBytes);
-      }
-
-      // Device understood raw-paste command but doesn't support it or
-      // Device doesn't support raw-paste, fall back to normal raw REPL.
-      this.useRawPaste = false;
     }
 
-    // End of data sequence
-    await this.write('\x04');
+    // Fallback: normal raw REPL
+    await this.write('\x04'); // End-of-data sequence
+    await this.delay(this.waitDelay);
 
-    // Give board time to respond
-    await this.delay(10);
-
-    // Return result of reading the expected response string
     const response2 = await this.readAllRaw();
-
-    console.log(response2);
+    console.info(response2);
 
     return true;
   }
 
+  /**
+   * Exit raw REPL mode and return to normal REPL.
+   */
   async exitRawRepl(): Promise<boolean> {
-    // Clear any unread data
-    await this.readAll();
+    await this.readAll();       // Clear buffer
+    await this.write('\r\x02'); // Ctrl-B to exit raw REPL
+    await this.delay(this.waitDelay);
 
-    await this.write('\r\x02');
-
-    // Give board time to respond
-    await this.delay(10);
-
-    // Return result of reading the expected response string
     return await this.readUntil('>>> ');
   }
 
+  /**
+   * Reads a specific number of bytes from the device.
+   * @param length Number of bytes to read
+   */
   async readNextRaw(length: number): Promise<number[]> {
-    // Ensure port open
     this.assertPortOpen();
-
-    // Read length bytes
     const bytes = await this.serialPort!.read(length);
-
-    // Return read bytes or empty array if none read
     return bytes ?? [];
   }
 
+  /**
+   * Reads a specific number of bytes and converts to string.
+   * @param length Number of bytes to read
+   */
   async readNext(length: number): Promise<string> {
     const bytes = await this.readNextRaw(length);
-
-    if (bytes.length === 0) {
-      // No bytes so return empty string
-      return '';
-    }
-
-    // Convert array bytes number values to ASCII character values (string)
-    return String.fromCharCode(...bytes);
+    return bytes.length === 0 ? '' : String.fromCharCode(...bytes);
   }
 
+  /**
+   * Reads all available bytes from the device.
+   * @param minLength Minimum number of bytes to read per chunk
+   */
   async readAllRaw(minLength: number = 1): Promise<number[]> {
     this.assertPortOpen();
-
     let response: number[] = [];
 
     while (true) {
       const bytes = await this.serialPort!.read(minLength);
-
-      if (!bytes) {
-        // Have read to the end of the rx buffer
-        break;
-      }
-
-      // Append to response
+      if (!bytes) break;
       response = response.concat(...bytes);
     }
 
     return response;
   }
 
+  /**
+   * Reads all available bytes and converts to string.
+   * @param minLength Minimum number of bytes to read per chunk
+   */
   async readAll(minLength: number = 1): Promise<string> {
-    this.assertPortOpen();
-
-    // Read raw bytes
     const bytes = await this.readAllRaw(minLength);
-
-    // Convert number values to ASCII character values
     return String.fromCharCode(...bytes);
   }
 
+  /**
+   * Reads until a specific string appears at the end of the buffer.
+   * @param str Target string
+   */
   async readUntil(str: string): Promise<boolean> {
     this.assertPortOpen();
-
-    // Read all buffered bytes
     const response = await this.readAll();
-
-    // Return true if the ends of the strings matched
-    const responseEnd = response.substring(Math.max(0, response.length - str.length));
-    return responseEnd == str;
+    return response.slice(-str.length) === str;
   }
 
+  /**
+   * Writes a string to the serial port.
+   * @param data String to write
+   */
   async write(data: string): Promise<void> {
     this.assertPortOpen();
 
-    const dataArray = new Uint8Array(data.length);
-
+    const buffer = new Uint8Array(data.length);
     for (let i = 0; i < data.length; i++) {
-      const c = data.charCodeAt(i);
-      dataArray[i] = c;
+      buffer[i] = data.charCodeAt(i);
     }
 
-    this.serialPort!.write(dataArray, undefined, (e) => {
-      if (e) {
-        console.error(e);
-      }
+    this.serialPort!.write(buffer, undefined, (err) => {
+      if (err) console.error(err);
     });
   }
 
+  /**
+   * Asserts that the serial port is open.
+   * Throws an error if port is not open.
+   */
   assertPortOpen() {
-    if (this.serialPort === undefined) {
+    if (!this.serialPort) {
       throw new Error('The serial port must be open to call this method');
     }
   }
-
-  // async execRawNoFollow(command: string | ArrayBuffer): Promise<void> {}
 }

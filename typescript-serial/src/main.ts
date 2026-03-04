@@ -16,7 +16,7 @@ const run = async (device: string, baudrate: number) => {
 
   try {
     await pyboard.open();
-    const python = "import os\nfor f in os.ilistdir('/'):\n print('{:12} {}{}'.format(f[3]if len(f)>3 else 0,f[0],'/'if f[1]&0x4000 else ''))";
+    const python = "import os\nfor f in os.ilistdir('/'):\n print('{:12} {}{}'.format(f[3]if len(f)>3 else 0,f[0],'/'if f[1]&0x4000 else ''))\n";
 
     console.info(`Enter REPL mode result: ${await pyboard.enterRawRepl()}`);
     console.info(`Enter raw paste result: ${await pyboard.execRawNoFollow(python)}`);
@@ -32,6 +32,6 @@ const run = async (device: string, baudrate: number) => {
   }
 };
 
-run('COM22', 115200).then(() => {
+run('/dev/ttyACM0', 115200).then(() => {
   console.info('done!');
 });
