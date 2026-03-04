@@ -28,6 +28,10 @@
       {
         "command": "mekatrol.pyboarddev.selectpythontype",
         "title": "Pyboard Dev: Select Python type"
+      },
+      {
+        "command": "mekatrol.pyboarddev.connectboard",
+        "title": "Pyboard Dev: Connect to board"
       }
     ]
   },

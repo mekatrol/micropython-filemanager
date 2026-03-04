@@ -8,7 +8,9 @@
  * and perform raw-paste writes to the MicroPython device.
  */
 
+import * as vscode from 'vscode';
 import { SerialPort } from 'serialport';
+import { logChannelOutput } from '../output-channel';
 
 export class Pyboard {
   device: string;              // Serial device path (e.g., "COM5", "/dev/ttyUSB0")
@@ -41,7 +43,7 @@ export class Pyboard {
    * Opens the serial port.
    */
   async open(): Promise<void> {
-    if (this.serialPort != undefined) {
+    if (this.serialPort !== undefined) {
       // If port already open, close first
       await this.close();
     }
@@ -56,7 +58,8 @@ export class Pyboard {
     return new Promise((resolve, reject) => {
       serialPort.open((err) => {
         if (err) {
-          reject(err);
+          reject(this.reportError('Failed to open serial port', err));
+          return;
         }
         resolve();
       });
@@ -76,7 +79,8 @@ export class Pyboard {
     return new Promise((resolve, reject) => {
       serialPort.close((err) => {
         if (err) {
-          reject(err);
+          reject(this.reportError('Failed to close serial port', err));
+          return;
         }
         this.serialPort = undefined;
         resolve();
@@ -120,7 +124,9 @@ export class Pyboard {
     while (i < commandBytes.length) {
       while (windowRemain === 0) {
         const data = await this.serialPort!.read(1);
-        if (!data || data.length === 0) continue;
+        if (!data || data.length === 0) {
+          continue;
+        }
 
         switch (data[0]) {
           case 0x01: // Window is ready for more data
@@ -130,7 +136,7 @@ export class Pyboard {
             await this.write('\x04');
             continue;
           default:
-            throw new Error(`Unexpected byte during raw paste: ${data[0]}`);
+            throw this.reportError('Unexpected byte during raw paste', new Error(String(data[0])));
         }
       }
 
@@ -148,12 +154,12 @@ export class Pyboard {
 
     const endResponse = await this.readNextRaw(1);
     if (endResponse[endResponse.length - 1] !== 0x04) {
-      throw new Error(`Raw paste did not complete successfully: ${endResponse}`);
+      throw this.reportError('Raw paste did not complete successfully', new Error(String(endResponse)));
     }
 
     const data = await this.readAllRaw();
     const str = String.fromCharCode(...data.filter((b) => b !== 0x04));
-    console.info(str);
+    logChannelOutput(str, false);
 
     return true;
   }
@@ -190,7 +196,7 @@ export class Pyboard {
     await this.delay(this.waitDelay);
 
     const response2 = await this.readAllRaw();
-    console.info(response2);
+    logChannelOutput(`Raw REPL fallback response: ${response2.join(',')}`, false);
 
     return true;
   }
@@ -235,7 +241,9 @@ export class Pyboard {
 
     while (true) {
       const bytes = await this.serialPort!.read(minLength);
-      if (!bytes) break;
+      if (!bytes) {
+        break;
+      }
       response = response.concat(...bytes);
     }
 
@@ -274,7 +282,9 @@ export class Pyboard {
     }
 
     this.serialPort!.write(buffer, undefined, (err) => {
-      if (err) console.error(err);
+      if (err) {
+        this.reportError('Failed to write to serial port', err);
+      }
     });
   }
 
@@ -286,5 +296,13 @@ export class Pyboard {
     if (!this.serialPort) {
       throw new Error('The serial port must be open to call this method');
     }
+  }
+
+  private reportError(context: string, error: unknown): Error {
+    const detail = error instanceof Error ? error.message : String(error);
+    const message = `${context}: ${detail}`;
+    vscode.window.showErrorMessage(message);
+    logChannelOutput(message, true);
+    return new Error(message);
   }
 }

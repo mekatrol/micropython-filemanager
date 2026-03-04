@@ -1,0 +1,44 @@
+import * as vscode from 'vscode';
+import { logChannelOutput } from '../output-channel';
+import { Pyboard } from '../utils/pyboard';
+
+const selectedSerialPortStateKey = 'selectedSerialPort';
+const selectedBaudRateStateKey = 'selectedBaudRate';
+const defaultBaudRate = 115200;
+
+let connectedBoard: Pyboard | undefined;
+
+export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
+  const command = vscode.commands.registerCommand('mekatrol.pyboarddev.connectboard', async () => {
+    const device = context.workspaceState.get<string>(selectedSerialPortStateKey);
+    const baudRate = context.workspaceState.get<number>(selectedBaudRateStateKey) ?? defaultBaudRate;
+
+    if (!device) {
+      const msg = 'No serial device selected. Select a serial port first.';
+      vscode.window.showWarningMessage(msg);
+      logChannelOutput(msg, true);
+      return;
+    }
+
+    try {
+      if (connectedBoard) {
+        await connectedBoard.close();
+      }
+
+      const board = new Pyboard(device, baudRate);
+      await board.open();
+      connectedBoard = board;
+
+      const msg = `Connected to board on ${device} @ ${baudRate}.`;
+      vscode.window.showInformationMessage(msg);
+      logChannelOutput(msg, true);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      const msg = `Failed to connect to board on ${device} @ ${baudRate}. ${reason}`;
+      vscode.window.showErrorMessage(msg);
+      logChannelOutput(msg, true);
+    }
+  });
+
+  context.subscriptions.push(command);
+};
