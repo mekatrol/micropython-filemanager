@@ -12,6 +12,7 @@ import {
   tryReconnectBoardOnStartup
 } from './commands/connect-board-command';
 import { initDeviceMirrorExplorer } from './device-mirror-explorer';
+import { initPyboardDebug } from './pyboard-debug';
 import { initTerminal } from './terminal';
 
 // This method is called when your extension is activated
@@ -35,6 +36,9 @@ export const activate = async (context: vscode.ExtensionContext) => {
 
   // Init device mirror explorer
   await initDeviceMirrorExplorer(context);
+
+  // Init Run/Debug integration
+  initPyboardDebug(context);
 
   // Init REPL terminal
   initTerminal(context);

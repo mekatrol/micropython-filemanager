@@ -146,9 +146,53 @@
           "type": "boolean",
           "default": false,
           "description": "Automatically reconnect to the last selected device on startup if it was still connected when VS Code exited."
+        },
+        "mekatrol.pyboarddev.verboseReplTransportLogs": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show low-level REPL TX/RX transport logs in the extension output channel (for troubleshooting)."
         }
       }
-    }
+    },
+    "debuggers": [
+      {
+        "type": "pyboarddev",
+        "label": "Pyboard Dev",
+        "languages": [
+          "python"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "type",
+              "request",
+              "name"
+            ],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "File path or URI to run on the connected device.",
+                "default": "${file}"
+              },
+              "timeoutMs": {
+                "type": "number",
+                "description": "Execution timeout in milliseconds.",
+                "default": 60000
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "pyboarddev",
+            "request": "launch",
+            "name": "Pyboard Dev: Run Current File",
+            "program": "${file}",
+            "timeoutMs": 60000
+          }
+        ]
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run package",

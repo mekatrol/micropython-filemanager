@@ -38,6 +38,7 @@ export class Pyboard {
   private ioEmitter = new vscode.EventEmitter<PyboardIOEvent>();
   readonly onDidIO = this.ioEmitter.event;
   private execQueue: Promise<void> = Promise.resolve();
+  private static readonly transportLogSettingKey = 'verboseReplTransportLogs';
 
   /**
    * Constructor for Pyboard class.
@@ -639,7 +640,15 @@ export class Pyboard {
     }
 
     this.ioEmitter.fire({ direction, data });
-    logChannelOutput(`[REPL ${direction.toUpperCase()}] ${this.formatBytesForLog(data)}`, false);
+    if (this.isTransportLoggingEnabled()) {
+      logChannelOutput(`[REPL ${direction.toUpperCase()}] ${this.formatBytesForLog(data)}`, false);
+    }
+  }
+
+  private isTransportLoggingEnabled(): boolean {
+    return vscode.workspace
+      .getConfiguration('mekatrol.pyboarddev')
+      .get<boolean>(Pyboard.transportLogSettingKey, false);
   }
 
   private formatBytesForLog(data: Buffer): string {
