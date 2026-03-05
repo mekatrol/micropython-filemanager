@@ -310,4 +310,24 @@ export const initPyboardDebug = (context: vscode.ExtensionContext): void => {
 
   context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider(debugType, configProvider));
   context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory(debugType, adapterFactory));
+  context.subscriptions.push(
+    vscode.debug.onDidTerminateDebugSession(async (session) => {
+      if (session.type !== debugType) {
+        return;
+      }
+
+      const board = getConnectedBoard();
+      if (!board) {
+        return;
+      }
+
+      try {
+        await board.softReboot();
+        logChannelOutput('Device soft rebooted after debug session stop.', true);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logChannelOutput(`Failed to soft reboot device after debug session stop: ${message}`, true);
+      }
+    })
+  );
 };

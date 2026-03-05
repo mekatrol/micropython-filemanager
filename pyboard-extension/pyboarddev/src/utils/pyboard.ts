@@ -385,6 +385,12 @@ export class Pyboard {
     });
   }
 
+  async softReboot(timeoutMs: number = 8000): Promise<void> {
+    return this.enqueueExclusive(async () => {
+      await this.softRebootRawUnlocked(Math.max(timeoutMs, 1000));
+    });
+  }
+
   private buildRuntimeInfoScript(): string {
     const beginMarker = '__PYBOARDDEV_INFO_BEGIN__';
     const endMarker = '__PYBOARDDEV_INFO_END__';
