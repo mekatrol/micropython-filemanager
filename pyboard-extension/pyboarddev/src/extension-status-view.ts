@@ -4,6 +4,7 @@ import { getActiveBaudRate, getActiveDevice, getStatusDisplayMode, onStatusDataC
 
 const statusViewId = 'mekatrol.pyboarddev.statusView';
 const selectDeviceCommandId = 'mekatrol.pyboarddev.selectdevice';
+const autoDetectDevicesCommandId = 'mekatrol.pyboarddev.autodetectdevices';
 const toggleBoardConnectionCommandId = 'mekatrol.pyboarddev.toggleboardconnection';
 const softRebootCommandId = 'mekatrol.pyboarddev.softreboot';
 
@@ -62,6 +63,14 @@ class ExtensionStatusViewProvider implements vscode.TreeDataProvider<ExtensionSt
         'circuit-board',
         connected ? 'Disconnect board first, then change serial port' : 'Click to change serial port',
         connected ? undefined : { command: selectDeviceCommandId, title: 'Select serial port' }
+      )
+    );
+    items.push(
+      new ExtensionStatusNode(
+        connected ? 'Disconnect to scan devices...' : '[ Scan Devices ]',
+        'search',
+        connected ? 'Disconnect board first, then enumerate serial ports' : 'Click to enumerate serial ports',
+        connected ? undefined : { command: autoDetectDevicesCommandId, title: 'Auto detect serial devices' }
       )
     );
     items.push(
