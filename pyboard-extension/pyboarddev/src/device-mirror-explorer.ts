@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConnectedBoard, getConnectedBoards, onBoardConnectionStateChanged, onBoardConnectionsChanged } from './commands/connect-board-command';
 import { logChannelOutput } from './output-channel';
-import { loadConfiguration } from './utils/configuration';
+import { loadConfiguration, updateDeviceHostFolderMapping } from './utils/configuration';
 import {
   createDeviceDirectory,
   deleteDevicePath,
@@ -15,7 +15,6 @@ import {
   normaliseObfuscationSet,
   readDeviceFile,
   renameDevicePath,
-  resolveMirrorRootPath,
   scanLocalMirrorEntries,
   toRelativePath,
   writeDeviceFile
@@ -35,12 +34,13 @@ const commandCreateMirrorFileId = 'mekatrol.pyboarddev.createmirrorfile';
 const commandCreateMirrorFolderId = 'mekatrol.pyboarddev.createmirrorfolder';
 const commandRenameMirrorPathId = 'mekatrol.pyboarddev.renamemirrorpath';
 const commandDeleteMirrorPathId = 'mekatrol.pyboarddev.deletemirrorpath';
+const commandLinkDeviceHostFolderId = 'mekatrol.pyboarddev.linkdevicehostfolder';
+const commandUnlinkDeviceHostFolderId = 'mekatrol.pyboarddev.unlinkdevicehostfolder';
 const remoteDocumentScheme = 'pyboarddev-remote';
 const selectedSerialPortStateKey = 'selectedSerialPort';
 const selectedBaudRateStateKey = 'selectedBaudRate';
 const defaultBaudRate = 115200;
 const remoteExplorerAutoRefreshIntervalMs = 5000;
-const knownMirrorDeviceIdsStateKey = 'knownMirrorDeviceIds';
 
 const obfuscatedPlaceholder = '# pyboarddev: obfuscated on pull\n';
 
@@ -71,8 +71,8 @@ class DeviceMirrorModel {
 
   private workspaceFolder: vscode.WorkspaceFolder | undefined;
   private mirrorRootPath: string | undefined;
-  private mirrorBasePath: string | undefined;
   private obfuscationSet: Set<string> = new Set();
+  private deviceHostFolderMappings: Record<string, string> = {};
   private knownDeviceIds: Set<string> = new Set();
   private activeDeviceId: string | undefined;
   private mirrorRootByDeviceId = new Map<string, string>();
@@ -103,16 +103,23 @@ class DeviceMirrorModel {
 
     const config = await loadConfiguration();
     this.obfuscationSet = normaliseObfuscationSet(config.obfuscateOnPull ?? []);
-    this.mirrorBasePath = await resolveMirrorRootPath(this.workspaceFolder, config.mirrorFolder);
-    this.knownDeviceIds = new Set(await this.getKnownDeviceIdsFromDiskAndState());
+    this.deviceHostFolderMappings = Object.assign({}, config.deviceHostFolderMappings ?? {});
+    this.knownDeviceIds = new Set(Object.keys(this.deviceHostFolderMappings));
+    Object.keys(this.deviceHostFolderMappings).forEach((deviceId) => this.knownDeviceIds.add(deviceId));
 
     const connected = getConnectedBoards();
     connected.forEach((item) => this.knownDeviceIds.add(item.deviceId));
 
     for (const deviceId of this.knownDeviceIds) {
       const mirrorRootPath = this.toDeviceMirrorPath(deviceId);
-      this.mirrorRootByDeviceId.set(deviceId, mirrorRootPath);
-      const localEntries = await scanLocalMirrorEntries(mirrorRootPath);
+      if (mirrorRootPath) {
+        this.mirrorRootByDeviceId.set(deviceId, mirrorRootPath);
+      } else {
+        this.mirrorRootByDeviceId.delete(deviceId);
+      }
+      const localEntries = mirrorRootPath
+        ? await scanLocalMirrorEntries(mirrorRootPath)
+        : [{ relativePath: '', isDirectory: true }];
       this.localEntriesByDeviceId.set(deviceId, localEntries);
 
       let deviceEntries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
@@ -138,58 +145,19 @@ class DeviceMirrorModel {
       this.activeDeviceId = connected[0]?.deviceId ?? [...this.knownDeviceIds][0];
     }
     this.activateDevice(this.activeDeviceId);
-    await this.persistKnownDeviceIds();
     this.onDidChangeDataEmitter.fire();
   }
 
-  private async getKnownDeviceIdsFromDiskAndState(): Promise<string[]> {
-    const fromState = this.context.globalState.get<string[]>(knownMirrorDeviceIdsStateKey)
-      ?? this.context.workspaceState.get<string[]>(knownMirrorDeviceIdsStateKey)
-      ?? [];
-    const fromDisk = await this.getKnownDeviceIdsFromDisk();
-    return [...new Set([...fromState, ...fromDisk])].filter((item) => item.length > 0);
-  }
-
-  private async getKnownDeviceIdsFromDisk(): Promise<string[]> {
-    if (!this.mirrorBasePath) {
-      return [];
+  private toDeviceMirrorPath(deviceId: string): string | undefined {
+    if (!this.workspaceFolder) {
+      return undefined;
     }
 
-    try {
-      const children = await fs.readdir(this.mirrorBasePath, { withFileTypes: true });
-      return children
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => this.decodeDeviceFolder(entry.name))
-        .filter((item) => item.length > 0);
-    } catch {
-      return [];
+    const mapped = this.deviceHostFolderMappings[deviceId];
+    if (mapped && mapped.trim().length > 0) {
+      return path.join(this.workspaceFolder.uri.fsPath, mapped);
     }
-  }
-
-  private async persistKnownDeviceIds(): Promise<void> {
-    const list = [...this.knownDeviceIds].sort((a, b) => a.localeCompare(b));
-    await this.context.globalState.update(knownMirrorDeviceIdsStateKey, list);
-    await this.context.workspaceState.update(knownMirrorDeviceIdsStateKey, list);
-  }
-
-  private toDeviceFolder(deviceId: string): string {
-    return encodeURIComponent(deviceId);
-  }
-
-  private decodeDeviceFolder(folderName: string): string {
-    try {
-      return decodeURIComponent(folderName);
-    } catch {
-      return folderName;
-    }
-  }
-
-  private toDeviceMirrorPath(deviceId: string): string {
-    if (!this.mirrorBasePath) {
-      return '';
-    }
-
-    return path.join(this.mirrorBasePath, this.toDeviceFolder(deviceId));
+    return undefined;
   }
 
   private activateDevice(deviceId: string | undefined): void {
@@ -228,11 +196,34 @@ class DeviceMirrorModel {
 
     if (!this.knownDeviceIds.has(deviceId)) {
       this.knownDeviceIds.add(deviceId);
-      await this.persistKnownDeviceIds();
     }
 
     this.activateDevice(deviceId);
     return deviceId;
+  }
+
+  private async pickKnownDeviceId(placeHolder: string): Promise<string | undefined> {
+    const candidates = this.getKnownDeviceIds();
+    if (candidates.length === 0) {
+      return undefined;
+    }
+
+    if (candidates.length === 1) {
+      return candidates[0];
+    }
+
+    const selected = await vscode.window.showQuickPick(
+      candidates.map((deviceId) => ({
+        label: deviceId,
+        description: this.getMappedHostFolder(deviceId) ?? 'not linked'
+      })),
+      {
+        placeHolder,
+        canPickMany: false,
+        ignoreFocusOut: true
+      }
+    );
+    return selected?.label;
   }
 
   async syncFromDevice(): Promise<void> {
@@ -248,7 +239,7 @@ class DeviceMirrorModel {
     }
 
     if (!this.mirrorRootPath) {
-      vscode.window.showWarningMessage('Open a workspace before syncing from device.');
+      vscode.window.showWarningMessage('Link this device to a host folder before syncing from device.');
       return;
     }
 
@@ -330,7 +321,7 @@ class DeviceMirrorModel {
     }
 
     if (!this.mirrorRootPath) {
-      vscode.window.showWarningMessage('Open a workspace before syncing to device.');
+      vscode.window.showWarningMessage('Link this device to a host folder before syncing to device.');
       return;
     }
 
@@ -776,7 +767,7 @@ class DeviceMirrorModel {
     }
 
     if (!this.mirrorRootPath) {
-      vscode.window.showWarningMessage('Open a workspace before syncing from device.');
+      vscode.window.showWarningMessage('Link this device to a host folder before syncing from device.');
       return;
     }
 
@@ -850,7 +841,7 @@ class DeviceMirrorModel {
     }
 
     if (!this.mirrorRootPath) {
-      vscode.window.showWarningMessage('Open a workspace before syncing to device.');
+      vscode.window.showWarningMessage('Link this device to a host folder before syncing to device.');
       return;
     }
 
@@ -931,7 +922,7 @@ class DeviceMirrorModel {
     }
 
     if (!this.mirrorRootPath) {
-      vscode.window.showWarningMessage('Open a workspace before creating a host file.');
+      vscode.window.showWarningMessage('Link this device to a host folder before creating host files.');
       return;
     }
 
@@ -967,7 +958,7 @@ class DeviceMirrorModel {
     }
 
     if (!this.mirrorRootPath) {
-      vscode.window.showWarningMessage('Open a workspace before creating a host folder.');
+      vscode.window.showWarningMessage('Link this device to a host folder before creating host folders.');
       return;
     }
 
@@ -1000,7 +991,7 @@ class DeviceMirrorModel {
     }
 
     if (!this.mirrorRootPath) {
-      vscode.window.showWarningMessage('Open a workspace before renaming host items.');
+      vscode.window.showWarningMessage('Link this device to a host folder before renaming host items.');
       return;
     }
 
@@ -1034,7 +1025,7 @@ class DeviceMirrorModel {
     }
 
     if (!this.mirrorRootPath) {
-      vscode.window.showWarningMessage('Open a workspace before deleting host items.');
+      vscode.window.showWarningMessage('Link this device to a host folder before deleting host items.');
       return;
     }
 
@@ -1105,7 +1096,7 @@ class DeviceMirrorModel {
   }
 
   getMirrorRootPath(): string | undefined {
-    return this.mirrorBasePath;
+    return this.mirrorRootPath;
   }
 
   getActiveDeviceId(): string | undefined {
@@ -1116,12 +1107,110 @@ class DeviceMirrorModel {
     return [...this.knownDeviceIds].sort((a, b) => a.localeCompare(b));
   }
 
+  getLinkedHostDeviceIds(): string[] {
+    return Object.keys(this.deviceHostFolderMappings).sort((a, b) => a.localeCompare(b));
+  }
+
   getConnectedDeviceIds(): string[] {
     return getConnectedBoards().map((item) => item.deviceId).sort((a, b) => a.localeCompare(b));
   }
 
   getConnectedDevice(deviceId: string): ReturnType<typeof getConnectedBoards>[number] | undefined {
     return getConnectedBoards().find((item) => item.deviceId === deviceId);
+  }
+
+  getMappedHostFolder(deviceId: string): string | undefined {
+    return this.deviceHostFolderMappings[deviceId];
+  }
+
+  async linkDeviceToHostFolder(node?: MirrorNode): Promise<void> {
+    let deviceId = await this.ensureActiveDevice(node);
+    if (!deviceId) {
+      deviceId = await this.pickKnownDeviceId('Select device to link');
+      if (deviceId) {
+        this.activateDevice(deviceId);
+      }
+    }
+    if (!deviceId || !this.workspaceFolder) {
+      vscode.window.showWarningMessage('Select a device to link.');
+      return;
+    }
+
+    const current = this.getMappedHostFolder(deviceId) ?? '';
+    const next = await vscode.window.showInputBox({
+      title: 'Link Device to Host Folder',
+      prompt: `Enter host folder path for ${deviceId} (relative to workspace root)`,
+      value: current,
+      placeHolder: 'irrigation',
+      ignoreFocusOut: true,
+      validateInput: (value) => {
+        const trimmed = value.trim();
+        if (!trimmed) {
+          return 'Host folder path is required.';
+        }
+        if (path.isAbsolute(trimmed)) {
+          return 'Use a path relative to the workspace root.';
+        }
+        const normalised = toRelativePath(trimmed);
+        if (!normalised || normalised.startsWith('..')) {
+          return 'Path must stay inside the workspace.';
+        }
+        return undefined;
+      }
+    });
+
+    if (!next) {
+      return;
+    }
+
+    const normalised = toRelativePath(next);
+    const absolutePath = path.join(this.workspaceFolder.uri.fsPath, normalised);
+    await fs.mkdir(absolutePath, { recursive: true });
+
+    const updated = await updateDeviceHostFolderMapping(deviceId, normalised);
+    this.deviceHostFolderMappings = Object.assign({}, updated.deviceHostFolderMappings ?? {});
+
+    const msg = `Linked ${deviceId} to host folder: ${normalised}`;
+    logChannelOutput(msg, true);
+    vscode.window.showInformationMessage(msg);
+    await this.refresh(true);
+  }
+
+  async unlinkDeviceFromHostFolder(node?: MirrorNode): Promise<void> {
+    let deviceId = await this.ensureActiveDevice(node);
+    if (!deviceId) {
+      deviceId = await this.pickKnownDeviceId('Select device to unlink');
+      if (deviceId) {
+        this.activateDevice(deviceId);
+      }
+    }
+    if (!deviceId) {
+      vscode.window.showWarningMessage('Select a device to unlink.');
+      return;
+    }
+
+    const current = this.getMappedHostFolder(deviceId);
+    if (!current) {
+      vscode.window.showInformationMessage(`No host folder link exists for ${deviceId}.`);
+      return;
+    }
+
+    const action = await vscode.window.showWarningMessage(
+      `Unlink ${deviceId} from host folder "${current}"?`,
+      { modal: true },
+      'Unlink'
+    );
+    if (action !== 'Unlink') {
+      return;
+    }
+
+    const updated = await updateDeviceHostFolderMapping(deviceId, undefined);
+    this.deviceHostFolderMappings = Object.assign({}, updated.deviceHostFolderMappings ?? {});
+
+    const msg = `Unlinked ${deviceId} from host folder: ${current}`;
+    logChannelOutput(msg, true);
+    vscode.window.showInformationMessage(msg);
+    await this.refresh(true);
   }
 
   setSelectedRemoteNode(node: MirrorNode | undefined): void {
@@ -1165,11 +1254,11 @@ class DeviceMirrorModel {
   }
 
   private toMirrorRelativePath(fsPath: string): string | undefined {
-    if (!this.mirrorBasePath) {
+    if (!this.mirrorRootPath) {
       return undefined;
     }
 
-    const normalised = toRelativePath(path.relative(this.mirrorBasePath, fsPath));
+    const normalised = toRelativePath(path.relative(this.mirrorRootPath, fsPath));
     if (normalised.startsWith('..')) {
       return undefined;
     }
@@ -1868,7 +1957,7 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
         const count = this.model.getConnectedDeviceIds().length;
         element.description = count > 0 ? `${count} connected` : 'disconnected';
       } else {
-        element.description = `${this.model.getKnownDeviceIds().length} device mirrors`;
+        element.description = `${this.model.getLinkedHostDeviceIds().length} linked`;
       }
       element.command = undefined;
       return element;
@@ -1882,13 +1971,19 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
     }
 
     if (data.isDeviceIdNode) {
-      element.contextValue = data.side === 'device' ? 'pyboarddev.deviceFolder' : 'pyboarddev.hostFolder';
+      element.contextValue = data.side === 'device' ? 'pyboarddev.deviceIdNode' : 'pyboarddev.hostDeviceMappingNode';
       element.iconPath = new vscode.ThemeIcon('device-mobile');
-      if (data.side === 'device' && data.deviceId) {
-        const connected = this.model.getConnectedDevice(data.deviceId);
-        element.description = connected ? 'connected' : 'disconnected';
+      if (data.deviceId) {
+        const mappedFolder = this.model.getMappedHostFolder(data.deviceId);
+        if (data.side === 'device') {
+          const connected = this.model.getConnectedDevice(data.deviceId);
+          const state = connected ? 'connected' : 'disconnected';
+          element.description = mappedFolder ? `${state} | host:${mappedFolder}` : state;
+        } else {
+          element.description = mappedFolder ?? 'not linked';
+        }
       } else {
-        element.description = 'mirror';
+        element.description = data.side === 'device' ? 'connected' : 'mirror';
       }
       element.command = undefined;
       return element;
@@ -1941,7 +2036,7 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
     if (element.data.isRoot) {
       const deviceIds = element.data.side === 'device'
         ? this.model.getConnectedDeviceIds()
-        : this.model.getKnownDeviceIds();
+        : this.model.getLinkedHostDeviceIds();
       if (deviceIds.length === 0) {
         return [
           new MirrorNode(
@@ -1951,7 +2046,7 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
               isDirectory: false,
               isIndicator: true
             },
-            element.data.side === 'device' ? 'Device not connected' : 'No mirrored devices yet',
+            element.data.side === 'device' ? 'Device not connected' : 'No host folders',
             vscode.TreeItemCollapsibleState.None
           )
         ];
@@ -1959,9 +2054,10 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
 
       return deviceIds.map((deviceId) => {
         const connected = this.model.getConnectedDevice(deviceId);
-        const label = element.data.side === 'device' && connected
-          ? this.toDeviceLeafLabel(connected)
-          : deviceId;
+        const mappedFolder = this.model.getMappedHostFolder(deviceId);
+        const label = element.data.side === 'device'
+          ? (connected ? this.toDeviceLeafLabel(connected) : deviceId)
+          : (mappedFolder ? `${mappedFolder} [${deviceId}]` : deviceId);
         return new MirrorNode(
           {
             side: element.data.side,
@@ -2107,6 +2203,8 @@ export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext)
   context.subscriptions.push(vscode.commands.registerCommand(commandCreateMirrorFolderId, async (node?: MirrorNode) => model.createMirrorFolder(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandRenameMirrorPathId, async (node?: MirrorNode) => model.renameMirrorPath(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandDeleteMirrorPathId, async (node?: MirrorNode) => model.deleteMirrorPath(node)));
+  context.subscriptions.push(vscode.commands.registerCommand(commandLinkDeviceHostFolderId, async (node?: MirrorNode) => model.linkDeviceToHostFolder(node)));
+  context.subscriptions.push(vscode.commands.registerCommand(commandUnlinkDeviceHostFolderId, async (node?: MirrorNode) => model.unlinkDeviceFromHostFolder(node)));
 
   await model.refresh();
   await ensureNativeExplorerRoots(model);

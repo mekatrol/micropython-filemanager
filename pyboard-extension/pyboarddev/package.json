@@ -114,6 +114,14 @@
       {
         "command": "mekatrol.pyboarddev.deletemirrorpath",
         "title": "Delete"
+      },
+      {
+        "command": "mekatrol.pyboarddev.linkdevicehostfolder",
+        "title": "Pyboard Dev: Link device to host folder"
+      },
+      {
+        "command": "mekatrol.pyboarddev.unlinkdevicehostfolder",
+        "title": "Pyboard Dev: Unlink device from host folder"
       }
     ],
     "viewsContainers": {
@@ -156,6 +164,12 @@
         {
           "command": "mekatrol.pyboarddev.softreboot",
           "when": "mekatrol.pyboarddev.boardConnected"
+        },
+        {
+          "command": "mekatrol.pyboarddev.linkdevicehostfolder"
+        },
+        {
+          "command": "mekatrol.pyboarddev.unlinkdevicehostfolder"
         }
       ],
       "view/title": [
@@ -193,22 +207,22 @@
         },
         {
           "command": "mekatrol.pyboarddev.syncnodefromdevice",
-          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostRoot || viewItem == pyboarddev.deviceRoot || viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFolder)",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostRoot || viewItem == pyboarddev.deviceRoot || viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFolder || viewItem == pyboarddev.deviceIdNode || viewItem == pyboarddev.hostDeviceMappingNode)",
           "group": "navigation@4"
         },
         {
           "command": "mekatrol.pyboarddev.syncnodetodevice",
-          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostRoot || viewItem == pyboarddev.deviceRoot || viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFolder)",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostRoot || viewItem == pyboarddev.deviceRoot || viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFolder || viewItem == pyboarddev.deviceIdNode || viewItem == pyboarddev.hostDeviceMappingNode)",
           "group": "navigation@5"
         },
         {
           "command": "mekatrol.pyboarddev.createmirrorfile",
-          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostRoot || viewItem == pyboarddev.deviceRoot || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.deviceFolder)",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostRoot || viewItem == pyboarddev.deviceRoot || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.deviceFolder || viewItem == pyboarddev.deviceIdNode || viewItem == pyboarddev.hostDeviceMappingNode)",
           "group": "navigation@6"
         },
         {
           "command": "mekatrol.pyboarddev.createmirrorfolder",
-          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostRoot || viewItem == pyboarddev.deviceRoot || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.deviceFolder)",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostRoot || viewItem == pyboarddev.deviceRoot || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.deviceFolder || viewItem == pyboarddev.deviceIdNode || viewItem == pyboarddev.hostDeviceMappingNode)",
           "group": "navigation@7"
         },
         {
@@ -220,6 +234,16 @@
           "command": "mekatrol.pyboarddev.deletemirrorpath",
           "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFolder)",
           "group": "navigation@9"
+        },
+        {
+          "command": "mekatrol.pyboarddev.linkdevicehostfolder",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceIdNode || viewItem == pyboarddev.hostDeviceMappingNode)",
+          "group": "navigation@10"
+        },
+        {
+          "command": "mekatrol.pyboarddev.unlinkdevicehostfolder",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceIdNode || viewItem == pyboarddev.hostDeviceMappingNode)",
+          "group": "navigation@11"
         }
       ]
     },

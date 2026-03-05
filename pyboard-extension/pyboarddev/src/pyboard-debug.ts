@@ -8,7 +8,7 @@ import {
 } from './commands/connect-board-command';
 import { logChannelOutput } from './output-channel';
 import { loadConfiguration } from './utils/configuration';
-import { resolveMirrorRootPath, toRelativePath } from './utils/device-filesystem';
+import { toRelativePath } from './utils/device-filesystem';
 
 const debugType = 'pyboarddev';
 const remoteDocumentScheme = 'pyboarddev-remote';
@@ -264,18 +264,44 @@ class PyboardDebugAdapter implements vscode.DebugAdapter {
       const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
       if (workspaceFolder) {
         const config = await loadConfiguration();
-        const mirrorRoot = await resolveMirrorRootPath(workspaceFolder, config.mirrorFolder);
-        const relative = toRelativePath(path.relative(mirrorRoot, targetUri.fsPath));
-        if (relative && !relative.startsWith('..')) {
-          const [folder] = relative.split('/').filter(Boolean);
-          if (folder) {
-            try {
-              return decodeURIComponent(folder);
-            } catch {
-              return folder;
+        const mappings = Object.entries(config.deviceHostFolderMappings ?? {})
+          .map(([deviceId, folder]) => ({ deviceId, folder: toRelativePath(folder) }))
+          .filter((item) => item.folder.length > 0);
+        const workspaceRelative = toRelativePath(path.relative(workspaceFolder.uri.fsPath, targetUri.fsPath));
+        if (workspaceRelative && !workspaceRelative.startsWith('..')) {
+          const mappedMatches = mappings.filter(
+            (item) => workspaceRelative === item.folder || workspaceRelative.startsWith(`${item.folder}/`)
+          );
+          if (mappedMatches.length === 1) {
+            return mappedMatches[0].deviceId;
+          }
+
+          if (mappedMatches.length > 1) {
+            const connectedById = new Map(getConnectedBoards().map((item) => [item.deviceId, item]));
+            const options = mappedMatches
+              .map((item) => connectedById.get(item.deviceId))
+              .filter((item): item is NonNullable<typeof item> => Boolean(item));
+            if (options.length === 1) {
+              return options[0].deviceId;
+            }
+
+            if (options.length > 1) {
+              const selected = await vscode.window.showQuickPick(
+                options.map((item) => ({
+                  label: item.deviceId,
+                  description: `${item.devicePath} @ ${item.baudRate}`
+                })),
+                {
+                  placeHolder: 'Multiple mapped devices match this host folder. Select target device.',
+                  canPickMany: false,
+                  ignoreFocusOut: true
+                }
+              );
+              return selected?.label;
             }
           }
         }
+
       }
     }
 

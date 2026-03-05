@@ -13,6 +13,7 @@ export enum PyboardDevConfigurationResult {
 export interface PyboardDevConfiguration {
   mirrorFolder: string;
   obfuscateOnPull: string[];
+  deviceHostFolderMappings: Record<string, string>;
 }
 
 export interface MetaPyboardDevConfiguration {
@@ -25,8 +26,9 @@ export interface PyboardDevConfigurationWithMeta extends PyboardDevConfiguration
 }
 
 export const defaultConfiguration: PyboardDevConfiguration = {
-  mirrorFolder: '.pyboard-mirror',
-  obfuscateOnPull: []
+  mirrorFolder: '',
+  obfuscateOnPull: [],
+  deviceHostFolderMappings: {}
 };
 
 export const getConfigurationFullFileName = (): string | undefined => {
@@ -75,6 +77,71 @@ export const loadConfiguration = async (): Promise<PyboardDevConfiguration> => {
   }
 
   return configuration;
+};
+
+const getConfigurationFileUri = (): vscode.Uri | undefined => {
+  if (!vscode.workspace.workspaceFolders) {
+    return undefined;
+  }
+
+  const folderUri = vscode.workspace.workspaceFolders[0].uri;
+  return folderUri.with({
+    path: posix.join(folderUri.path, configurationFileName)
+  });
+};
+
+export const saveConfiguration = async (configuration: PyboardDevConfiguration): Promise<void> => {
+  const fileUri = getConfigurationFileUri();
+  if (!fileUri) {
+    throw new Error('Open a workspace to save Pyboard Dev configuration.');
+  }
+
+  let existing: PyboardDevConfigurationWithMeta = {
+    meta: {
+      version: 1,
+      help: 'See: https://github.com/mekatrol/micropython-filemanager/blob/main/pyboard-extension/pyboarddev/README.md for description of configuration values.'
+    },
+    ...defaultConfiguration
+  };
+
+  try {
+    const fileContent = await vscode.workspace.fs.readFile(fileUri);
+    const json = Buffer.from(fileContent).toString('utf8');
+    const parsed = JSON.parse(json) as Partial<PyboardDevConfigurationWithMeta>;
+    existing = Object.assign(existing, parsed);
+  } catch {
+    // Missing config is expected; file will be created below.
+  }
+
+  const merged: PyboardDevConfigurationWithMeta = {
+    ...existing,
+    ...configuration,
+    deviceHostFolderMappings: Object.assign({}, existing.deviceHostFolderMappings ?? {}, configuration.deviceHostFolderMappings ?? {})
+  };
+
+  const content = JSON.stringify(merged, null, 2);
+  await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, 'utf8'));
+};
+
+export const updateDeviceHostFolderMapping = async (
+  deviceId: string,
+  hostFolderRelativePath: string | undefined
+): Promise<PyboardDevConfiguration> => {
+  const configuration = await loadConfiguration();
+  const nextMappings = Object.assign({}, configuration.deviceHostFolderMappings ?? {});
+
+  if (!hostFolderRelativePath || !hostFolderRelativePath.trim()) {
+    delete nextMappings[deviceId];
+  } else {
+    nextMappings[deviceId] = hostFolderRelativePath;
+  }
+
+  const updated: PyboardDevConfiguration = {
+    ...configuration,
+    deviceHostFolderMappings: nextMappings
+  };
+  await saveConfiguration(updated);
+  return updated;
 };
 
 export const createDefaultConfiguration = async (): Promise<[PyboardDevConfigurationResult, string?]> => {
