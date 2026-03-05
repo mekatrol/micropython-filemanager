@@ -172,6 +172,18 @@
         "command": "mekatrol.pyboarddev.closealldeviceconnections",
         "title": "Close All Connections",
         "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "mekatrol.pyboarddev.mirrorExplorer.focus",
+        "title": "Focus on Pyboard Explorer View"
+      },
+      {
+        "command": "mekatrol.pyboarddev.statusView.focus",
+        "title": "Focus on Pyboard View"
+      },
+      {
+        "command": "mekatrol.pyboarddev.replView.focus",
+        "title": "Focus on Pyboard REPL View"
       }
     ],
     "viewsContainers": {
@@ -213,37 +225,148 @@
     "menus": {
       "commandPalette": [
         {
-          "command": "mekatrol.pyboarddev.selectdevice"
+          "command": "mekatrol.pyboarddev.initconfig",
+          "when": "false"
         },
         {
-          "command": "mekatrol.pyboarddev.autodetectdevices"
+          "command": "mekatrol.pyboarddev.selectdevice",
+          "when": "false"
         },
         {
-          "command": "mekatrol.pyboarddev.connectboard"
+          "command": "mekatrol.pyboarddev.autodetectdevices",
+          "when": "false"
         },
         {
-          "command": "mekatrol.pyboarddev.connectboardesp32recovery"
+          "command": "mekatrol.pyboarddev.connectboard",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.connectboardwithpicker",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.connectboardesp32recovery",
+          "when": "false"
         },
         {
           "command": "mekatrol.pyboarddev.disconnectboard",
-          "when": "mekatrol.pyboarddev.boardConnected"
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.toggleboardconnection",
+          "when": "false"
         },
         {
           "command": "mekatrol.pyboarddev.softreboot",
-          "when": "mekatrol.pyboarddev.boardConnected"
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.setautoreconnect",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.refreshmirrorview",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.syncfromdevice",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.synctodevice",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.syncnodefromdevice",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.syncnodetodevice",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.opencomputermirroritem",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.pullandopendeviceitem",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.opendevicefile",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.comparedevicewithcomputer",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.openrepl",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.clearrepl",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.clearreplhistory",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.createmirrorfile",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.createmirrorfolder",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.renamemirrorpath",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.deletemirrorpath",
+          "when": "false"
         },
         {
           "command": "mekatrol.pyboarddev.linkdevicehostfolder",
-          "when": "mekatrol.pyboarddev.hasHostMirrorChildFolders"
+          "when": "false"
         },
         {
-          "command": "mekatrol.pyboarddev.unlinkdevicehostfolder"
-          ,
-          "when": "mekatrol.pyboarddev.hasLinkedHostMappings"
+          "command": "mekatrol.pyboarddev.unlinkdevicehostfolder",
+          "when": "false"
         },
         {
           "command": "mekatrol.pyboarddev.setdevicename",
-          "when": "mekatrol.pyboarddev.boardConnected"
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.excludedevicefilefromsync",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.removedevicefilefromsyncexclusion",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.closedeviceconnection",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.closealldeviceconnections",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.mirrorExplorer.focus",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.statusView.focus",
+          "when": "false"
+        },
+        {
+          "command": "mekatrol.pyboarddev.replView.focus",
+          "when": "false"
         }
       ],
       "view/title": [
