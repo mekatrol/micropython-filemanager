@@ -49,6 +49,11 @@
         "title": "Pyboard Dev: Toggle board connection"
       },
       {
+        "command": "mekatrol.pyboarddev.softreboot",
+        "title": "Pyboard Dev: Soft reboot device",
+        "icon": "$(debug-restart)"
+      },
+      {
         "command": "mekatrol.pyboarddev.setautoreconnect",
         "title": "Pyboard Dev: Set auto reconnect"
       },
@@ -150,6 +155,10 @@
         },
         {
           "command": "mekatrol.pyboarddev.disconnectboard",
+          "when": "mekatrol.pyboarddev.boardConnected"
+        },
+        {
+          "command": "mekatrol.pyboarddev.softreboot",
           "when": "mekatrol.pyboarddev.boardConnected"
         }
       ],

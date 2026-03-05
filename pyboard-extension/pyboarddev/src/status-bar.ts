@@ -12,6 +12,7 @@ import { logChannelOutput } from './output-channel';
 const statusBarSelectCommunicationId = 'mekatrol.pyboarddev.selectdevice';
 const statusBarSelectPythonTypeId = 'mekatrol.pyboarddev.selectpythontype';
 const statusBarToggleBoardConnectionId = 'mekatrol.pyboarddev.toggleboardconnection';
+const statusBarSoftRebootId = 'mekatrol.pyboarddev.softreboot';
 const selectedSerialPortStateKey = 'selectedSerialPort';
 const selectedBaudRateStateKey = 'selectedBaudRate';
 const selectedPythonTypeStateKey = 'selectedPythonType';
@@ -25,6 +26,7 @@ let deviceStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 let pythonTypeStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 let boardConnectionStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 let boardRuntimeStatusBarItem: vscode.StatusBarItem | undefined = undefined;
+let softRebootStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 let extensionContext: vscode.ExtensionContext | undefined = undefined;
 
 const readPersistentState = <T>(context: vscode.ExtensionContext | undefined, key: string): T | undefined => {
@@ -48,6 +50,7 @@ export const initStatusBar = async (context: vscode.ExtensionContext): Promise<v
   createPythonTypeStatusBarItem(context);
   createBoardConnectionStatusBarItem(context);
   createBoardRuntimeStatusBarItem(context);
+  createSoftRebootStatusBarItem(context);
 
   // Update status bar item once at start
   await updateStatusBarItem();
@@ -62,7 +65,13 @@ export const initStatusBar = async (context: vscode.ExtensionContext): Promise<v
 };
 
 export const updateStatusBarItem = async (): Promise<void> => {
-  if (!deviceStatusBarItem || !pythonTypeStatusBarItem || !boardConnectionStatusBarItem || !boardRuntimeStatusBarItem) {
+  if (
+    !deviceStatusBarItem ||
+    !pythonTypeStatusBarItem ||
+    !boardConnectionStatusBarItem ||
+    !boardRuntimeStatusBarItem ||
+    !softRebootStatusBarItem
+  ) {
     return;
   }
 
@@ -101,6 +110,14 @@ export const updateStatusBarItem = async (): Promise<void> => {
     boardRuntimeStatusBarItem.show();
   } else {
     boardRuntimeStatusBarItem.hide();
+  }
+
+  softRebootStatusBarItem.text = '$(debug-restart)';
+  softRebootStatusBarItem.tooltip = 'Soft reboot device';
+  if (connected) {
+    softRebootStatusBarItem.show();
+  } else {
+    softRebootStatusBarItem.hide();
   }
 };
 
@@ -143,6 +160,12 @@ const createBoardConnectionStatusBarItem = (context: vscode.ExtensionContext) =>
 const createBoardRuntimeStatusBarItem = (context: vscode.ExtensionContext) => {
   boardRuntimeStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 97);
   context.subscriptions.push(boardRuntimeStatusBarItem);
+};
+
+const createSoftRebootStatusBarItem = (context: vscode.ExtensionContext) => {
+  softRebootStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 96);
+  softRebootStatusBarItem.command = statusBarSoftRebootId;
+  context.subscriptions.push(softRebootStatusBarItem);
 };
 
 const getActiveDevice = (): string | undefined => {

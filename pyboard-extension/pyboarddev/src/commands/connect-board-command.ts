@@ -8,6 +8,7 @@ const reconnectLastSessionStateKey = 'reconnectLastSession';
 const defaultBaudRate = 115200;
 const autoReconnectSettingKey = 'autoReconnectLastDevice';
 const remoteDocumentScheme = 'pyboarddev-remote';
+const pyboardDebugType = 'pyboarddev';
 
 let connectedBoard: Pyboard | undefined;
 let connectedBoardRuntimeInfo: BoardRuntimeInfo | undefined;
@@ -300,6 +301,42 @@ export const initSetAutoReconnectCommand = (context: vscode.ExtensionContext) =>
     const msg = `Auto reconnect is now ${enabled ? 'enabled' : 'disabled'}.`;
     vscode.window.showInformationMessage(msg);
     logChannelOutput(msg, true);
+  });
+
+  context.subscriptions.push(command);
+};
+
+export const initSoftRebootBoardCommand = (context: vscode.ExtensionContext) => {
+  extensionContext = context;
+
+  const command = vscode.commands.registerCommand('mekatrol.pyboarddev.softreboot', async () => {
+    if (!connectedBoard) {
+      const msg = 'Connect to a board before soft rebooting.';
+      vscode.window.showWarningMessage(msg);
+      logChannelOutput(msg, true);
+      return;
+    }
+
+    const activeDebugSession = vscode.debug.activeDebugSession;
+    if (activeDebugSession?.type === pyboardDebugType) {
+      await vscode.debug.stopDebugging(activeDebugSession);
+      const msg = 'Stopped active debug session. Device will soft reboot on debug termination.';
+      vscode.window.showInformationMessage(msg);
+      logChannelOutput(msg, true);
+      return;
+    }
+
+    try {
+      await connectedBoard.softReboot();
+      const msg = 'Device soft reboot complete.';
+      vscode.window.showInformationMessage(msg);
+      logChannelOutput(msg, true);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      const msg = `Device soft reboot failed. ${reason}`;
+      vscode.window.showErrorMessage(msg);
+      logChannelOutput(msg, true);
+    }
   });
 
   context.subscriptions.push(command);

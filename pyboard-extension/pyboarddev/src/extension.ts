@@ -7,6 +7,7 @@ import {
   closeConnectedBoard,
   initConnectBoardCommand,
   initDisconnectBoardCommand,
+  initSoftRebootBoardCommand,
   initSetAutoReconnectCommand,
   initToggleBoardConnectionCommand,
   tryReconnectBoardOnStartup
@@ -27,6 +28,7 @@ export const activate = async (context: vscode.ExtensionContext) => {
   initAutoDetectDevicesCommand(context);
   initConnectBoardCommand(context);
   initDisconnectBoardCommand(context);
+  initSoftRebootBoardCommand(context);
   initSetAutoReconnectCommand(context);
   initToggleBoardConnectionCommand(context);
   initTerminal(context);
