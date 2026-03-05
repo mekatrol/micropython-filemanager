@@ -8,6 +8,7 @@ import {
 import { configurationFileName } from './utils/configuration';
 import { listSerialDevices } from './utils/serial-port';
 import { logChannelOutput } from './output-channel';
+import { getWorkspaceCacheValue, setWorkspaceCacheValue } from './utils/workspace-cache';
 
 const statusBarSelectCommunicationId = 'mekatrol.pyboarddev.selectdevice';
 const statusBarToggleBoardConnectionId = 'mekatrol.pyboarddev.toggleboardconnection';
@@ -27,17 +28,8 @@ let boardRuntimeStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 let softRebootStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 let extensionContext: vscode.ExtensionContext | undefined = undefined;
 
-const readPersistentState = <T>(context: vscode.ExtensionContext | undefined, key: string): T | undefined => {
-  if (!context) {
-    return undefined;
-  }
-
-  const fromGlobal = context.globalState.get<T>(key);
-  if (fromGlobal !== undefined) {
-    return fromGlobal;
-  }
-
-  return context.workspaceState.get<T>(key);
+const readPersistentState = <T>(key: string): T | undefined => {
+  return getWorkspaceCacheValue<T>(key);
 };
 
 export const initStatusBar = async (context: vscode.ExtensionContext): Promise<void> => {
@@ -171,7 +163,7 @@ const createSoftRebootStatusBarItem = (context: vscode.ExtensionContext) => {
 };
 
 export const getActiveDevice = (): string | undefined => {
-  const selectedFromState = readPersistentState<string>(extensionContext, selectedSerialPortStateKey);
+  const selectedFromState = readPersistentState<string>(selectedSerialPortStateKey);
   if (selectedFromState && selectedFromState.length) {
     return selectedFromState;
   }
@@ -180,7 +172,7 @@ export const getActiveDevice = (): string | undefined => {
 };
 
 export const getActiveBaudRate = (): number => {
-  return readPersistentState<number>(extensionContext, selectedBaudRateStateKey) ?? defaultBaudRate;
+  return readPersistentState<number>(selectedBaudRateStateKey) ?? defaultBaudRate;
 };
 
 export const getActivePythonType = (): 'MicroPython' | 'CircuitPython' | 'Unknown' => {
@@ -246,10 +238,8 @@ const selectSerialDevice = async (): Promise<void> => {
     return;
   }
 
-  await extensionContext.globalState.update(selectedSerialPortStateKey, selected.label);
-  await extensionContext.workspaceState.update(selectedSerialPortStateKey, selected.label);
-  await extensionContext.globalState.update(selectedBaudRateStateKey, getActiveBaudRate());
-  await extensionContext.workspaceState.update(selectedBaudRateStateKey, getActiveBaudRate());
+  await setWorkspaceCacheValue(selectedSerialPortStateKey, selected.label);
+  await setWorkspaceCacheValue(selectedBaudRateStateKey, getActiveBaudRate());
 
   const msg = `Selected serial device: ${selected.label}`;
   logChannelOutput(msg, true);

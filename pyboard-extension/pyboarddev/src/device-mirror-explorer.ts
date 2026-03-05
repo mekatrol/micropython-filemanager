@@ -25,6 +25,7 @@ import {
   toRelativePath,
   writeDeviceFile
 } from './utils/device-filesystem';
+import { getWorkspaceCacheValue } from './utils/workspace-cache';
 
 const mirrorViewId = 'mekatrol.pyboarddev.mirrorExplorer';
 const commandRefreshId = 'mekatrol.pyboarddev.refreshmirrorview';
@@ -1999,11 +2000,8 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
   }
 
   private getDeviceDetails(board?: NonNullable<ReturnType<typeof getConnectedBoard>>): string {
-    const selectedDevice = this.context.globalState.get<string>(selectedSerialPortStateKey)
-      ?? this.context.workspaceState.get<string>(selectedSerialPortStateKey);
-    const selectedBaudRate = this.context.globalState.get<number>(selectedBaudRateStateKey)
-      ?? this.context.workspaceState.get<number>(selectedBaudRateStateKey)
-      ?? defaultBaudRate;
+    const selectedDevice = getWorkspaceCacheValue<string>(selectedSerialPortStateKey);
+    const selectedBaudRate = getWorkspaceCacheValue<number>(selectedBaudRateStateKey) ?? defaultBaudRate;
     const activeBoard = board ?? getConnectedBoard();
     const device = activeBoard?.device ?? selectedDevice ?? 'unknown device';
     const baudRate = activeBoard?.baudrate ?? selectedBaudRate;

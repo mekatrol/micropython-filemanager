@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConnectedBoard, getConnectedBoards, onBoardConnectionsChanged } from './commands/connect-board-command';
 import { configurationFileName, getDeviceAliases, loadConfiguration, onPyboardDevConfigurationUpdated } from './utils/configuration';
+import { getWorkspaceCacheValue, setWorkspaceCacheValue } from './utils/workspace-cache';
 
 const openReplCommandId = 'mekatrol.pyboarddev.openrepl';
 const clearReplCommandId = 'mekatrol.pyboarddev.clearrepl';
@@ -376,7 +377,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
   }
 
   private loadPersistedHistory(): void {
-    const raw = this.context.globalState.get<unknown>(replHistoryStateKey);
+    const raw = getWorkspaceCacheValue<unknown>(replHistoryStateKey);
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
       return;
     }
@@ -397,7 +398,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
 
   private async persistHistory(): Promise<void> {
     const payload = Object.fromEntries(this.persistedHistoryByDevice.entries());
-    await this.context.globalState.update(replHistoryStateKey, payload);
+    await setWorkspaceCacheValue(replHistoryStateKey, payload);
   }
 
   private postState(): void {

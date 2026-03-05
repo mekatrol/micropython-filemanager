@@ -16,6 +16,7 @@ import { initDeviceMirrorExplorer } from './device-mirror-explorer';
 import { initPyboardDebug } from './pyboard-debug';
 import { initReplView } from './repl-view';
 import { initExtensionStatusView } from './extension-status-view';
+import { initialiseWorkspaceCache } from './utils/workspace-cache';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -23,6 +24,7 @@ export const activate = async (context: vscode.ExtensionContext) => {
   // Initialise output channel for logging
   initOutputChannel();
   logChannelOutput('Mekatrol Pyboard Dev activated...', false);
+  await initialiseWorkspaceCache();
 
   // Create commands
   initCreateConfigCommand(context);

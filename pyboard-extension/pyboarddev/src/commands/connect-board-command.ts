@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { logChannelOutput } from '../output-channel';
 import { BoardRuntimeInfo, Pyboard } from '../utils/pyboard';
 import { listSerialDevices } from '../utils/serial-port';
+import { getWorkspaceCacheValue, setWorkspaceCacheValue } from '../utils/workspace-cache';
 
 const selectedSerialPortStateKey = 'selectedSerialPort';
 const selectedBaudRateStateKey = 'selectedBaudRate';
@@ -40,26 +41,16 @@ export const onBoardConnectionsChanged = boardConnectionsChangedEmitter.event;
 export const onConnectedBoardRuntimeInfoChanged = boardRuntimeInfoChangedEmitter.event;
 export const onBoardExecutionStateChanged = boardExecutionStateChangedEmitter.event;
 
-const readPersistentState = <T>(context: vscode.ExtensionContext | undefined, key: string): T | undefined => {
-  if (!context) {
-    return undefined;
-  }
-
-  const fromGlobal = context.globalState.get<T>(key);
-  if (fromGlobal !== undefined) {
-    return fromGlobal;
-  }
-
-  return context.workspaceState.get<T>(key);
+const readPersistentState = <T>(key: string): T | undefined => {
+  return getWorkspaceCacheValue<T>(key);
 };
 
-const writePersistentState = async <T>(context: vscode.ExtensionContext, key: string, value: T): Promise<void> => {
-  await context.globalState.update(key, value);
-  await context.workspaceState.update(key, value);
+const writePersistentState = async <T>(key: string, value: T): Promise<void> => {
+  await setWorkspaceCacheValue(key, value);
 };
 
-const readReconnectDevicePaths = (context: vscode.ExtensionContext | undefined): string[] => {
-  const stored = readPersistentState<unknown>(context, reconnectDevicePathsStateKey);
+const readReconnectDevicePaths = (): string[] => {
+  const stored = readPersistentState<unknown>(reconnectDevicePathsStateKey);
   if (!Array.isArray(stored)) {
     return [];
   }
@@ -71,35 +62,27 @@ const readReconnectDevicePaths = (context: vscode.ExtensionContext | undefined):
   return [...new Set(normalised)];
 };
 
-const writeReconnectDevicePaths = async (context: vscode.ExtensionContext, devicePaths: string[]): Promise<void> => {
+const writeReconnectDevicePaths = async (devicePaths: string[]): Promise<void> => {
   const next = [...new Set(devicePaths.map((item) => item.trim()).filter((item) => item.length > 0))];
-  await writePersistentState(context, reconnectDevicePathsStateKey, next);
+  await writePersistentState(reconnectDevicePathsStateKey, next);
 };
 
-const addReconnectDevicePath = async (context: vscode.ExtensionContext | undefined, devicePath: string): Promise<void> => {
-  if (!context) {
-    return;
-  }
-
-  const current = readReconnectDevicePaths(context);
+const addReconnectDevicePath = async (devicePath: string): Promise<void> => {
+  const current = readReconnectDevicePaths();
   if (current.includes(devicePath)) {
     return;
   }
 
-  await writeReconnectDevicePaths(context, [...current, devicePath]);
+  await writeReconnectDevicePaths([...current, devicePath]);
 };
 
-const removeReconnectDevicePath = async (context: vscode.ExtensionContext | undefined, devicePath: string): Promise<void> => {
-  if (!context) {
-    return;
-  }
-
-  const current = readReconnectDevicePaths(context);
+const removeReconnectDevicePath = async (devicePath: string): Promise<void> => {
+  const current = readReconnectDevicePaths();
   if (!current.includes(devicePath)) {
     return;
   }
 
-  await writeReconnectDevicePaths(context, current.filter((item) => item !== devicePath));
+  await writeReconnectDevicePaths(current.filter((item) => item !== devicePath));
 };
 
 const normaliseDeviceId = (value: string): string => {
@@ -141,7 +124,7 @@ const getSnapshots = (): ConnectedBoardSnapshot[] => {
 };
 
 const getPreferredDevicePath = (): string | undefined => {
-  return readPersistentState<string>(extensionContext, selectedSerialPortStateKey);
+  return readPersistentState<string>(selectedSerialPortStateKey);
 };
 
 const getActiveBoardState = (): ConnectedBoardState | undefined => {
@@ -157,11 +140,7 @@ const getActiveBoardState = (): ConnectedBoardState | undefined => {
 };
 
 const updateReconnectState = async (shouldReconnectOnStartup: boolean): Promise<void> => {
-  if (!extensionContext) {
-    return;
-  }
-
-  await writePersistentState(extensionContext, reconnectLastSessionStateKey, shouldReconnectOnStartup);
+  await writePersistentState(reconnectLastSessionStateKey, shouldReconnectOnStartup);
 };
 
 const parseDeviceIdFromRemoteUri = (uri: vscode.Uri): string | undefined => {
@@ -374,7 +353,7 @@ const connectBoardForPath = async (
 
   connectedBoards.set(deviceId, state);
   deviceIdByPortPath.set(board.device, deviceId);
-  await addReconnectDevicePath(extensionContext, board.device);
+  await addReconnectDevicePath(board.device);
   await updateReconnectState(true);
   notifyStateChanged();
 
@@ -416,7 +395,7 @@ export const closeConnectedBoardByDeviceId = async (
     connectedBoards.delete(deviceId);
     deviceIdByPortPath.delete(state.board.device);
     if (!preserveReconnectState) {
-      await removeReconnectDevicePath(extensionContext, state.board.device);
+      await removeReconnectDevicePath(state.board.device);
     }
 
     if (!preserveReconnectState && connectedBoards.size === 0) {
@@ -493,9 +472,7 @@ export const closeAllConnectedBoards = async (
 
   if (!preserveReconnectState) {
     await updateReconnectState(false);
-    if (extensionContext) {
-      await writeReconnectDevicePaths(extensionContext, []);
-    }
+    await writeReconnectDevicePaths([]);
   }
 
   return true;
@@ -526,10 +503,7 @@ const pickConnectedDeviceId = async (placeHolder: string): Promise<string | unde
   return selected?.label;
 };
 
-const pickSerialPortToConnect = async (
-  context: vscode.ExtensionContext,
-  onlyUnconnected: boolean = false
-): Promise<string | undefined> => {
+const pickSerialPortToConnect = async (onlyUnconnected: boolean = false): Promise<string | undefined> => {
   const ports = await listSerialDevices();
   if (ports.length === 0) {
     const msg = 'No serial devices found.';
@@ -539,7 +513,7 @@ const pickSerialPortToConnect = async (
   }
 
   const connectedPaths = new Set(getSnapshots().map((item) => item.devicePath));
-  const activePath = readPersistentState<string>(context, selectedSerialPortStateKey);
+  const activePath = readPersistentState<string>(selectedSerialPortStateKey);
   const candidatePorts = onlyUnconnected
     ? ports.filter((port) => !connectedPaths.has(port.path))
     : ports;
@@ -571,7 +545,7 @@ const pickSerialPortToConnect = async (
     return undefined;
   }
 
-  await writePersistentState(context, selectedSerialPortStateKey, selected.label);
+  await writePersistentState(selectedSerialPortStateKey, selected.label);
   return selected.label;
 };
 
@@ -583,13 +557,13 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
       arg === true
       || (typeof arg === 'object' && arg && 'forcePickPort' in arg && (arg as { forcePickPort?: unknown }).forcePickPort === true)
     );
-    let devicePath = readPersistentState<string>(context, selectedSerialPortStateKey);
-    const baudRate = readPersistentState<number>(context, selectedBaudRateStateKey) ?? defaultBaudRate;
+    let devicePath = readPersistentState<string>(selectedSerialPortStateKey);
+    const baudRate = readPersistentState<number>(selectedBaudRateStateKey) ?? defaultBaudRate;
     const selectedIsAlreadyConnected = Boolean(devicePath && getConnectedBoardByPortPath(devicePath));
 
     if (forcePickPort || !devicePath || selectedIsAlreadyConnected) {
       try {
-        devicePath = await pickSerialPortToConnect(context, forcePickPort || selectedIsAlreadyConnected);
+        devicePath = await pickSerialPortToConnect(forcePickPort || selectedIsAlreadyConnected);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         const msg = `Unable to list serial ports. ${reason}`;
@@ -701,13 +675,13 @@ export const tryReconnectBoardOnStartup = async (context: vscode.ExtensionContex
     return;
   }
 
-  const shouldReconnect = readPersistentState<boolean>(context, reconnectLastSessionStateKey) ?? false;
+  const shouldReconnect = readPersistentState<boolean>(reconnectLastSessionStateKey) ?? false;
   if (!shouldReconnect) {
     return;
   }
 
-  const reconnectDevicePaths = readReconnectDevicePaths(context);
-  const baudRate = readPersistentState<number>(context, selectedBaudRateStateKey) ?? defaultBaudRate;
+  const reconnectDevicePaths = readReconnectDevicePaths();
+  const baudRate = readPersistentState<number>(selectedBaudRateStateKey) ?? defaultBaudRate;
 
   if (reconnectDevicePaths.length === 0) {
     await vscode.commands.executeCommand('mekatrol.pyboarddev.connectboard');

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { posix } from 'path';
 
-export const configurationFileName = '.pyboarddev';
+export const configurationFileName = '.pyboard-dev';
 
 export enum PyboardDevConfigurationResult {
   AlreadyExists = 'AlreadyExists',

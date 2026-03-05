@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { logChannelOutput } from '../output-channel';
 import { listAllSerialPorts, PortInfo } from '../utils/serial-port';
 import { BoardRuntimeInfo, Pyboard } from '../utils/pyboard';
+import { getWorkspaceCacheValue, setWorkspaceCacheValue } from '../utils/workspace-cache';
 import { getConnectedBoardByPortPath } from './connect-board-command';
 
 const autoDetectDevicesCommandId = 'mekatrol.pyboarddev.autodetectdevices';
@@ -45,18 +46,12 @@ const buildDeviceDetails = (device: DetectedDevice): string => {
   return parts.length > 0 ? parts.join(' | ') : 'No USB metadata';
 };
 
-const readPersistentState = <T>(context: vscode.ExtensionContext, key: string): T | undefined => {
-  const fromGlobal = context.globalState.get<T>(key);
-  if (fromGlobal !== undefined) {
-    return fromGlobal;
-  }
-
-  return context.workspaceState.get<T>(key);
+const readPersistentState = <T>(key: string): T | undefined => {
+  return getWorkspaceCacheValue<T>(key);
 };
 
-const writePersistentState = async <T>(context: vscode.ExtensionContext, key: string, value: T): Promise<void> => {
-  await context.globalState.update(key, value);
-  await context.workspaceState.update(key, value);
+const writePersistentState = async <T>(key: string, value: T): Promise<void> => {
+  await setWorkspaceCacheValue(key, value);
 };
 
 export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): void => {
@@ -109,7 +104,7 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
       return;
     }
 
-    const activeDevice = readPersistentState<string>(context, selectedSerialPortStateKey);
+    const activeDevice = readPersistentState<string>(selectedSerialPortStateKey);
     const items: DetectedDevicePickItem[] = detectedDevices.map((device) => ({
       label: device.port.path,
       description: device.runtimeInfo
@@ -130,8 +125,8 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
       return;
     }
 
-    await writePersistentState(context, selectedSerialPortStateKey, selected.device.port.path);
-    await writePersistentState(context, selectedBaudRateStateKey, defaultBaudRate);
+    await writePersistentState(selectedSerialPortStateKey, selected.device.port.path);
+    await writePersistentState(selectedBaudRateStateKey, defaultBaudRate);
 
     await vscode.commands.executeCommand('mekatrol.pyboarddev.connectboard');
   });
