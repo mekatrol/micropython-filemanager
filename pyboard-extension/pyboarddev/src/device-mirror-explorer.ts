@@ -330,7 +330,6 @@ class DeviceMirrorModel {
     if (this.activeDeviceId) {
       await this.pruneMissingDeviceSyncExclusions(this.activeDeviceId, deviceEntries);
     }
-    const excludedPaths = this.getDeviceSyncExclusionSet(this.activeDeviceId);
     const localEntries = await scanLocalMirrorEntries(this.mirrorRootPath);
     const deviceEntryMap = new Map(deviceEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
     const localEntryMap = new Map(localEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
@@ -343,7 +342,7 @@ class DeviceMirrorModel {
       if (!relativePath) {
         continue;
       }
-      const isExcluded = !entry.isDirectory && excludedPaths.has(relativePath);
+      const isExcluded = this.isPathExcludedFromSync(relativePath, this.activeDeviceId);
 
       const localEntry = localEntryMap.get(relativePath);
       if (!localEntry) {
@@ -395,11 +394,11 @@ class DeviceMirrorModel {
         continue;
       }
       if (protectedLocalPaths.has(relativePath)) {
-        if (!entry.isDirectory && excludedPaths.has(relativePath)) {
+        if (this.isPathExcludedFromSync(relativePath, this.activeDeviceId)) {
           const operation: Omit<SyncOperation, 'id'> = {
             action: 'delete',
             relativePath,
-            isDirectory: false,
+            isDirectory: entry.isDirectory,
             excluded: true
           };
           syncOperations.push({ ...operation, id: this.toSyncOperationId(operation) });
@@ -538,7 +537,6 @@ class DeviceMirrorModel {
     if (this.activeDeviceId) {
       await this.pruneMissingDeviceSyncExclusions(this.activeDeviceId, deviceEntries);
     }
-    const excludedPaths = this.getDeviceSyncExclusionSet(this.activeDeviceId);
     const localEntryMap = new Map(localEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
     const deviceEntryMap = new Map(deviceEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
     const protectedDevicePaths = this.getProtectedSyncPaths(deviceEntries, this.activeDeviceId);
@@ -550,7 +548,7 @@ class DeviceMirrorModel {
       if (!relativePath) {
         continue;
       }
-      const isExcluded = !entry.isDirectory && excludedPaths.has(relativePath);
+      const isExcluded = this.isPathExcludedFromSync(relativePath, this.activeDeviceId);
       if (!entry.isDirectory && this.obfuscationSet.has(relativePath) && !isExcluded) {
         continue;
       }
@@ -603,11 +601,11 @@ class DeviceMirrorModel {
         continue;
       }
       if (protectedDevicePaths.has(relativePath)) {
-        if (!entry.isDirectory && excludedPaths.has(relativePath)) {
+        if (this.isPathExcludedFromSync(relativePath, this.activeDeviceId)) {
           const operation: Omit<SyncOperation, 'id'> = {
             action: 'delete',
             relativePath,
-            isDirectory: false,
+            isDirectory: entry.isDirectory,
             excluded: true
           };
           syncOperations.push({ ...operation, id: this.toSyncOperationId(operation) });
@@ -1230,7 +1228,7 @@ class DeviceMirrorModel {
     const rows = ${rowsJson};
     const tbody = document.getElementById('rows');
     const toClass = (action) => action === 'create' ? 'action-create' : (action === 'modify' ? 'action-modify' : 'action-delete');
-    const noteText = 'this file is configured to be excluded by default';
+    const noteText = 'this path is configured to be excluded by default';
 
     if (rows.length === 0) {
       const tr = document.createElement('tr');
@@ -1461,7 +1459,47 @@ class DeviceMirrorModel {
     if (!normalised) {
       return false;
     }
+    const excludedPaths = this.getDeviceSyncExclusionSet(deviceId);
+    if (excludedPaths.has(normalised)) {
+      return true;
+    }
+    let parent = path.posix.dirname(normalised);
+    while (parent && parent !== '.') {
+      const parentPath = toRelativePath(parent);
+      if (excludedPaths.has(parentPath)) {
+        return true;
+      }
+      parent = path.posix.dirname(parent);
+    }
+    return false;
+  }
+
+  private isPathDirectlyExcludedFromSync(relativePath: string, deviceId?: string): boolean {
+    const normalised = toRelativePath(relativePath);
+    if (!normalised) {
+      return false;
+    }
     return this.getDeviceSyncExclusionSet(deviceId).has(normalised);
+  }
+
+  private findNearestExcludedPath(relativePath: string, deviceId?: string): string | undefined {
+    const normalised = toRelativePath(relativePath);
+    if (!normalised) {
+      return undefined;
+    }
+    const excludedPaths = this.getDeviceSyncExclusionSet(deviceId);
+    if (excludedPaths.has(normalised)) {
+      return normalised;
+    }
+    let parent = path.posix.dirname(normalised);
+    while (parent && parent !== '.') {
+      const parentPath = toRelativePath(parent);
+      if (excludedPaths.has(parentPath)) {
+        return parentPath;
+      }
+      parent = path.posix.dirname(parent);
+    }
+    return undefined;
   }
 
   private getProtectedSyncPaths(
@@ -1474,23 +1512,27 @@ class DeviceMirrorModel {
       return protectedPaths;
     }
 
-    const existingFilePaths = new Set(
+    const existingPaths = new Set(
       destinationEntries
-        .filter((entry) => !entry.isDirectory)
         .map((entry) => toRelativePath(entry.relativePath))
         .filter((entryPath) => entryPath.length > 0)
     );
 
     for (const excludedPath of excludedPaths) {
-      if (!existingFilePaths.has(excludedPath)) {
+      const matchingPaths = [...existingPaths].filter((existingPath) =>
+        existingPath === excludedPath || existingPath.startsWith(`${excludedPath}/`)
+      );
+      if (matchingPaths.length === 0) {
         continue;
       }
 
-      protectedPaths.add(excludedPath);
-      let parent = path.posix.dirname(excludedPath);
-      while (parent && parent !== '.') {
-        protectedPaths.add(toRelativePath(parent));
-        parent = path.posix.dirname(parent);
+      for (const matchingPath of matchingPaths) {
+        protectedPaths.add(matchingPath);
+        let parent = path.posix.dirname(matchingPath);
+        while (parent && parent !== '.') {
+          protectedPaths.add(toRelativePath(parent));
+          parent = path.posix.dirname(parent);
+        }
       }
     }
 
@@ -1508,7 +1550,9 @@ class DeviceMirrorModel {
         .map((entry) => toRelativePath(entry.relativePath))
         .filter((relativePath) => relativePath.length > 0)
     );
-    const nextPaths = [...current].filter((relativePath) => existingPaths.has(relativePath));
+    const nextPaths = [...current].filter((relativePath) =>
+      existingPaths.has(relativePath) || [...existingPaths].some((existingPath) => existingPath.startsWith(`${relativePath}/`))
+    );
     if (nextPaths.length === current.size) {
       return;
     }
@@ -1550,7 +1594,7 @@ class DeviceMirrorModel {
   }
 
   private isNodeExcludedFromSync(node: MirrorNode | undefined): boolean {
-    if (!node || node.data.isDirectory || node.data.isRoot || node.data.isIndicator) {
+    if (!node || node.data.isRoot || node.data.isIndicator) {
       return false;
     }
 
@@ -1559,7 +1603,7 @@ class DeviceMirrorModel {
   }
 
   isNodePathExcludedFromSync(data: NodeData): boolean {
-    if (data.isDirectory || data.isRoot || data.isIndicator) {
+    if (data.isRoot || data.isIndicator) {
       return false;
     }
 
@@ -1570,20 +1614,20 @@ class DeviceMirrorModel {
   async excludeDeviceFileFromSync(node?: MirrorNode): Promise<void> {
     const targetNode = this.resolveTargetNode(node);
     await this.ensureActiveDevice(targetNode);
-    if (!targetNode || targetNode.data.isDirectory || targetNode.data.isRoot || targetNode.data.isIndicator) {
-      vscode.window.showWarningMessage('Select a file to exclude from sync.');
+    if (!targetNode || targetNode.data.isRoot || targetNode.data.isIndicator) {
+      vscode.window.showWarningMessage('Select a file or folder to exclude from sync.');
       return;
     }
 
     const deviceId = this.getNodeDeviceId(targetNode);
     if (!deviceId) {
-      vscode.window.showWarningMessage('Select a linked device file to exclude from sync.');
+      vscode.window.showWarningMessage('Select a linked device path to exclude from sync.');
       return;
     }
 
     const relativePath = toRelativePath(targetNode.data.relativePath);
     if (!relativePath) {
-      vscode.window.showWarningMessage('Select a file to exclude from sync.');
+      vscode.window.showWarningMessage('Select a file or folder to exclude from sync.');
       return;
     }
 
@@ -1603,32 +1647,33 @@ class DeviceMirrorModel {
   async removeDeviceFileFromSyncExclusion(node?: MirrorNode): Promise<void> {
     const targetNode = this.resolveTargetNode(node);
     await this.ensureActiveDevice(targetNode);
-    if (!targetNode || targetNode.data.isDirectory || targetNode.data.isRoot || targetNode.data.isIndicator) {
-      vscode.window.showWarningMessage('Select an excluded file to remove from sync exclusions.');
+    if (!targetNode || targetNode.data.isRoot || targetNode.data.isIndicator) {
+      vscode.window.showWarningMessage('Select an excluded file or folder to remove from sync exclusions.');
       return;
     }
 
     const deviceId = this.getNodeDeviceId(targetNode);
     if (!deviceId) {
-      vscode.window.showWarningMessage('Select a linked device file to update sync exclusions.');
+      vscode.window.showWarningMessage('Select a linked device path to update sync exclusions.');
       return;
     }
 
     const relativePath = toRelativePath(targetNode.data.relativePath);
     if (!relativePath) {
-      vscode.window.showWarningMessage('Select an excluded file to remove from sync exclusions.');
+      vscode.window.showWarningMessage('Select an excluded file or folder to remove from sync exclusions.');
       return;
     }
 
-    if (!this.isPathExcludedFromSync(relativePath, deviceId)) {
-      vscode.window.showInformationMessage(`File is not excluded from sync: /${relativePath}`);
+    const exclusionPath = this.findNearestExcludedPath(relativePath, deviceId);
+    if (!exclusionPath) {
+      vscode.window.showInformationMessage(`Path is not excluded from sync: /${relativePath}`);
       return;
     }
 
-    await updateDeviceSyncExclusion(deviceId, relativePath, false);
+    await updateDeviceSyncExclusion(deviceId, exclusionPath, false);
     await this.refresh(false);
 
-    const msg = `Removed sync exclusion for ${this.getDeviceDisplayNameWithId(deviceId)}: /${relativePath}`;
+    const msg = `Removed sync exclusion for ${this.getDeviceDisplayNameWithId(deviceId)}: /${exclusionPath}`;
     vscode.window.showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
@@ -1651,7 +1696,6 @@ class DeviceMirrorModel {
     }
 
     const normalisedTarget = toRelativePath(targetPath);
-    const excludedPaths = this.getDeviceSyncExclusionSet(this.activeDeviceId);
     const deviceEntries = await listDeviceEntries(board);
     const scopedEntries = deviceEntries.filter(
       (entry) => entry.relativePath.length > 0 && this.matchesTarget(entry.relativePath, normalisedTarget, includeDescendants)
@@ -1675,7 +1719,7 @@ class DeviceMirrorModel {
     }
 
     for (const entry of scopedEntries) {
-      if (!entry.isDirectory && excludedPaths.has(entry.relativePath)) {
+      if (this.isPathExcludedFromSync(entry.relativePath, this.activeDeviceId)) {
         continue;
       }
       const localPath = path.join(this.mirrorRootPath, entry.relativePath);
@@ -1731,7 +1775,6 @@ class DeviceMirrorModel {
     }
 
     const normalisedTarget = toRelativePath(targetPath);
-    const excludedPaths = this.getDeviceSyncExclusionSet(this.activeDeviceId);
     const localEntries = await scanLocalMirrorEntries(this.mirrorRootPath);
     const deviceEntries = await listDeviceEntries(board);
     const protectedDevicePaths = this.getProtectedSyncPaths(deviceEntries, this.activeDeviceId);
@@ -1775,7 +1818,7 @@ class DeviceMirrorModel {
       if (entry.isDirectory) {
         continue;
       }
-      if (excludedPaths.has(entry.relativePath)) {
+      if (this.isPathExcludedFromSync(entry.relativePath, this.activeDeviceId)) {
         continue;
       }
 
@@ -3038,14 +3081,14 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
     const isExcludedFromSync = this.model.isNodePathExcludedFromSync(data);
     if (data.side === 'device') {
       if (data.isDirectory) {
-        element.contextValue = 'pyboarddev.deviceFolder';
+        element.contextValue = isExcludedFromSync ? 'pyboarddev.deviceFolderExcluded' : 'pyboarddev.deviceFolder';
       } else {
         element.contextValue = isExcludedFromSync ? 'pyboarddev.deviceFileExcluded' : 'pyboarddev.deviceFile';
       }
       element.command = data.isDirectory ? undefined : { command: commandOpenRemoteFileId, title: 'Open', arguments: [element] };
     } else {
       if (data.isDirectory) {
-        element.contextValue = 'pyboarddev.hostFolder';
+        element.contextValue = isExcludedFromSync ? 'pyboarddev.hostFolderExcluded' : 'pyboarddev.hostFolder';
       } else {
         element.contextValue = isExcludedFromSync ? 'pyboarddev.hostFileExcluded' : 'pyboarddev.hostFile';
       }
