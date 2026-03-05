@@ -3,6 +3,7 @@ import { getConnectedBoard, getConnectedBoards, onBoardConnectionsChanged } from
 
 const openReplCommandId = 'mekatrol.pyboarddev.openrepl';
 const clearReplCommandId = 'mekatrol.pyboarddev.clearrepl';
+const clearReplHistoryCommandId = 'mekatrol.pyboarddev.clearreplhistory';
 const replPanelContainerId = 'mekatrol-pyboarddev-panel';
 const replViewId = 'mekatrol.pyboarddev.replView';
 const replPrompt = '>>> ';
@@ -33,7 +34,7 @@ interface ReplWebviewState {
 }
 
 interface WebviewMessage {
-  type: 'submit' | 'switchTab' | 'clearHistory';
+  type: 'submit' | 'switchTab';
   deviceId?: string;
   command?: string;
 }
@@ -97,23 +98,6 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       return;
     }
 
-    if (message.type === 'clearHistory') {
-      if (!message.deviceId) {
-        return;
-      }
-
-      const state = this.devicesById.get(message.deviceId);
-      if (!state) {
-        return;
-      }
-
-      state.history = [];
-      this.persistedHistoryByDevice.set(message.deviceId, []);
-      void this.persistHistory();
-      this.postState();
-      return;
-    }
-
     if (message.type === 'submit') {
       const deviceId = message.deviceId;
       const command = (message.command ?? '').trimEnd();
@@ -174,6 +158,13 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     this.clearDeviceRepl(this.activeDeviceId);
   }
 
+  clearActiveHistory(): void {
+    if (!this.activeDeviceId) {
+      return;
+    }
+    this.clearDeviceHistory(this.activeDeviceId);
+  }
+
   private clearDeviceRepl(deviceId: string): void {
     const state = this.devicesById.get(deviceId);
     if (!state) {
@@ -183,6 +174,18 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     state.lines = [];
     state.hasRenderedConnectedIntro = false;
     this.renderConnectedIntroForDevice(deviceId);
+    this.postState();
+  }
+
+  private clearDeviceHistory(deviceId: string): void {
+    const state = this.devicesById.get(deviceId);
+    if (!state) {
+      return;
+    }
+
+    state.history = [];
+    this.persistedHistoryByDevice.set(deviceId, []);
+    void this.persistHistory();
     this.postState();
   }
 
@@ -408,8 +411,6 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     .tab { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; padding: 4px 8px; background: var(--vscode-editor-background); cursor: pointer; user-select: none; }
     .tab.active { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); border-color: var(--vscode-list-activeSelectionBackground); }
     .tab-title { white-space: nowrap; max-width: 260px; text-overflow: ellipsis; overflow: hidden; }
-    .history-clear { border: none; background: transparent; color: inherit; cursor: pointer; font-size: 11px; line-height: 1; padding: 0 2px; opacity: 0.8; }
-    .history-clear:hover { opacity: 1; }
     .empty { display: grid; place-items: center; height: 100%; color: var(--vscode-descriptionForeground); }
     .console { flex: 1; overflow: auto; padding: 8px 10px; font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); white-space: pre-wrap; }
     .input-row { display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--vscode-panel-border); }
@@ -507,19 +508,6 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
         title.textContent = device.deviceId;
         title.title = device.deviceId + ' (' + device.devicePath + ')';
         tab.appendChild(title);
-
-        const clearHistoryButton = document.createElement('button');
-        clearHistoryButton.type = 'button';
-        clearHistoryButton.className = 'history-clear';
-        clearHistoryButton.textContent = 'H';
-        clearHistoryButton.title = 'Clear history for ' + device.deviceId;
-        clearHistoryButton.addEventListener('click', (event) => {
-          event.stopPropagation();
-          vscode.postMessage({ type: 'clearHistory', deviceId: device.deviceId });
-          historyCursorByDevice.delete(device.deviceId);
-          historyDraftByDevice.delete(device.deviceId);
-        });
-        tab.appendChild(clearHistoryButton);
 
         tabsEl.appendChild(tab);
       }
@@ -666,6 +654,9 @@ export const initReplView = (context: vscode.ExtensionContext): void => {
     }),
     vscode.commands.registerCommand(clearReplCommandId, () => {
       provider.clearActiveRepl();
+    }),
+    vscode.commands.registerCommand(clearReplHistoryCommandId, () => {
+      provider.clearActiveHistory();
     })
   );
 
