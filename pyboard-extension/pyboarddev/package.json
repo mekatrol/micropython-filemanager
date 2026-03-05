@@ -130,13 +130,13 @@
     "views": {
       "mekatrol-pyboarddev-sidebar": [
         {
+          "id": "mekatrol.pyboarddev.mirrorExplorer",
+          "name": "Pyboard Explorer"
+        },
+        {
           "id": "mekatrol.pyboarddev.statusView",
           "name": "PYBOARD",
           "when": "mekatrol.pyboarddev.showExtensionStatusView"
-        },
-        {
-          "id": "mekatrol.pyboarddev.mirrorExplorer",
-          "name": "Pyboard Explorer"
         }
       ]
     },
@@ -278,7 +278,7 @@
         },
         "mekatrol.pyboarddev.statusDisplayMode": {
           "type": "string",
-          "default": "statusBar",
+          "default": "extensionView",
           "enum": [
             "statusBar",
             "extensionView"
