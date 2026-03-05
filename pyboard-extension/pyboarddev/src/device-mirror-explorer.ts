@@ -139,6 +139,8 @@ class DeviceMirrorModel {
   private deviceEntries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
   private syncStates: Map<string, SyncState> = new Map();
   private selectedNode: MirrorNode | undefined;
+  private lastExplorerOpenUri: string | undefined;
+  private lastExplorerOpenAtMs = 0;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -889,6 +891,17 @@ class DeviceMirrorModel {
     }
 
     const uri = document.uri;
+    const uriKey = uri.toString();
+    const nowMs = Date.now();
+    const isRapidRepeatOnSameUri = this.lastExplorerOpenUri === uriKey && (nowMs - this.lastExplorerOpenAtMs) <= 500;
+    this.lastExplorerOpenUri = uriKey;
+    this.lastExplorerOpenAtMs = nowMs;
+
+    if (isRapidRepeatOnSameUri) {
+      await vscode.window.showTextDocument(document, { preview: false });
+      return;
+    }
+
     const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
     const isActiveSameFile = !!activeTab && this.isTextTabForUri(activeTab, uri);
 
@@ -923,8 +936,8 @@ class DeviceMirrorModel {
   }
 
   async pullDeviceNodeAndOpen(node: MirrorNode, options?: OpenEditorOptions): Promise<void> {
-    await this.ensureActiveDevice(node);
-    if (!getConnectedBoard(this.activeDeviceId)) {
+    const deviceId = await this.ensureActiveDevice(node);
+    if (!deviceId || !getConnectedBoard(deviceId)) {
       vscode.window.showWarningMessage('Connect to a board before opening a device file.');
       return;
     }
@@ -934,7 +947,7 @@ class DeviceMirrorModel {
     }
 
     const relativePath = toRelativePath(node.data.relativePath);
-    const deviceSegment = encodeURIComponent(this.activeDeviceId ?? '');
+    const deviceSegment = encodeURIComponent(deviceId);
     const deviceUri = vscode.Uri.parse(`${deviceDocumentScheme}:/${deviceSegment}/${relativePath}`);
     const document = await vscode.workspace.openTextDocument(deviceUri);
     await this.showTextDocumentWithExplorerBehavior(document, options);
@@ -2527,8 +2540,8 @@ class DeviceMirrorModel {
   }
 
   private async openDeviceDiff(node: MirrorNode): Promise<void> {
-    await this.ensureActiveDevice(node);
-    if (!getConnectedBoard(this.activeDeviceId)) {
+    const deviceId = await this.ensureActiveDevice(node);
+    if (!deviceId || !getConnectedBoard(deviceId)) {
       vscode.window.showWarningMessage('Connect to a board before comparing a device file.');
       return;
     }
@@ -2554,7 +2567,7 @@ class DeviceMirrorModel {
     }
 
     const computerUri = vscode.Uri.file(computerPath);
-    const deviceSegment = encodeURIComponent(this.activeDeviceId ?? '');
+    const deviceSegment = encodeURIComponent(deviceId);
     const deviceUri = vscode.Uri.parse(`${deviceDocumentScheme}:/${deviceSegment}/${relativePath}`);
     const title = `${relativePath} (Computer <-> Device)`;
     await vscode.commands.executeCommand('vscode.diff', computerUri, deviceUri, title, { preview: false });
