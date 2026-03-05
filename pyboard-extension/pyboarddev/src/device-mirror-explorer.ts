@@ -25,7 +25,7 @@ import {
   normaliseObfuscationSet,
   readDeviceFile,
   renameDevicePath,
-  scanLocalMirrorEntries,
+  scanComputerMirrorEntries,
   toRelativePath,
   writeDeviceFile
 } from './utils/device-filesystem';
@@ -36,10 +36,10 @@ const commandSyncFromDeviceId = 'mekatrol.pyboarddev.syncfromdevice';
 const commandSyncToDeviceId = 'mekatrol.pyboarddev.synctodevice';
 const commandSyncNodeFromDeviceId = 'mekatrol.pyboarddev.syncnodefromdevice';
 const commandSyncNodeToDeviceId = 'mekatrol.pyboarddev.syncnodetodevice';
-const commandOpenLocalItemId = 'mekatrol.pyboarddev.openlocalmirroritem';
+const commandOpenComputerItemId = 'mekatrol.pyboarddev.opencomputermirroritem';
 const commandPullAndOpenDeviceItemId = 'mekatrol.pyboarddev.pullandopendeviceitem';
-const commandOpenRemoteFileId = 'mekatrol.pyboarddev.openremotefile';
-const commandCompareRemoteWithLocalId = 'mekatrol.pyboarddev.compareremotewithlocal';
+const commandOpenDeviceFileId = 'mekatrol.pyboarddev.opendevicefile';
+const commandCompareDeviceWithComputerId = 'mekatrol.pyboarddev.comparedevicewithcomputer';
 const commandCreateMirrorFileId = 'mekatrol.pyboarddev.createmirrorfile';
 const commandCreateMirrorFolderId = 'mekatrol.pyboarddev.createmirrorfolder';
 const commandRenameMirrorPathId = 'mekatrol.pyboarddev.renamemirrorpath';
@@ -52,9 +52,9 @@ const commandRemoveDeviceFileFromSyncExclusionId = 'mekatrol.pyboarddev.removede
 const commandCloseDeviceConnectionId = 'mekatrol.pyboarddev.closedeviceconnection';
 const commandCloseAllDeviceConnectionsId = 'mekatrol.pyboarddev.closealldeviceconnections';
 const commandConnectBoardWithPickerId = 'mekatrol.pyboarddev.connectboardwithpicker';
-const remoteDocumentScheme = 'pyboarddev-remote';
+const deviceDocumentScheme = 'pyboarddev-device';
 const defaultBaudRate = 115200;
-const remoteExplorerAutoRefreshIntervalMs = 5000;
+const deviceExplorerAutoRefreshIntervalMs = 5000;
 const hostMirrorRootFolder = '.pyboard-mirror';
 const hasHostMirrorChildFoldersContextKey = 'mekatrol.pyboarddev.hasHostMirrorChildFolders';
 const hasLinkedHostMappingsContextKey = 'mekatrol.pyboarddev.hasLinkedHostMappings';
@@ -62,7 +62,7 @@ const hasLinkedHostMappingsContextKey = 'mekatrol.pyboarddev.hasLinkedHostMappin
 const obfuscatedPlaceholder = '# pyboarddev: obfuscated on pull\n';
 const obfuscatedPlaceholderSha1 = createHash('sha1').update(Buffer.from(obfuscatedPlaceholder, 'utf8')).digest('hex');
 
-type NodeSide = 'device' | 'local';
+type NodeSide = 'device' | 'computer';
 
 interface NodeData {
   side: NodeSide;
@@ -114,21 +114,21 @@ class DeviceMirrorModel {
   private knownDeviceIds: Set<string> = new Set();
   private activeDeviceId: string | undefined;
   private mirrorRootByDeviceId = new Map<string, string>();
-  private localEntriesByDeviceId = new Map<string, FileEntry[]>();
+  private computerEntriesByDeviceId = new Map<string, FileEntry[]>();
   private deviceEntriesByDeviceId = new Map<string, FileEntry[]>();
   private syncStatesByDeviceId = new Map<string, Map<string, SyncState>>();
   private linkableHostFolders: string[] = [];
   private unlinkedHostEntries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
 
-  private localEntries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
+  private computerEntries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
   private deviceEntries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
   private syncStates: Map<string, SyncState> = new Map();
   private selectedNode: MirrorNode | undefined;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
-    private readonly notifyRemoteFilesChanged?: (relativePaths: string[]) => Promise<void>,
-    private readonly notifyRemotePathDeleted?: (relativePath: string, includeDescendants: boolean) => Promise<void>,
+    private readonly notifyDeviceFilesChanged?: (relativePaths: string[]) => Promise<void>,
+    private readonly notifyDevicePathDeleted?: (relativePath: string, includeDescendants: boolean) => Promise<void>,
     private readonly revealPathNode?: (target: { side: NodeSide; relativePath: string; deviceId?: string }) => Promise<void>
   ) {}
 
@@ -142,7 +142,7 @@ class DeviceMirrorModel {
   async refresh(fetchDevice: boolean = true): Promise<void> {
     this.workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!this.workspaceFolder) {
-      this.localEntries = [{ relativePath: '', isDirectory: true }];
+      this.computerEntries = [{ relativePath: '', isDirectory: true }];
       this.deviceEntries = [{ relativePath: '', isDirectory: true }];
       this.syncStates = new Map();
       this.linkableHostFolders = [];
@@ -175,10 +175,10 @@ class DeviceMirrorModel {
       } else {
         this.mirrorRootByDeviceId.delete(deviceId);
       }
-      const localEntries = mirrorRootPath
-        ? await scanLocalMirrorEntries(mirrorRootPath)
+      const computerEntries = mirrorRootPath
+        ? await scanComputerMirrorEntries(mirrorRootPath)
         : [{ relativePath: '', isDirectory: true }];
-      this.localEntriesByDeviceId.set(deviceId, localEntries);
+      this.computerEntriesByDeviceId.set(deviceId, computerEntries);
 
       let deviceEntries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
       if (fetchDevice) {
@@ -196,7 +196,7 @@ class DeviceMirrorModel {
       }
 
       this.deviceEntriesByDeviceId.set(deviceId, deviceEntries);
-      this.syncStatesByDeviceId.set(deviceId, buildSyncStateMap(localEntries, deviceEntries, this.obfuscationSet));
+      this.syncStatesByDeviceId.set(deviceId, buildSyncStateMap(computerEntries, deviceEntries, this.obfuscationSet));
     }
 
     if (!this.activeDeviceId || !this.knownDeviceIds.has(this.activeDeviceId)) {
@@ -205,7 +205,7 @@ class DeviceMirrorModel {
     this.activateDevice(this.activeDeviceId);
     const hostRootPath = this.getHostMirrorRootPath();
     this.unlinkedHostEntries = hostRootPath
-      ? await scanLocalMirrorEntries(hostRootPath)
+      ? await scanComputerMirrorEntries(hostRootPath)
       : [{ relativePath: '', isDirectory: true }];
     this.onDidChangeDataEmitter.fire();
   }
@@ -249,14 +249,14 @@ class DeviceMirrorModel {
   private activateDevice(deviceId: string | undefined): void {
     this.activeDeviceId = deviceId;
     if (!deviceId) {
-      this.localEntries = [{ relativePath: '', isDirectory: true }];
+      this.computerEntries = [{ relativePath: '', isDirectory: true }];
       this.deviceEntries = [{ relativePath: '', isDirectory: true }];
       this.syncStates = new Map();
       this.mirrorRootPath = undefined;
       return;
     }
 
-    this.localEntries = this.localEntriesByDeviceId.get(deviceId) ?? [{ relativePath: '', isDirectory: true }];
+    this.computerEntries = this.computerEntriesByDeviceId.get(deviceId) ?? [{ relativePath: '', isDirectory: true }];
     this.deviceEntries = this.deviceEntriesByDeviceId.get(deviceId) ?? [{ relativePath: '', isDirectory: true }];
     this.syncStates = this.syncStatesByDeviceId.get(deviceId) ?? new Map();
     this.mirrorRootPath = this.mirrorRootByDeviceId.get(deviceId);
@@ -330,7 +330,7 @@ class DeviceMirrorModel {
     }
 
     if (!this.mirrorRootPath) {
-      vscode.window.showWarningMessage('Link this device to a host folder before syncing from device.');
+      vscode.window.showWarningMessage('Link this device to a computer folder before syncing from device.');
       return;
     }
 
@@ -338,10 +338,10 @@ class DeviceMirrorModel {
     if (this.activeDeviceId) {
       await this.pruneMissingDeviceSyncExclusions(this.activeDeviceId, deviceEntries);
     }
-    const localEntries = await scanLocalMirrorEntries(this.mirrorRootPath);
+    const computerEntries = await scanComputerMirrorEntries(this.mirrorRootPath);
     const deviceEntryMap = new Map(deviceEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
-    const localEntryMap = new Map(localEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
-    const protectedLocalPaths = this.getProtectedSyncPaths(localEntries, this.activeDeviceId);
+    const computerEntryMap = new Map(computerEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
+    const protectedComputerPaths = this.getProtectedSyncPaths(computerEntries, this.activeDeviceId);
     const desiredDevicePaths = new Set(deviceEntries.map((entry) => toRelativePath(entry.relativePath)));
     const syncOperations: SyncOperation[] = [];
 
@@ -352,8 +352,8 @@ class DeviceMirrorModel {
       }
       const isExcluded = this.isPathExcludedFromSync(relativePath, this.activeDeviceId);
 
-      const localEntry = localEntryMap.get(relativePath);
-      if (!localEntry) {
+      const computerEntry = computerEntryMap.get(relativePath);
+      if (!computerEntry) {
         const operation: Omit<SyncOperation, 'id'> = {
           action: 'create',
           relativePath,
@@ -364,7 +364,7 @@ class DeviceMirrorModel {
         continue;
       }
 
-      if (localEntry.isDirectory !== entry.isDirectory) {
+      if (computerEntry.isDirectory !== entry.isDirectory) {
         const operation: Omit<SyncOperation, 'id'> = {
           action: 'modify',
           relativePath,
@@ -380,8 +380,8 @@ class DeviceMirrorModel {
       }
 
       const needsWrite = this.obfuscationSet.has(relativePath)
-        ? localEntry.sha1 !== obfuscatedPlaceholderSha1
-        : (!entry.sha1 || !localEntry.sha1 || entry.sha1 !== localEntry.sha1);
+        ? computerEntry.sha1 !== obfuscatedPlaceholderSha1
+        : (!entry.sha1 || !computerEntry.sha1 || entry.sha1 !== computerEntry.sha1);
       if (needsWrite) {
         const operation: Omit<SyncOperation, 'id'> = {
           action: 'modify',
@@ -393,7 +393,7 @@ class DeviceMirrorModel {
       }
     }
 
-    for (const entry of localEntries) {
+    for (const entry of computerEntries) {
       const relativePath = toRelativePath(entry.relativePath);
       if (!relativePath) {
         continue;
@@ -401,7 +401,7 @@ class DeviceMirrorModel {
       if (desiredDevicePaths.has(relativePath)) {
         continue;
       }
-      if (protectedLocalPaths.has(relativePath)) {
+      if (protectedComputerPaths.has(relativePath)) {
         if (this.isPathExcludedFromSync(relativePath, this.activeDeviceId)) {
           const operation: Omit<SyncOperation, 'id'> = {
             action: 'delete',
@@ -422,7 +422,11 @@ class DeviceMirrorModel {
       syncOperations.push({ ...operation, id: this.toSyncOperationId(operation) });
     }
 
-    const syncDialog = await this.pickSyncOperations('Sync From Device Preview', syncOperations);
+    const syncDialog = await this.pickSyncOperations(
+      'Sync Preview: from device to computer',
+      'DEVICE => COMPUTER',
+      syncOperations
+    );
     if (!syncDialog) {
       vscode.window.showInformationMessage('Sync from device cancelled.');
       return;
@@ -455,16 +459,16 @@ class DeviceMirrorModel {
     for (const operation of selectedDirCreates) {
       syncDialog.setStatus(operation.id, 'in_progress');
       try {
-        const localPath = path.join(this.mirrorRootPath, operation.relativePath);
+        const computerPath = path.join(this.mirrorRootPath, operation.relativePath);
         try {
-          const stat = await fs.stat(localPath);
+          const stat = await fs.stat(computerPath);
           if (!stat.isDirectory()) {
-            await fs.rm(localPath, { recursive: true, force: true });
+            await fs.rm(computerPath, { recursive: true, force: true });
           }
         } catch {
           // Path does not exist; create below.
         }
-        await fs.mkdir(localPath, { recursive: true });
+        await fs.mkdir(computerPath, { recursive: true });
         syncDialog.setStatus(operation.id, 'success');
       } catch (error) {
         failedCount += 1;
@@ -482,23 +486,23 @@ class DeviceMirrorModel {
           syncDialog.setStatus(operation.id, 'skipped');
           continue;
         }
-        const localPath = path.join(this.mirrorRootPath, operation.relativePath);
+        const computerPath = path.join(this.mirrorRootPath, operation.relativePath);
         try {
-          const stat = await fs.stat(localPath);
+          const stat = await fs.stat(computerPath);
           if (stat.isDirectory()) {
-            await fs.rm(localPath, { recursive: true, force: true });
+            await fs.rm(computerPath, { recursive: true, force: true });
           }
         } catch {
           // Path does not exist; create parent below.
         }
-        await fs.mkdir(path.dirname(localPath), { recursive: true });
+        await fs.mkdir(path.dirname(computerPath), { recursive: true });
         if (this.obfuscationSet.has(operation.relativePath)) {
-          await fs.writeFile(localPath, obfuscatedPlaceholder, 'utf8');
+          await fs.writeFile(computerPath, obfuscatedPlaceholder, 'utf8');
           syncDialog.setStatus(operation.id, 'success');
           continue;
         }
         const content = await readDeviceFile(board, operation.relativePath);
-        await fs.writeFile(localPath, content);
+        await fs.writeFile(computerPath, content);
         updatedDeviceFiles.push(operation.relativePath);
         syncDialog.setStatus(operation.id, 'success');
       } catch (error) {
@@ -508,11 +512,11 @@ class DeviceMirrorModel {
     }
 
     this.deviceEntries = deviceEntries;
-    this.localEntries = await scanLocalMirrorEntries(this.mirrorRootPath);
-    this.syncStates = buildSyncStateMap(this.localEntries, this.deviceEntries, this.obfuscationSet);
+    this.computerEntries = await scanComputerMirrorEntries(this.mirrorRootPath);
+    this.syncStates = buildSyncStateMap(this.computerEntries, this.deviceEntries, this.obfuscationSet);
     this.onDidChangeDataEmitter.fire();
-    if (this.notifyRemoteFilesChanged) {
-      await this.notifyRemoteFilesChanged(updatedDeviceFiles);
+    if (this.notifyDeviceFilesChanged) {
+      await this.notifyDeviceFilesChanged(updatedDeviceFiles);
     }
 
     const msg = failedCount > 0
@@ -536,22 +540,22 @@ class DeviceMirrorModel {
     }
 
     if (!this.mirrorRootPath) {
-      vscode.window.showWarningMessage('Link this device to a host folder before syncing to device.');
+      vscode.window.showWarningMessage('Link this device to a computer folder before syncing to device.');
       return;
     }
 
-    const localEntries = await scanLocalMirrorEntries(this.mirrorRootPath);
+    const computerEntries = await scanComputerMirrorEntries(this.mirrorRootPath);
     const deviceEntries = await listDeviceEntries(board);
     if (this.activeDeviceId) {
       await this.pruneMissingDeviceSyncExclusions(this.activeDeviceId, deviceEntries);
     }
-    const localEntryMap = new Map(localEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
+    const computerEntryMap = new Map(computerEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
     const deviceEntryMap = new Map(deviceEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
     const protectedDevicePaths = this.getProtectedSyncPaths(deviceEntries, this.activeDeviceId);
-    const desiredLocalPaths = new Set(localEntries.map((entry) => toRelativePath(entry.relativePath)));
+    const desiredComputerPaths = new Set(computerEntries.map((entry) => toRelativePath(entry.relativePath)));
     const syncOperations: SyncOperation[] = [];
 
-    for (const entry of localEntries) {
+    for (const entry of computerEntries) {
       const relativePath = toRelativePath(entry.relativePath);
       if (!relativePath) {
         continue;
@@ -605,7 +609,7 @@ class DeviceMirrorModel {
       if (!relativePath) {
         continue;
       }
-      if (desiredLocalPaths.has(relativePath)) {
+      if (desiredComputerPaths.has(relativePath)) {
         continue;
       }
       if (protectedDevicePaths.has(relativePath)) {
@@ -629,7 +633,11 @@ class DeviceMirrorModel {
       syncOperations.push({ ...operation, id: this.toSyncOperationId(operation) });
     }
 
-    const syncDialog = await this.pickSyncOperations('Sync To Device Preview', syncOperations);
+    const syncDialog = await this.pickSyncOperations(
+      'Sync Preview: from computer to device',
+      'COMPUTER => DEVICE',
+      syncOperations
+    );
     if (!syncDialog) {
       vscode.window.showInformationMessage('Sync to device cancelled.');
       return;
@@ -651,8 +659,8 @@ class DeviceMirrorModel {
         if (this.activeDeviceId) {
           await this.removeSyncExclusionsForDeletedDevicePath(this.activeDeviceId, operation.relativePath, operation.isDirectory);
         }
-        if (this.notifyRemotePathDeleted) {
-          await this.notifyRemotePathDeleted(operation.relativePath, operation.isDirectory);
+        if (this.notifyDevicePathDeleted) {
+          await this.notifyDevicePathDeleted(operation.relativePath, operation.isDirectory);
         }
         syncDialog.setStatus(operation.id, 'success');
       } catch (error) {
@@ -661,10 +669,10 @@ class DeviceMirrorModel {
       }
     }
 
-    const localDirectories = selectedOperations
+    const computerDirectories = selectedOperations
       .filter((operation) => operation.action !== 'delete' && operation.isDirectory)
       .sort((a, b) => a.relativePath.split('/').length - b.relativePath.split('/').length);
-    for (const directory of localDirectories) {
+    for (const directory of computerDirectories) {
       syncDialog.setStatus(directory.id, 'in_progress');
       try {
         await createDeviceDirectory(board, directory.relativePath);
@@ -680,13 +688,13 @@ class DeviceMirrorModel {
     for (const operation of fileOperations) {
       syncDialog.setStatus(operation.id, 'in_progress');
       try {
-        const localEntry = localEntryMap.get(operation.relativePath);
-        if (!localEntry || localEntry.isDirectory) {
+        const computerEntry = computerEntryMap.get(operation.relativePath);
+        if (!computerEntry || computerEntry.isDirectory) {
           syncDialog.setStatus(operation.id, 'skipped');
           continue;
         }
-        const localPath = path.join(this.mirrorRootPath, operation.relativePath);
-        const content = await fs.readFile(localPath);
+        const computerPath = path.join(this.mirrorRootPath, operation.relativePath);
+        const content = await fs.readFile(computerPath);
         await writeDeviceFile(board, operation.relativePath, Buffer.from(content));
         writtenDeviceFiles.push(operation.relativePath);
         syncDialog.setStatus(operation.id, 'success');
@@ -696,12 +704,12 @@ class DeviceMirrorModel {
       }
     }
 
-    this.localEntries = localEntries;
+    this.computerEntries = computerEntries;
     this.deviceEntries = await listDeviceEntries(board);
-    this.syncStates = buildSyncStateMap(this.localEntries, this.deviceEntries, this.obfuscationSet);
+    this.syncStates = buildSyncStateMap(this.computerEntries, this.deviceEntries, this.obfuscationSet);
     this.onDidChangeDataEmitter.fire();
-    if (this.notifyRemoteFilesChanged) {
-      await this.notifyRemoteFilesChanged(writtenDeviceFiles);
+    if (this.notifyDeviceFilesChanged) {
+      await this.notifyDeviceFilesChanged(writtenDeviceFiles);
     }
 
     const msg = failedCount > 0
@@ -724,7 +732,7 @@ class DeviceMirrorModel {
       vscode.window.showInformationMessage(`File is excluded from sync: /${excludedPath}`);
       return;
     }
-    if (targetNode?.data.side === 'local') {
+    if (targetNode?.data.side === 'computer') {
       await this.pullFromDevicePath(targetNode.data.relativePath, targetNode.data.isDirectory);
       return;
     }
@@ -760,22 +768,22 @@ class DeviceMirrorModel {
     const targetNode = this.resolveTargetNode(node);
     await this.ensureActiveDevice(targetNode);
     if (targetNode?.data.side === 'device') {
-      await this.createRemoteFile(targetNode);
+      await this.createDeviceFile(targetNode);
       return;
     }
 
-    await this.createLocalFile(targetNode);
+    await this.createComputerFile(targetNode);
   }
 
   async createMirrorFolder(node?: MirrorNode): Promise<void> {
     const targetNode = this.resolveTargetNode(node);
     await this.ensureActiveDevice(targetNode);
     if (targetNode?.data.side === 'device') {
-      await this.createRemoteFolder(targetNode);
+      await this.createDeviceFolder(targetNode);
       return;
     }
 
-    await this.createLocalFolder(targetNode);
+    await this.createComputerFolder(targetNode);
   }
 
   async renameMirrorPath(node?: MirrorNode): Promise<void> {
@@ -787,11 +795,11 @@ class DeviceMirrorModel {
     }
 
     if (targetNode.data.side === 'device') {
-      await this.renameRemotePath(targetNode);
+      await this.renameDevicePath(targetNode);
       return;
     }
 
-    await this.renameLocalPath(targetNode);
+    await this.renameComputerPath(targetNode);
   }
 
   async deleteMirrorPath(node?: MirrorNode): Promise<void> {
@@ -803,21 +811,21 @@ class DeviceMirrorModel {
     }
 
     if (targetNode.data.side === 'device') {
-      await this.deleteRemotePath(targetNode);
+      await this.deleteDevicePath(targetNode);
       return;
     }
 
-    await this.deleteLocalPath(targetNode);
+    await this.deleteComputerPath(targetNode);
   }
 
-  async openLocalNode(node: MirrorNode): Promise<void> {
+  async openComputerNode(node: MirrorNode): Promise<void> {
     await this.ensureActiveDevice(node);
-    const localRootPath = this.resolveLocalReadRootPath(node);
-    if (!localRootPath) {
+    const computerRootPath = this.resolveComputerReadRootPath(node);
+    if (!computerRootPath) {
       return;
     }
 
-    const fullPath = path.join(localRootPath, node.data.relativePath);
+    const fullPath = path.join(computerRootPath, node.data.relativePath);
     const stat = await fs.stat(fullPath);
     if (stat.isDirectory()) {
       return;
@@ -844,12 +852,12 @@ class DeviceMirrorModel {
 
     const relativePath = toRelativePath(node.data.relativePath);
     const deviceSegment = encodeURIComponent(this.activeDeviceId ?? '');
-    const remoteUri = vscode.Uri.parse(`${remoteDocumentScheme}:/${deviceSegment}/${relativePath}`);
-    const document = await vscode.workspace.openTextDocument(remoteUri);
+    const deviceUri = vscode.Uri.parse(`${deviceDocumentScheme}:/${deviceSegment}/${relativePath}`);
+    const document = await vscode.workspace.openTextDocument(deviceUri);
     await vscode.window.showTextDocument(document, { preview: false });
   }
 
-  async openRemoteFile(node?: MirrorNode): Promise<void> {
+  async openDeviceFile(node?: MirrorNode): Promise<void> {
     await this.ensureActiveDevice(node);
     if (node) {
       await this.pullDeviceNodeAndOpen(node);
@@ -858,7 +866,7 @@ class DeviceMirrorModel {
 
     const board = getConnectedBoard(this.activeDeviceId);
     if (!board) {
-      vscode.window.showWarningMessage('Connect to a board before opening a remote file.');
+      vscode.window.showWarningMessage('Connect to a board before opening a device file.');
       return;
     }
 
@@ -867,14 +875,14 @@ class DeviceMirrorModel {
       .sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 
     if (files.length === 0) {
-      vscode.window.showInformationMessage('No remote files available to open.');
+      vscode.window.showInformationMessage('No device files available to open.');
       return;
     }
 
     const selected = await vscode.window.showQuickPick(
       files.map((item) => ({ label: item.relativePath })),
       {
-        placeHolder: 'Select a remote file to open',
+        placeHolder: 'Select a device file to open',
         canPickMany: false,
         ignoreFocusOut: true
       }
@@ -898,17 +906,17 @@ class DeviceMirrorModel {
     await this.pullDeviceNodeAndOpen(quickPickNode);
   }
 
-  async compareRemoteWithLocal(node?: MirrorNode): Promise<void> {
+  async compareDeviceWithComputer(node?: MirrorNode): Promise<void> {
     const targetNode = this.resolveTargetNode(node);
     await this.ensureActiveDevice(targetNode);
     if (targetNode) {
-      await this.openRemoteDiff(targetNode);
+      await this.openDeviceDiff(targetNode);
       return;
     }
 
     const board = getConnectedBoard(this.activeDeviceId);
     if (!board) {
-      vscode.window.showWarningMessage('Connect to a board before comparing a remote file.');
+      vscode.window.showWarningMessage('Connect to a board before comparing a device file.');
       return;
     }
 
@@ -917,14 +925,14 @@ class DeviceMirrorModel {
       .sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 
     if (files.length === 0) {
-      vscode.window.showInformationMessage('No remote files available to compare.');
+      vscode.window.showInformationMessage('No device files available to compare.');
       return;
     }
 
     const selected = await vscode.window.showQuickPick(
       files.map((item) => ({ label: item.relativePath })),
       {
-        placeHolder: 'Select a remote file to compare',
+        placeHolder: 'Select a device file to compare',
         canPickMany: false,
         ignoreFocusOut: true
       }
@@ -945,37 +953,37 @@ class DeviceMirrorModel {
       vscode.TreeItemCollapsibleState.None
     );
 
-    await this.openRemoteDiff(quickPickNode);
+    await this.openDeviceDiff(quickPickNode);
   }
 
-  async createRemoteFile(node?: MirrorNode): Promise<void> {
+  async createDeviceFile(node?: MirrorNode): Promise<void> {
     await this.ensureActiveDevice(node);
     const board = getConnectedBoard(this.activeDeviceId);
     if (!board) {
-      vscode.window.showWarningMessage('Connect to a board before creating a remote file.');
+      vscode.window.showWarningMessage('Connect to a board before creating a device file.');
       return;
     }
 
-    const parentPath = this.getRemoteParentPath(node);
+    const parentPath = this.getDeviceParentPath(node);
     const fileName = await vscode.window.showInputBox({
-      title: 'Create Remote File',
+      title: 'Create Device File',
       prompt: parentPath ? `Create in /${parentPath}` : 'Create in /',
       placeHolder: 'filename.py',
       ignoreFocusOut: true,
-      validateInput: (value) => this.validateRemoteName(value)
+      validateInput: (value) => this.validateDeviceName(value)
     });
 
     if (!fileName) {
       return;
     }
 
-    const relativePath = this.joinRemotePath(parentPath, fileName);
+    const relativePath = this.joinDevicePath(parentPath, fileName);
     await writeDeviceFile(board, relativePath, Buffer.alloc(0));
     await this.revealNode({ side: 'device', relativePath: parentPath, deviceId: this.activeDeviceId });
     await this.refresh(true);
     await this.revealNode({ side: 'device', relativePath: parentPath, deviceId: this.activeDeviceId });
-    if (this.notifyRemoteFilesChanged) {
-      await this.notifyRemoteFilesChanged([relativePath]);
+    if (this.notifyDeviceFilesChanged) {
+      await this.notifyDeviceFilesChanged([relativePath]);
     }
     const createdNode = new MirrorNode(
       {
@@ -989,54 +997,54 @@ class DeviceMirrorModel {
     );
     await this.pullDeviceNodeAndOpen(createdNode);
 
-    const msg = `Created remote file: /${relativePath}`;
+    const msg = `Created device file: /${relativePath}`;
     vscode.window.showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
 
-  async createRemoteFolder(node?: MirrorNode): Promise<void> {
+  async createDeviceFolder(node?: MirrorNode): Promise<void> {
     await this.ensureActiveDevice(node);
     const board = getConnectedBoard(this.activeDeviceId);
     if (!board) {
-      vscode.window.showWarningMessage('Connect to a board before creating a remote folder.');
+      vscode.window.showWarningMessage('Connect to a board before creating a device folder.');
       return;
     }
 
-    const parentPath = this.getRemoteParentPath(node);
+    const parentPath = this.getDeviceParentPath(node);
     const folderName = await vscode.window.showInputBox({
-      title: 'Create Remote Folder',
+      title: 'Create Device Folder',
       prompt: parentPath ? `Create in /${parentPath}` : 'Create in /',
       placeHolder: 'folder',
       ignoreFocusOut: true,
-      validateInput: (value) => this.validateRemoteName(value)
+      validateInput: (value) => this.validateDeviceName(value)
     });
 
     if (!folderName) {
       return;
     }
 
-    const relativePath = this.joinRemotePath(parentPath, folderName);
+    const relativePath = this.joinDevicePath(parentPath, folderName);
     await createDeviceDirectory(board, relativePath);
     await this.revealNode({ side: 'device', relativePath: parentPath, deviceId: this.activeDeviceId });
     await this.refresh(true);
     await this.revealNode({ side: 'device', relativePath: parentPath, deviceId: this.activeDeviceId });
 
-    const msg = `Created remote folder: /${relativePath}`;
+    const msg = `Created device folder: /${relativePath}`;
     vscode.window.showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
 
-  async renameRemotePath(node?: MirrorNode): Promise<void> {
+  async renameDevicePath(node?: MirrorNode): Promise<void> {
     node = this.resolveTargetNode(node);
     await this.ensureActiveDevice(node);
     if (!node || node.data.side !== 'device') {
-      vscode.window.showWarningMessage('Select a remote file or folder to rename.');
+      vscode.window.showWarningMessage('Select a device file or folder to rename.');
       return;
     }
 
     const board = getConnectedBoard(this.activeDeviceId);
     if (!board) {
-      vscode.window.showWarningMessage('Connect to a board before renaming remote items.');
+      vscode.window.showWarningMessage('Connect to a board before renaming device items.');
       return;
     }
 
@@ -1044,50 +1052,50 @@ class DeviceMirrorModel {
     const currentName = path.posix.basename(currentPath);
     const parentPath = path.posix.dirname(currentPath) === '.' ? '' : path.posix.dirname(currentPath);
     const nextName = await vscode.window.showInputBox({
-      title: `Rename Remote ${node.data.isDirectory ? 'Folder' : 'File'}`,
+      title: `Rename Device ${node.data.isDirectory ? 'Folder' : 'File'}`,
       prompt: `Current: /${currentPath}`,
       value: currentName,
       ignoreFocusOut: true,
-      validateInput: (value) => this.validateRemoteName(value)
+      validateInput: (value) => this.validateDeviceName(value)
     });
 
     if (!nextName || nextName === currentName) {
       return;
     }
 
-    const nextPath = this.joinRemotePath(parentPath, nextName);
+    const nextPath = this.joinDevicePath(parentPath, nextName);
     await renameDevicePath(board, currentPath, nextPath);
 
-    if (this.notifyRemotePathDeleted) {
-      await this.notifyRemotePathDeleted(currentPath, node.data.isDirectory);
+    if (this.notifyDevicePathDeleted) {
+      await this.notifyDevicePathDeleted(currentPath, node.data.isDirectory);
     }
     await this.refresh(true);
-    if (!node.data.isDirectory && this.notifyRemoteFilesChanged) {
-      await this.notifyRemoteFilesChanged([nextPath]);
+    if (!node.data.isDirectory && this.notifyDeviceFilesChanged) {
+      await this.notifyDeviceFilesChanged([nextPath]);
     }
 
-    const msg = `Renamed remote path: /${currentPath} -> /${nextPath}`;
+    const msg = `Renamed device path: /${currentPath} -> /${nextPath}`;
     vscode.window.showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
 
-  async deleteRemotePath(node?: MirrorNode): Promise<void> {
+  async deleteDevicePath(node?: MirrorNode): Promise<void> {
     node = this.resolveTargetNode(node);
     await this.ensureActiveDevice(node);
     if (!node || node.data.side !== 'device') {
-      vscode.window.showWarningMessage('Select a remote file or folder to delete.');
+      vscode.window.showWarningMessage('Select a device file or folder to delete.');
       return;
     }
 
     const board = getConnectedBoard(this.activeDeviceId);
     if (!board) {
-      vscode.window.showWarningMessage('Connect to a board before deleting remote items.');
+      vscode.window.showWarningMessage('Connect to a board before deleting device items.');
       return;
     }
 
     const targetPath = toRelativePath(node.data.relativePath);
     const action = await vscode.window.showWarningMessage(
-      `Delete remote ${node.data.isDirectory ? 'folder' : 'file'} "/${targetPath}"?`,
+      `Delete device ${node.data.isDirectory ? 'folder' : 'file'} "/${targetPath}"?`,
       { modal: true },
       'Delete'
     );
@@ -1099,12 +1107,12 @@ class DeviceMirrorModel {
     if (this.activeDeviceId) {
       await this.removeSyncExclusionsForDeletedDevicePath(this.activeDeviceId, targetPath, node.data.isDirectory);
     }
-    if (this.notifyRemotePathDeleted) {
-      await this.notifyRemotePathDeleted(targetPath, node.data.isDirectory);
+    if (this.notifyDevicePathDeleted) {
+      await this.notifyDevicePathDeleted(targetPath, node.data.isDirectory);
     }
     await this.refresh(true);
 
-    const msg = `Deleted remote path: /${targetPath}`;
+    const msg = `Deleted device path: /${targetPath}`;
     vscode.window.showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
@@ -1137,6 +1145,7 @@ class DeviceMirrorModel {
 
   private async pickSyncOperations(
     title: string,
+    directionLabel: string,
     operations: SyncOperation[]
   ): Promise<SyncOperationsDialog | undefined> {
     const rows = operations
@@ -1165,6 +1174,7 @@ class DeviceMirrorModel {
 
     const rowsJson = JSON.stringify(rows);
     const titleText = this.escapeHtml(title);
+    const directionText = this.escapeHtml(directionLabel);
     panel.webview.html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1176,6 +1186,17 @@ class DeviceMirrorModel {
     body { margin: 0; font-family: var(--vscode-font-family); color: var(--vscode-foreground); }
     .wrap { max-width: 1100px; margin: 28px auto; padding: 0 20px 20px; }
     h2 { margin: 0 0 10px; font-size: 16px; }
+    .direction {
+      margin: 0 0 12px;
+      padding: 10px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      border: 1px solid var(--vscode-focusBorder);
+      background: var(--vscode-editor-inactiveSelectionBackground);
+      color: var(--vscode-foreground);
+    }
     .hint { margin: 0 0 12px; opacity: 0.9; }
     table { width: 100%; border-collapse: collapse; border: 1px solid var(--vscode-editorWidget-border); table-layout: fixed; }
     th, td { padding: 8px 10px; border-bottom: 1px solid var(--vscode-editorWidget-border); vertical-align: middle; }
@@ -1214,6 +1235,7 @@ class DeviceMirrorModel {
 <body>
   <div class="wrap">
     <h2>${titleText}</h2>
+    <div class="direction">Sync direction: ${directionText}</div>
     <p class="hint">Unchecking a folder unchecks all children. Checking a folder does not auto-check children.</p>
     <table>
       <thead>
@@ -1619,9 +1641,9 @@ class DeviceMirrorModel {
       return false;
     }
 
-    // HOST-side nodes are device-agnostic and may be linked to multiple devices,
+    // COMPUTER-side nodes are device-agnostic and may be linked to multiple devices,
     // so exclusion state must not be inferred from the active device.
-    if (data.side === 'local') {
+    if (data.side === 'computer') {
       return false;
     }
 
@@ -1709,7 +1731,7 @@ class DeviceMirrorModel {
     }
 
     if (!this.mirrorRootPath) {
-      vscode.window.showWarningMessage('Link this device to a host folder before syncing from device.');
+      vscode.window.showWarningMessage('Link this device to a computer folder before syncing from device.');
       return;
     }
 
@@ -1720,18 +1742,18 @@ class DeviceMirrorModel {
     );
     const desiredPaths = new Set(scopedEntries.map((entry) => entry.relativePath));
 
-    const existingLocalEntries = await scanLocalMirrorEntries(this.mirrorRootPath);
-    const protectedLocalPaths = this.getProtectedSyncPaths(existingLocalEntries, this.activeDeviceId);
-    const staleLocalEntries = existingLocalEntries
+    const existingComputerEntries = await scanComputerMirrorEntries(this.mirrorRootPath);
+    const protectedComputerPaths = this.getProtectedSyncPaths(existingComputerEntries, this.activeDeviceId);
+    const staleComputerEntries = existingComputerEntries
       .filter(
         (entry) =>
           entry.relativePath.length > 0 &&
           this.matchesTarget(entry.relativePath, normalisedTarget, includeDescendants) &&
           !desiredPaths.has(entry.relativePath) &&
-          !protectedLocalPaths.has(entry.relativePath)
+          !protectedComputerPaths.has(entry.relativePath)
       )
       .sort((a, b) => b.relativePath.length - a.relativePath.length);
-    for (const staleEntry of staleLocalEntries) {
+    for (const staleEntry of staleComputerEntries) {
       const stalePath = path.join(this.mirrorRootPath, staleEntry.relativePath);
       await fs.rm(stalePath, { recursive: true, force: true });
     }
@@ -1740,33 +1762,33 @@ class DeviceMirrorModel {
       if (this.isPathExcludedFromSync(entry.relativePath, this.activeDeviceId)) {
         continue;
       }
-      const localPath = path.join(this.mirrorRootPath, entry.relativePath);
+      const computerPath = path.join(this.mirrorRootPath, entry.relativePath);
       if (entry.isDirectory) {
         try {
-          const stat = await fs.stat(localPath);
+          const stat = await fs.stat(computerPath);
           if (!stat.isDirectory()) {
-            await fs.rm(localPath, { recursive: true, force: true });
+            await fs.rm(computerPath, { recursive: true, force: true });
           }
         } catch {
           // Path does not exist; create it below.
         }
-        await fs.mkdir(localPath, { recursive: true });
+        await fs.mkdir(computerPath, { recursive: true });
         continue;
       }
 
-      await fs.mkdir(path.dirname(localPath), { recursive: true });
+      await fs.mkdir(path.dirname(computerPath), { recursive: true });
       if (this.obfuscationSet.has(entry.relativePath)) {
-        await fs.writeFile(localPath, obfuscatedPlaceholder, 'utf8');
+        await fs.writeFile(computerPath, obfuscatedPlaceholder, 'utf8');
         continue;
       }
 
       const content = await readDeviceFile(board, entry.relativePath);
-      await fs.writeFile(localPath, content);
+      await fs.writeFile(computerPath, content);
     }
 
     this.deviceEntries = deviceEntries;
-    this.localEntries = await scanLocalMirrorEntries(this.mirrorRootPath);
-    this.syncStates = buildSyncStateMap(this.localEntries, this.deviceEntries, this.obfuscationSet);
+    this.computerEntries = await scanComputerMirrorEntries(this.mirrorRootPath);
+    this.syncStates = buildSyncStateMap(this.computerEntries, this.deviceEntries, this.obfuscationSet);
     this.onDidChangeDataEmitter.fire();
 
     const targetLabel = normalisedTarget ? `/${normalisedTarget}` : '/';
@@ -1788,24 +1810,24 @@ class DeviceMirrorModel {
     }
 
     if (!this.mirrorRootPath) {
-      vscode.window.showWarningMessage('Link this device to a host folder before syncing to device.');
+      vscode.window.showWarningMessage('Link this device to a computer folder before syncing to device.');
       return;
     }
 
     const normalisedTarget = toRelativePath(targetPath);
-    const localEntries = await scanLocalMirrorEntries(this.mirrorRootPath);
+    const computerEntries = await scanComputerMirrorEntries(this.mirrorRootPath);
     const deviceEntries = await listDeviceEntries(board);
     const protectedDevicePaths = this.getProtectedSyncPaths(deviceEntries, this.activeDeviceId);
-    const scopedEntries = localEntries.filter(
+    const scopedEntries = computerEntries.filter(
       (entry) => entry.relativePath.length > 0 && this.matchesTarget(entry.relativePath, normalisedTarget, includeDescendants)
     );
     const scopedDeviceEntries = deviceEntries.filter(
       (entry) => entry.relativePath.length > 0 && this.matchesTarget(entry.relativePath, normalisedTarget, includeDescendants)
     );
-    const desiredLocalPaths = new Set(scopedEntries.map((entry) => entry.relativePath));
+    const desiredComputerPaths = new Set(scopedEntries.map((entry) => entry.relativePath));
     const staleDeviceEntries = scopedDeviceEntries
       .filter((entry) => {
-        if (desiredLocalPaths.has(entry.relativePath)) {
+        if (desiredComputerPaths.has(entry.relativePath)) {
           return false;
         }
         if (protectedDevicePaths.has(entry.relativePath)) {
@@ -1819,15 +1841,15 @@ class DeviceMirrorModel {
       if (this.activeDeviceId) {
         await this.removeSyncExclusionsForDeletedDevicePath(this.activeDeviceId, staleEntry.relativePath, staleEntry.isDirectory);
       }
-      if (this.notifyRemotePathDeleted) {
-        await this.notifyRemotePathDeleted(staleEntry.relativePath, staleEntry.isDirectory);
+      if (this.notifyDevicePathDeleted) {
+        await this.notifyDevicePathDeleted(staleEntry.relativePath, staleEntry.isDirectory);
       }
     }
 
-    const localDirectories = scopedEntries
+    const computerDirectories = scopedEntries
       .filter((entry) => entry.isDirectory)
       .sort((a, b) => a.relativePath.split('/').length - b.relativePath.split('/').length);
-    for (const directory of localDirectories) {
+    for (const directory of computerDirectories) {
       await createDeviceDirectory(board, directory.relativePath);
     }
 
@@ -1845,18 +1867,18 @@ class DeviceMirrorModel {
         continue;
       }
 
-      const localPath = path.join(this.mirrorRootPath, entry.relativePath);
-      const content = await fs.readFile(localPath);
+      const computerPath = path.join(this.mirrorRootPath, entry.relativePath);
+      const content = await fs.readFile(computerPath);
       await writeDeviceFile(board, entry.relativePath, Buffer.from(content));
       writtenDeviceFiles.push(entry.relativePath);
     }
 
-    this.localEntries = localEntries;
+    this.computerEntries = computerEntries;
     this.deviceEntries = await listDeviceEntries(board);
-    this.syncStates = buildSyncStateMap(this.localEntries, this.deviceEntries, this.obfuscationSet);
+    this.syncStates = buildSyncStateMap(this.computerEntries, this.deviceEntries, this.obfuscationSet);
     this.onDidChangeDataEmitter.fire();
-    if (this.notifyRemoteFilesChanged) {
-      await this.notifyRemoteFilesChanged(writtenDeviceFiles);
+    if (this.notifyDeviceFilesChanged) {
+      await this.notifyDeviceFilesChanged(writtenDeviceFiles);
     }
 
     const targetLabel = normalisedTarget ? `/${normalisedTarget}` : '/';
@@ -1865,8 +1887,8 @@ class DeviceMirrorModel {
     logChannelOutput(msg, true);
   }
 
-  private getLocalParentPath(node?: MirrorNode): string {
-    if (!node || node.data.side !== 'local' || node.data.isRoot) {
+  private getComputerParentPath(node?: MirrorNode): string {
+    if (!node || node.data.side !== 'computer' || node.data.isRoot) {
       return '';
     }
 
@@ -1878,7 +1900,7 @@ class DeviceMirrorModel {
     return parent === '.' ? '' : toRelativePath(parent);
   }
 
-  private validateLocalName(value: string): string | undefined {
+  private validateComputerName(value: string): string | undefined {
     const trimmed = value.trim();
     if (!trimmed) {
       return 'Name is required.';
@@ -1892,7 +1914,7 @@ class DeviceMirrorModel {
     return undefined;
   }
 
-  private async resolveLocalWriteRootPath(): Promise<string | undefined> {
+  private async resolveComputerWriteRootPath(): Promise<string | undefined> {
     if (this.mirrorRootPath) {
       return this.mirrorRootPath;
     }
@@ -1905,7 +1927,7 @@ class DeviceMirrorModel {
     return hostRootPath;
   }
 
-  private resolveLocalReadRootPath(node?: MirrorNode): string | undefined {
+  private resolveComputerReadRootPath(node?: MirrorNode): string | undefined {
     if (node?.data.deviceId) {
       return this.mirrorRootByDeviceId.get(node.data.deviceId) ?? this.mirrorRootPath;
     }
@@ -1917,73 +1939,73 @@ class DeviceMirrorModel {
     return this.getHostMirrorRootPath();
   }
 
-  private async createLocalFile(node?: MirrorNode): Promise<void> {
-    const localRootPath = await this.resolveLocalWriteRootPath();
-    if (!localRootPath) {
-      vscode.window.showWarningMessage('Open a workspace before creating host files.');
+  private async createComputerFile(node?: MirrorNode): Promise<void> {
+    const computerRootPath = await this.resolveComputerWriteRootPath();
+    if (!computerRootPath) {
+      vscode.window.showWarningMessage('Open a workspace before creating files on computer.');
       return;
     }
 
-    const parentPath = this.getLocalParentPath(node);
+    const parentPath = this.getComputerParentPath(node);
     const fileName = await vscode.window.showInputBox({
-      title: 'Create Host File',
+      title: 'Create File on Computer',
       prompt: parentPath ? `Create in /${parentPath}` : 'Create in /',
       placeHolder: 'filename.py',
       ignoreFocusOut: true,
-      validateInput: (value) => this.validateLocalName(value)
+      validateInput: (value) => this.validateComputerName(value)
     });
 
     if (!fileName) {
       return;
     }
 
-    const relativePath = this.joinRemotePath(parentPath, fileName);
-    const absolutePath = path.join(localRootPath, relativePath);
+    const relativePath = this.joinDevicePath(parentPath, fileName);
+    const absolutePath = path.join(computerRootPath, relativePath);
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
     await fs.writeFile(absolutePath, Buffer.alloc(0));
     await this.refresh(false);
     const document = await vscode.workspace.openTextDocument(vscode.Uri.file(absolutePath));
     await vscode.window.showTextDocument(document, { preview: false });
 
-    const msg = `Created host file: /${relativePath}`;
+    const msg = `Created file on computer: /${relativePath}`;
     vscode.window.showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
 
-  private async createLocalFolder(node?: MirrorNode): Promise<void> {
-    const localRootPath = await this.resolveLocalWriteRootPath();
-    if (!localRootPath) {
-      vscode.window.showWarningMessage('Open a workspace before creating host folders.');
+  private async createComputerFolder(node?: MirrorNode): Promise<void> {
+    const computerRootPath = await this.resolveComputerWriteRootPath();
+    if (!computerRootPath) {
+      vscode.window.showWarningMessage('Open a workspace before creating computer folders.');
       return;
     }
 
-    const parentPath = this.getLocalParentPath(node);
+    const parentPath = this.getComputerParentPath(node);
     const folderName = await vscode.window.showInputBox({
-      title: 'Create Host Folder',
+      title: 'Create Folder on Computer',
       prompt: parentPath ? `Create in /${parentPath}` : 'Create in /',
       placeHolder: 'folder',
       ignoreFocusOut: true,
-      validateInput: (value) => this.validateLocalName(value)
+      validateInput: (value) => this.validateComputerName(value)
     });
 
     if (!folderName) {
       return;
     }
 
-    const relativePath = this.joinRemotePath(parentPath, folderName);
-    const absolutePath = path.join(localRootPath, relativePath);
+    const relativePath = this.joinDevicePath(parentPath, folderName);
+    const absolutePath = path.join(computerRootPath, relativePath);
     await fs.mkdir(absolutePath, { recursive: true });
     await this.refresh(false);
 
-    const msg = `Created host folder: /${relativePath}`;
+    const msg = `Created folder on computer: /${relativePath}`;
     vscode.window.showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
 
-  private async renameLocalPath(node: MirrorNode): Promise<void> {
-    const localRootPath = this.resolveLocalReadRootPath(node);
-    if (!localRootPath) {
-      vscode.window.showWarningMessage('Open a workspace before renaming host items.');
+  private async renameComputerPath(node: MirrorNode): Promise<void> {
+    const computerRootPath = this.resolveComputerReadRootPath(node);
+    if (!computerRootPath) {
+      vscode.window.showWarningMessage('Open a workspace before renaming computer items.');
       return;
     }
 
@@ -1991,36 +2013,36 @@ class DeviceMirrorModel {
     const currentName = path.posix.basename(currentPath);
     const parentPath = path.posix.dirname(currentPath) === '.' ? '' : path.posix.dirname(currentPath);
     const nextName = await vscode.window.showInputBox({
-      title: `Rename Host ${node.data.isDirectory ? 'Folder' : 'File'}`,
+      title: `Rename Computer ${node.data.isDirectory ? 'Folder' : 'File'}`,
       prompt: `Current: /${currentPath}`,
       value: currentName,
       ignoreFocusOut: true,
-      validateInput: (value) => this.validateLocalName(value)
+      validateInput: (value) => this.validateComputerName(value)
     });
 
     if (!nextName || nextName === currentName) {
       return;
     }
 
-    const nextPath = this.joinRemotePath(parentPath, nextName);
-    await fs.rename(path.join(localRootPath, currentPath), path.join(localRootPath, nextPath));
+    const nextPath = this.joinDevicePath(parentPath, nextName);
+    await fs.rename(path.join(computerRootPath, currentPath), path.join(computerRootPath, nextPath));
     await this.refresh(false);
 
-    const msg = `Renamed host path: /${currentPath} -> /${nextPath}`;
+    const msg = `Renamed computer path: /${currentPath} -> /${nextPath}`;
     vscode.window.showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
 
-  private async deleteLocalPath(node: MirrorNode): Promise<void> {
-    const localRootPath = this.resolveLocalReadRootPath(node);
-    if (!localRootPath) {
-      vscode.window.showWarningMessage('Open a workspace before deleting host items.');
+  private async deleteComputerPath(node: MirrorNode): Promise<void> {
+    const computerRootPath = this.resolveComputerReadRootPath(node);
+    if (!computerRootPath) {
+      vscode.window.showWarningMessage('Open a workspace before deleting computer items.');
       return;
     }
 
     const targetPath = toRelativePath(node.data.relativePath);
     const action = await vscode.window.showWarningMessage(
-      `Delete host ${node.data.isDirectory ? 'folder' : 'file'} "/${targetPath}"?`,
+      `Delete computer ${node.data.isDirectory ? 'folder' : 'file'} "/${targetPath}"?`,
       { modal: true },
       'Delete'
     );
@@ -2028,10 +2050,10 @@ class DeviceMirrorModel {
       return;
     }
 
-    await fs.rm(path.join(localRootPath, targetPath), { recursive: true, force: true });
+    await fs.rm(path.join(computerRootPath, targetPath), { recursive: true, force: true });
     await this.refresh(false);
 
-    const msg = `Deleted host path: /${targetPath}`;
+    const msg = `Deleted computer path: /${targetPath}`;
     vscode.window.showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
@@ -2040,7 +2062,7 @@ class DeviceMirrorModel {
     this.activateDevice(deviceId ?? this.activeDeviceId);
     const sourceEntries = side === 'device'
       ? this.deviceEntries
-      : (deviceId ? this.localEntries : this.unlinkedHostEntries);
+      : (deviceId ? this.computerEntries : this.unlinkedHostEntries);
     const nodes: MirrorNode[] = [];
 
     for (const entry of sourceEntries) {
@@ -2171,13 +2193,13 @@ class DeviceMirrorModel {
     });
 
     if (folderOptions.length === 0) {
-      vscode.window.showWarningMessage(`No host folders available under ${hostMirrorRootFolder}/.`);
+      vscode.window.showWarningMessage(`No computer folders available under ${hostMirrorRootFolder}/.`);
       return;
     }
 
     const picked = await vscode.window.showQuickPick(folderOptions, {
-      title: 'Link Device to Host Folder',
-      placeHolder: `Select host folder for ${deviceId}`,
+      title: 'Link Device to Computer Folder',
+      placeHolder: `Select computer folder for ${deviceId}`,
       canPickMany: false,
       ignoreFocusOut: true
     });
@@ -2190,7 +2212,7 @@ class DeviceMirrorModel {
     const updated = await updateDeviceHostFolderMapping(deviceId, normalised);
     this.deviceHostFolderMappings = getDeviceHostFolderMappings(updated);
 
-    const msg = `Linked ${deviceId} to host folder: ${normalised}`;
+    const msg = `Linked ${deviceId} to computer folder: ${normalised}`;
     logChannelOutput(msg, true);
     vscode.window.showInformationMessage(msg);
     await this.refresh(true);
@@ -2211,12 +2233,12 @@ class DeviceMirrorModel {
 
     const current = this.getMappedHostFolder(deviceId);
     if (!current) {
-      vscode.window.showInformationMessage(`No host folder link exists for ${deviceId}.`);
+      vscode.window.showInformationMessage(`No computer folder link exists for ${deviceId}.`);
       return;
     }
 
     const action = await vscode.window.showWarningMessage(
-      `Unlink ${deviceId} from host folder "${current}"?`,
+      `Unlink ${deviceId} from computer folder "${current}"?`,
       { modal: true },
       'Unlink'
     );
@@ -2227,7 +2249,7 @@ class DeviceMirrorModel {
     const updated = await updateDeviceHostFolderMapping(deviceId, undefined);
     this.deviceHostFolderMappings = getDeviceHostFolderMappings(updated);
 
-    const msg = `Unlinked ${deviceId} from host folder: ${current}`;
+    const msg = `Unlinked ${deviceId} from computer folder: ${current}`;
     logChannelOutput(msg, true);
     vscode.window.showInformationMessage(msg);
     await this.refresh(true);
@@ -2314,12 +2336,12 @@ class DeviceMirrorModel {
     }
   }
 
-  setSelectedRemoteNode(node: MirrorNode | undefined): void {
+  setSelectedDeviceNode(node: MirrorNode | undefined): void {
     this.selectedNode = node;
     void this.ensureActiveDevice(node);
   }
 
-  private getRemoteParentPath(node?: MirrorNode): string {
+  private getDeviceParentPath(node?: MirrorNode): string {
     if (!node || node.data.side !== 'device') {
       return '';
     }
@@ -2332,7 +2354,7 @@ class DeviceMirrorModel {
     return parent === '.' ? '' : toRelativePath(parent);
   }
 
-  private joinRemotePath(parentPath: string, name: string): string {
+  private joinDevicePath(parentPath: string, name: string): string {
     const trimmedName = name.trim();
     if (!parentPath) {
       return toRelativePath(trimmedName);
@@ -2340,7 +2362,7 @@ class DeviceMirrorModel {
     return toRelativePath(path.posix.join(parentPath, trimmedName));
   }
 
-  private validateRemoteName(value: string): string | undefined {
+  private validateDeviceName(value: string): string | undefined {
     const trimmed = value.trim();
     if (!trimmed) {
       return 'Name is required.';
@@ -2368,7 +2390,7 @@ class DeviceMirrorModel {
   }
 
   async handleDocumentSaved(document: vscode.TextDocument): Promise<void> {
-    if (document.uri.scheme === remoteDocumentScheme) {
+    if (document.uri.scheme === deviceDocumentScheme) {
       await this.refresh(true);
       return;
     }
@@ -2391,7 +2413,7 @@ class DeviceMirrorModel {
     await this.refresh(false);
   }
 
-  private async openRemoteDiff(node: MirrorNode): Promise<void> {
+  private async openDeviceDiff(node: MirrorNode): Promise<void> {
     await this.ensureActiveDevice(node);
     if (!getConnectedBoard(this.activeDeviceId)) {
       vscode.window.showWarningMessage('Connect to a board before comparing a device file.');
@@ -2407,35 +2429,35 @@ class DeviceMirrorModel {
     }
 
     const relativePath = toRelativePath(node.data.relativePath);
-    const localPath = path.join(this.mirrorRootPath, relativePath);
+    const computerPath = path.join(this.mirrorRootPath, relativePath);
     try {
-      const stat = await fs.stat(localPath);
+      const stat = await fs.stat(computerPath);
       if (!stat.isFile()) {
         throw new Error('Not a file');
       }
     } catch {
-      vscode.window.showWarningMessage(`No host mirror file exists for "${relativePath}". Sync from device first.`);
+      vscode.window.showWarningMessage(`No computer mirror file exists for "${relativePath}". Sync from device first.`);
       return;
     }
 
-    const localUri = vscode.Uri.file(localPath);
+    const computerUri = vscode.Uri.file(computerPath);
     const deviceSegment = encodeURIComponent(this.activeDeviceId ?? '');
-    const remoteUri = vscode.Uri.parse(`${remoteDocumentScheme}:/${deviceSegment}/${relativePath}`);
-    const title = `${relativePath} (Host <-> Device)`;
-    await vscode.commands.executeCommand('vscode.diff', localUri, remoteUri, title, { preview: false });
+    const deviceUri = vscode.Uri.parse(`${deviceDocumentScheme}:/${deviceSegment}/${relativePath}`);
+    const title = `${relativePath} (Computer <-> Device)`;
+    await vscode.commands.executeCommand('vscode.diff', computerUri, deviceUri, title, { preview: false });
   }
 }
 
-class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
+class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
   private readonly onDidChangeFileEmitter = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
   readonly onDidChangeFile = this.onDidChangeFileEmitter.event;
-  private static readonly waitForConnectionSettingKey = 'remoteFileOpenWaitForConnectionMs';
+  private static readonly waitForConnectionSettingKey = 'deviceFileOpenWaitForConnectionMs';
   private static readonly defaultWaitForConnectionMs = 120000;
   private readonly statCache = new Map<string, vscode.FileStat>();
   private readonly backupRootPath: string;
 
   constructor(private readonly context: vscode.ExtensionContext) {
-    this.backupRootPath = path.join(this.context.globalStorageUri.fsPath, 'remote-working-copy');
+    this.backupRootPath = path.join(this.context.globalStorageUri.fsPath, 'device-working-copy');
   }
 
   watch(): vscode.Disposable {
@@ -2443,7 +2465,7 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
   }
 
   async stat(uri: vscode.Uri): Promise<vscode.FileStat> {
-    const { deviceId, relativePath } = this.toDeviceAndRelativeRemotePathOrRoot(uri);
+    const { deviceId, relativePath } = this.toDeviceAndRelativeDevicePathOrRoot(uri);
     const board = await this.getConnectedBoardOrWait(deviceId);
     const entries = await listDeviceEntries(board);
     const entry = entries.find((item) => item.relativePath === relativePath);
@@ -2464,7 +2486,7 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
   }
 
   async readDirectory(uri: vscode.Uri): Promise<[string, vscode.FileType][]> {
-    const { deviceId, relativePath } = this.toDeviceAndRelativeRemotePathOrRoot(uri);
+    const { deviceId, relativePath } = this.toDeviceAndRelativeDevicePathOrRoot(uri);
     if (!deviceId) {
       const roots = getConnectedBoards().map((item) => [encodeURIComponent(item.deviceId), vscode.FileType.Directory] as [string, vscode.FileType]);
       return roots.sort((a, b) => a[0].localeCompare(b[0]));
@@ -2496,21 +2518,21 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
   }
 
   async createDirectory(uri: vscode.Uri): Promise<void> {
-    const { deviceId, relativePath } = this.toDeviceAndRelativeRemotePathOrRoot(uri);
+    const { deviceId, relativePath } = this.toDeviceAndRelativeDevicePathOrRoot(uri);
     const board = await this.getConnectedBoardOrWait(deviceId);
     if (!relativePath) {
       return;
     }
 
     await createDeviceDirectory(board, relativePath);
-    const createdUri = this.toRemoteUri(deviceId ?? '', relativePath);
+    const createdUri = this.toDeviceUri(deviceId ?? '', relativePath);
     this.statCache.delete(createdUri.toString());
     this.onDidChangeFileEmitter.fire([{ type: vscode.FileChangeType.Created, uri: createdUri }]);
   }
 
   async readFile(uri: vscode.Uri): Promise<Uint8Array> {
-    const fallbackFilePath = this.describeRemotePath(uri);
-    const { deviceId } = this.toDeviceAndRelativeRemotePathOrRoot(uri);
+    const fallbackFilePath = this.describeDevicePath(uri);
+    const { deviceId } = this.toDeviceAndRelativeDevicePathOrRoot(uri);
     let board: NonNullable<ReturnType<typeof getConnectedBoard>>;
     try {
       board = await this.getConnectedBoardOrWait(deviceId);
@@ -2518,12 +2540,12 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
       const message = error instanceof Error ? error.message : String(error);
       const friendlyMessage = `device no longer available for the file. File: ${fallbackFilePath}. ${this.getDeviceDetails()}`;
       vscode.window.showWarningMessage(friendlyMessage);
-      logChannelOutput(`Remote file not opened. ${friendlyMessage}`, true);
-      await this.closeRemoteTabsForUriWithRetry(uri);
+      logChannelOutput(`Device file not opened. ${friendlyMessage}`, true);
+      await this.closeDeviceTabsForUriWithRetry(uri);
       throw vscode.FileSystemError.Unavailable(`${friendlyMessage} (${message})`);
     }
 
-    const relativePath = this.toRelativeRemotePath(uri, board);
+    const relativePath = this.toRelativeDevicePath(uri, board);
     try {
       const content = await readDeviceFile(board, relativePath);
       const data = new Uint8Array(content);
@@ -2542,15 +2564,15 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
         if (!this.shouldSuppressMissingPathWarning(relativePath)) {
           const friendlyMessage = `the file no longer exists on the device. File: ${relativePath}. ${this.getDeviceDetails(board)}`;
           vscode.window.showWarningMessage(friendlyMessage);
-          logChannelOutput(`Remote file not opened. ${friendlyMessage}`, true);
-          await this.closeRemoteTabsForUriWithRetry(uri);
+          logChannelOutput(`Device file not opened. ${friendlyMessage}`, true);
+          await this.closeDeviceTabsForUriWithRetry(uri);
         }
         throw vscode.FileSystemError.FileNotFound(uri);
       }
-      const readFailureMessage = `failed to open remote file. File: ${relativePath}. ${this.getDeviceDetails(board)}. ${message}`;
-      logChannelOutput(`Remote file not opened. ${readFailureMessage}`, true);
-      await this.closeRemoteTabsForUriWithRetry(uri);
-      throw vscode.FileSystemError.Unavailable(`Failed to read remote file: ${relativePath}. ${message}`);
+      const readFailureMessage = `failed to open device file. File: ${relativePath}. ${this.getDeviceDetails(board)}. ${message}`;
+      logChannelOutput(`Device file not opened. ${readFailureMessage}`, true);
+      await this.closeDeviceTabsForUriWithRetry(uri);
+      throw vscode.FileSystemError.Unavailable(`Failed to read device file: ${relativePath}. ${message}`);
     }
   }
 
@@ -2559,9 +2581,9 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     content: Uint8Array,
     options: { readonly create: boolean; readonly overwrite: boolean }
   ): Promise<void> {
-    const { deviceId } = this.toDeviceAndRelativeRemotePathOrRoot(uri);
+    const { deviceId } = this.toDeviceAndRelativeDevicePathOrRoot(uri);
     const board = await this.getConnectedBoardOrWait(deviceId);
-    const relativePath = this.toRelativeRemotePath(uri, board);
+    const relativePath = this.toRelativeDevicePath(uri, board);
     const entries = await listDeviceEntries(board);
     const existing = entries.find((entry) => entry.relativePath === relativePath);
     if (!existing && !options.create) {
@@ -2586,14 +2608,14 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
       this.onDidChangeFileEmitter.fire([{ type: vscode.FileChangeType.Changed, uri }]);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      throw vscode.FileSystemError.Unavailable(`Failed to write remote file: ${relativePath}. ${message}`);
+      throw vscode.FileSystemError.Unavailable(`Failed to write device file: ${relativePath}. ${message}`);
     }
   }
 
   async delete(uri: vscode.Uri, options: { readonly recursive: boolean }): Promise<void> {
-    const { deviceId } = this.toDeviceAndRelativeRemotePathOrRoot(uri);
+    const { deviceId } = this.toDeviceAndRelativeDevicePathOrRoot(uri);
     const board = await this.getConnectedBoardOrWait(deviceId);
-    const relativePath = this.toRelativeRemotePathOrRoot(uri, board);
+    const relativePath = this.toRelativeDevicePathOrRoot(uri, board);
     if (!relativePath) {
       throw vscode.FileSystemError.NoPermissions('Deleting the device root is not allowed.');
     }
@@ -2607,7 +2629,7 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     }
 
     await deleteDevicePath(board, relativePath);
-    await this.notifyRemotePathDeleted(relativePath, true);
+    await this.notifyDevicePathDeleted(relativePath, true);
     this.onDidChangeFileEmitter.fire([{ type: vscode.FileChangeType.Deleted, uri }]);
   }
 
@@ -2616,10 +2638,10 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     newUri: vscode.Uri,
     options: { readonly overwrite: boolean }
   ): Promise<void> {
-    const { deviceId } = this.toDeviceAndRelativeRemotePathOrRoot(oldUri);
+    const { deviceId } = this.toDeviceAndRelativeDevicePathOrRoot(oldUri);
     const board = await this.getConnectedBoardOrWait(deviceId);
-    const sourcePath = this.toRelativeRemotePath(oldUri, board);
-    const targetPath = this.toRelativeRemotePath(newUri, board);
+    const sourcePath = this.toRelativeDevicePath(oldUri, board);
+    const targetPath = this.toRelativeDevicePath(newUri, board);
     const entries = await listDeviceEntries(board);
     const targetExists = entries.some((entry) => entry.relativePath === targetPath);
     if (targetExists && !options.overwrite) {
@@ -2628,19 +2650,19 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
 
     if (targetExists && options.overwrite) {
       await deleteDevicePath(board, targetPath);
-      await this.notifyRemotePathDeleted(targetPath, true);
+      await this.notifyDevicePathDeleted(targetPath, true);
     }
 
     await renameDevicePath(board, sourcePath, targetPath);
-    await this.notifyRemotePathDeleted(sourcePath, true);
-    await this.notifyRemoteFilesChanged([targetPath]);
+    await this.notifyDevicePathDeleted(sourcePath, true);
+    await this.notifyDeviceFilesChanged([targetPath]);
     this.onDidChangeFileEmitter.fire([
       { type: vscode.FileChangeType.Deleted, uri: oldUri },
       { type: vscode.FileChangeType.Created, uri: newUri }
     ]);
   }
 
-  async notifyRemoteFilesChanged(relativePaths: string[], deviceId?: string): Promise<void> {
+  async notifyDeviceFilesChanged(relativePaths: string[], deviceId?: string): Promise<void> {
     if (relativePaths.length === 0) {
       return;
     }
@@ -2653,7 +2675,7 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     const events: vscode.FileChangeEvent[] = [];
     const targetDeviceId = deviceId ?? getConnectedBoards()[0]?.deviceId ?? '';
     for (const relativePath of uniqueRelativePaths) {
-      const uri = this.toRemoteUri(targetDeviceId, relativePath);
+      const uri = this.toDeviceUri(targetDeviceId, relativePath);
       this.statCache.delete(uri.toString());
       events.push({ type: vscode.FileChangeType.Changed, uri });
     }
@@ -2661,7 +2683,7 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     this.onDidChangeFileEmitter.fire(events);
   }
 
-  async notifyRemotePathDeleted(relativePath: string, includeDescendants: boolean): Promise<void> {
+  async notifyDevicePathDeleted(relativePath: string, includeDescendants: boolean): Promise<void> {
     const normalisedTarget = toRelativePath(relativePath);
     if (!normalisedTarget) {
       return;
@@ -2669,7 +2691,7 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
 
     const uriMap = new Map<string, vscode.Uri>();
     const registerUri = (uri: vscode.Uri): void => {
-      if (uri.scheme !== remoteDocumentScheme) {
+      if (uri.scheme !== deviceDocumentScheme) {
         return;
       }
 
@@ -2701,14 +2723,14 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     for (const uri of uriMap.values()) {
       this.statCache.delete(uri.toString());
       await this.removeWorkingCopy(uri);
-      await this.closeRemoteTabsForUriWithRetry(uri);
+      await this.closeDeviceTabsForUriWithRetry(uri);
       events.push({ type: vscode.FileChangeType.Deleted, uri });
     }
 
     this.onDidChangeFileEmitter.fire(events);
   }
 
-  private toRelativeRemotePath(uri: vscode.Uri, board: NonNullable<ReturnType<typeof getConnectedBoard>>): string {
+  private toRelativeDevicePath(uri: vscode.Uri, board: NonNullable<ReturnType<typeof getConnectedBoard>>): string {
     const rawPath = toRelativePath(uri.path.replace(/^\/+/, ''));
     const segments = rawPath
       .split('/')
@@ -2716,7 +2738,7 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
       .filter((item) => item.length > 0);
 
     if (segments.length === 0) {
-      throw vscode.FileSystemError.FileNotFound('Remote file path is empty.');
+      throw vscode.FileSystemError.FileNotFound('Device file path is empty.');
     }
 
     if (segments[0].endsWith(':') && segments.length > 1) {
@@ -2724,7 +2746,7 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     }
 
     const connectedIds = new Set(getConnectedBoards().map((item) => item.deviceId));
-    const decodedFirst = this.decodeRemoteDeviceSegment(segments[0]);
+    const decodedFirst = this.decodeDeviceDeviceSegment(segments[0]);
     if (decodedFirst && connectedIds.has(decodedFirst) && segments.length > 1) {
       segments.shift();
     }
@@ -2736,13 +2758,13 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
 
     const relativePath = toRelativePath(segments.join('/'));
     if (!relativePath) {
-      throw vscode.FileSystemError.FileNotFound('Remote file path is empty.');
+      throw vscode.FileSystemError.FileNotFound('Device file path is empty.');
     }
 
     return relativePath;
   }
 
-  private toRelativeRemotePathOrRoot(uri: vscode.Uri, board: NonNullable<ReturnType<typeof getConnectedBoard>>): string {
+  private toRelativeDevicePathOrRoot(uri: vscode.Uri, board: NonNullable<ReturnType<typeof getConnectedBoard>>): string {
     const rawPath = toRelativePath(uri.path.replace(/^\/+/, ''));
     if (!rawPath) {
       return '';
@@ -2761,7 +2783,7 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     }
 
     const connectedIds = new Set(getConnectedBoards().map((item) => item.deviceId));
-    const decodedFirst = this.decodeRemoteDeviceSegment(segments[0]);
+    const decodedFirst = this.decodeDeviceDeviceSegment(segments[0]);
     if (decodedFirst && connectedIds.has(decodedFirst) && segments.length > 1) {
       segments.shift();
     }
@@ -2774,10 +2796,10 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     return toRelativePath(segments.join('/'));
   }
 
-  private toRemoteUri(deviceId: string, relativePath: string): vscode.Uri {
+  private toDeviceUri(deviceId: string, relativePath: string): vscode.Uri {
     const deviceSegment = encodeURIComponent(deviceId);
     const normalised = toRelativePath(relativePath).replace(/^\/+/, '');
-    return vscode.Uri.parse(`${remoteDocumentScheme}:/${deviceSegment}/${normalised}`);
+    return vscode.Uri.parse(`${deviceDocumentScheme}:/${deviceSegment}/${normalised}`);
   }
 
   private matchesDeletedPath(candidatePath: string, deletedPath: string, includeDescendants: boolean): boolean {
@@ -2793,7 +2815,7 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
   }
 
   async updateWorkingCopyFromDocument(document: vscode.TextDocument): Promise<void> {
-    if (document.uri.scheme !== remoteDocumentScheme) {
+    if (document.uri.scheme !== deviceDocumentScheme) {
       return;
     }
 
@@ -2815,7 +2837,7 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
   }
 
   async clearWorkingCopy(uri: vscode.Uri): Promise<void> {
-    if (uri.scheme !== remoteDocumentScheme) {
+    if (uri.scheme !== deviceDocumentScheme) {
       return;
     }
 
@@ -2823,7 +2845,7 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
   }
 
   async restoreWorkingCopyToDocument(document: vscode.TextDocument): Promise<void> {
-    if (document.uri.scheme !== remoteDocumentScheme || document.isClosed) {
+    if (document.uri.scheme !== deviceDocumentScheme || document.isClosed) {
       return;
     }
 
@@ -2855,12 +2877,12 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     const configuredWait = vscode.workspace
       .getConfiguration('mekatrol.pyboarddev')
       .get<number>(
-        RemoteDeviceFileSystemProvider.waitForConnectionSettingKey,
-        RemoteDeviceFileSystemProvider.defaultWaitForConnectionMs
+        DeviceDeviceFileSystemProvider.waitForConnectionSettingKey,
+        DeviceDeviceFileSystemProvider.defaultWaitForConnectionMs
       );
     const timeoutMs = Number.isFinite(configuredWait)
       ? Math.max(0, configuredWait)
-      : RemoteDeviceFileSystemProvider.defaultWaitForConnectionMs;
+      : DeviceDeviceFileSystemProvider.defaultWaitForConnectionMs;
 
     return await new Promise((resolve, reject) => {
       let timeout: NodeJS.Timeout | undefined;
@@ -2926,16 +2948,16 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     return `Device: ${device} @ ${baudRate} (${connectionState})`;
   }
 
-  private describeRemotePath(uri: vscode.Uri, board?: NonNullable<ReturnType<typeof getConnectedBoard>>): string {
+  private describeDevicePath(uri: vscode.Uri, board?: NonNullable<ReturnType<typeof getConnectedBoard>>): string {
     if (board) {
-      return this.toRelativeRemotePath(uri, board);
+      return this.toRelativeDevicePath(uri, board);
     }
 
     const rawPath = toRelativePath(uri.path.replace(/^\/+/, ''));
     return rawPath || '<unknown>';
   }
 
-  private decodeRemoteDeviceSegment(segment: string): string {
+  private decodeDeviceDeviceSegment(segment: string): string {
     try {
       return decodeURIComponent(segment);
     } catch {
@@ -2943,7 +2965,7 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     }
   }
 
-  private toDeviceAndRelativeRemotePathOrRoot(uri: vscode.Uri): { deviceId: string | undefined; relativePath: string } {
+  private toDeviceAndRelativeDevicePathOrRoot(uri: vscode.Uri): { deviceId: string | undefined; relativePath: string } {
     const rawPath = toRelativePath(uri.path.replace(/^\/+/, ''));
     if (!rawPath) {
       return { deviceId: undefined, relativePath: '' };
@@ -2954,7 +2976,7 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
       return { deviceId: undefined, relativePath: '' };
     }
 
-    const decodedDeviceId = this.decodeRemoteDeviceSegment(segments[0]);
+    const decodedDeviceId = this.decodeDeviceDeviceSegment(segments[0]);
     const hasDevicePrefix = getConnectedBoards().some((item) => item.deviceId === decodedDeviceId) || segments.length > 1;
     if (!hasDevicePrefix) {
       return { deviceId: undefined, relativePath: rawPath };
@@ -2966,15 +2988,15 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     };
   }
 
-  private async closeRemoteTabsForUriWithRetry(uri: vscode.Uri): Promise<void> {
-    await this.closeRemoteTabsForUri(uri);
+  private async closeDeviceTabsForUriWithRetry(uri: vscode.Uri): Promise<void> {
+    await this.closeDeviceTabsForUri(uri);
     await this.delay(50);
-    await this.closeRemoteTabsForUri(uri);
+    await this.closeDeviceTabsForUri(uri);
     await this.delay(250);
-    await this.closeRemoteTabsForUri(uri);
+    await this.closeDeviceTabsForUri(uri);
   }
 
-  private async closeRemoteTabsForUri(uri: vscode.Uri): Promise<void> {
+  private async closeDeviceTabsForUri(uri: vscode.Uri): Promise<void> {
     const tabsToClose: vscode.Tab[] = [];
     for (const group of vscode.window.tabGroups.all) {
       for (const tab of group.tabs) {
@@ -3047,8 +3069,8 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
     element.tooltip = undefined;
 
     if (data.isRoot) {
-      element.contextValue = data.side === 'local' ? 'pyboarddev.hostRoot' : 'pyboarddev.deviceRoot';
-      element.iconPath = data.side === 'local' ? new vscode.ThemeIcon('desktop-download') : new vscode.ThemeIcon('device-mobile');
+      element.contextValue = data.side === 'computer' ? 'pyboarddev.hostRoot' : 'pyboarddev.deviceRoot';
+      element.iconPath = data.side === 'computer' ? new vscode.ThemeIcon('desktop-download') : new vscode.ThemeIcon('device-mobile');
       if (data.side === 'device') {
         const count = this.model.getConnectedDeviceIds().length;
         element.description = count > 0 ? `${count} connected` : 'disconnected';
@@ -3056,7 +3078,7 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
         const linkedCount = this.model.getLinkedHostFolderCount();
         element.description = linkedCount > 0
           ? `${linkedCount} linked`
-          : `${this.model.getAvailableHostFolderCount()} host folders`;
+          : `${this.model.getAvailableHostFolderCount()} computer folders`;
       }
       element.command = undefined;
       return element;
@@ -3085,7 +3107,7 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
         if (data.side === 'device') {
           const connected = this.model.getConnectedDevice(data.deviceId);
           const state = connected ? 'connected' : 'disconnected';
-          element.description = mappedFolder ? `${state} | host:${mappedFolder}` : state;
+          element.description = mappedFolder ? `${state} | computer:${mappedFolder}` : state;
         } else {
           element.description = mappedFolder ?? 'not linked';
         }
@@ -3103,14 +3125,14 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
       } else {
         element.contextValue = isExcludedFromSync ? 'pyboarddev.deviceFileExcluded' : 'pyboarddev.deviceFile';
       }
-      element.command = data.isDirectory ? undefined : { command: commandOpenRemoteFileId, title: 'Open', arguments: [element] };
+      element.command = data.isDirectory ? undefined : { command: commandOpenDeviceFileId, title: 'Open', arguments: [element] };
     } else {
       if (data.isDirectory) {
         element.contextValue = isExcludedFromSync ? 'pyboarddev.hostFolderExcluded' : 'pyboarddev.hostFolder';
       } else {
         element.contextValue = isExcludedFromSync ? 'pyboarddev.hostFileExcluded' : 'pyboarddev.hostFile';
       }
-      element.command = data.isDirectory ? undefined : { command: commandOpenLocalItemId, title: 'Open', arguments: [element] };
+      element.command = data.isDirectory ? undefined : { command: commandOpenComputerItemId, title: 'Open', arguments: [element] };
     }
     element.iconPath = data.isDirectory ? vscode.ThemeIcon.Folder : vscode.ThemeIcon.File;
     element.description = isExcludedFromSync ? 'excluded' : undefined;
@@ -3123,12 +3145,12 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
       return [
         new MirrorNode(
           {
-            side: 'local',
+            side: 'computer',
             relativePath: '',
             isDirectory: true,
             isRoot: true
           },
-          'HOST',
+          'COMPUTER',
           vscode.TreeItemCollapsibleState.Expanded
         ),
         new MirrorNode(
@@ -3149,7 +3171,7 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
     }
 
     if (element.data.isRoot) {
-      if (element.data.side === 'local') {
+      if (element.data.side === 'computer') {
         const linkedHostDeviceIds = this.model.getLinkedHostDeviceIds();
         if (linkedHostDeviceIds.length > 0) {
           const linkedByFolder = new Map<string, string>();
@@ -3171,7 +3193,7 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
                 : path.posix.basename(folderKey);
               return new MirrorNode(
               {
-                side: 'local',
+                side: 'computer',
                 relativePath: '',
                 isDirectory: true,
                 deviceId,
@@ -3188,12 +3210,12 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
           return [
             new MirrorNode(
               {
-                side: 'local',
+                side: 'computer',
                 relativePath: '',
                 isDirectory: false,
                 isIndicator: true
               },
-              'No host folders',
+              'No computer folders',
               vscode.TreeItemCollapsibleState.None
             )
           ];
@@ -3203,7 +3225,7 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
           const label = path.posix.basename(folderPath);
           return new MirrorNode(
             {
-              side: 'local',
+              side: 'computer',
               relativePath: label,
               isDirectory: true
             },
@@ -3257,7 +3279,7 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
   }
 }
 
-const hostWorkspaceFolderName = 'HOST';
+const hostWorkspaceFolderName = 'COMPUTER';
 const deviceWorkspaceFolderName = 'DEVICE';
 const mountHostWorkspaceFolderSettingKey = 'mountHostInWorkspaceExplorer';
 const mountDeviceWorkspaceFolderSettingKey = 'mountDeviceInWorkspaceExplorer';
@@ -3269,7 +3291,7 @@ const ensureNativeExplorerRoots = async (model: DeviceMirrorModel): Promise<void
   }
 
   const hostUri = vscode.Uri.file(mirrorRootPath);
-  const deviceUri = vscode.Uri.parse(`${remoteDocumentScheme}:/`);
+  const deviceUri = vscode.Uri.parse(`${deviceDocumentScheme}:/`);
   const configuration = vscode.workspace.getConfiguration('mekatrol.pyboarddev');
   const mountHostWorkspaceFolder = configuration.get<boolean>(mountHostWorkspaceFolderSettingKey, false);
   const mountDeviceWorkspaceFolder = configuration.get<boolean>(mountDeviceWorkspaceFolderSettingKey, false);
@@ -3305,11 +3327,11 @@ const ensureNativeExplorerRoots = async (model: DeviceMirrorModel): Promise<void
 };
 
 export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext): Promise<void> => {
-  const remoteFsProvider = new RemoteDeviceFileSystemProvider(context);
+  const deviceFsProvider = new DeviceDeviceFileSystemProvider(context);
   const model = new DeviceMirrorModel(context, async (relativePaths: string[]) => {
-    await remoteFsProvider.notifyRemoteFilesChanged(relativePaths, model.getActiveDeviceId());
+    await deviceFsProvider.notifyDeviceFilesChanged(relativePaths, model.getActiveDeviceId());
   }, async (relativePath: string, includeDescendants: boolean) => {
-    await remoteFsProvider.notifyRemotePathDeleted(relativePath, includeDescendants);
+    await deviceFsProvider.notifyDevicePathDeleted(relativePath, includeDescendants);
   }, async (target) => {
     const findNodeByData = (
       side: NodeSide,
@@ -3359,11 +3381,11 @@ export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext)
   context.subscriptions.push(provider);
   const treeView = vscode.window.createTreeView(mirrorViewId, { treeDataProvider: provider });
   context.subscriptions.push(treeView);
-  context.subscriptions.push(vscode.workspace.registerFileSystemProvider(remoteDocumentScheme, remoteFsProvider, { isCaseSensitive: true }));
+  context.subscriptions.push(vscode.workspace.registerFileSystemProvider(deviceDocumentScheme, deviceFsProvider, { isCaseSensitive: true }));
 
   context.subscriptions.push(treeView.onDidChangeSelection(async (event) => {
     const node = event.selection[0];
-    model.setSelectedRemoteNode(node);
+    model.setSelectedDeviceNode(node);
   }));
 
   context.subscriptions.push(treeView.onDidChangeVisibility((event) => {
@@ -3374,24 +3396,24 @@ export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext)
     void model.refresh(true);
   }));
 
-  const remoteExplorerAutoRefreshTimer = setInterval(() => {
+  const deviceExplorerAutoRefreshTimer = setInterval(() => {
     if (!treeView.visible || !model.isBoardConnected()) {
       return;
     }
 
     void model.refresh(true);
-  }, remoteExplorerAutoRefreshIntervalMs);
-  context.subscriptions.push(new vscode.Disposable(() => clearInterval(remoteExplorerAutoRefreshTimer)));
+  }, deviceExplorerAutoRefreshIntervalMs);
+  context.subscriptions.push(new vscode.Disposable(() => clearInterval(deviceExplorerAutoRefreshTimer)));
 
   context.subscriptions.push(onBoardConnectionStateChanged(() => model.refresh()));
   context.subscriptions.push(onBoardConnectionsChanged(() => model.refresh()));
   context.subscriptions.push(vscode.workspace.onDidSaveTextDocument((document) => model.handleDocumentSaved(document)));
-  context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => void remoteFsProvider.updateWorkingCopyFromDocument(event.document)));
-  context.subscriptions.push(vscode.workspace.onDidOpenTextDocument((document) => void remoteFsProvider.restoreWorkingCopyToDocument(document)));
+  context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => void deviceFsProvider.updateWorkingCopyFromDocument(event.document)));
+  context.subscriptions.push(vscode.workspace.onDidOpenTextDocument((document) => void deviceFsProvider.restoreWorkingCopyToDocument(document)));
   context.subscriptions.push(
     vscode.workspace.onDidCloseTextDocument((document) => {
-      if (document.uri.scheme === remoteDocumentScheme && !document.isDirty) {
-        void remoteFsProvider.clearWorkingCopy(document.uri);
+      if (document.uri.scheme === deviceDocumentScheme && !document.isDirty) {
+        void deviceFsProvider.clearWorkingCopy(document.uri);
       }
     })
   );
@@ -3403,10 +3425,10 @@ export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext)
   context.subscriptions.push(vscode.commands.registerCommand(commandSyncToDeviceId, async () => model.syncToDevice()));
   context.subscriptions.push(vscode.commands.registerCommand(commandSyncNodeFromDeviceId, async (node?: MirrorNode) => model.syncNodeFromDevice(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandSyncNodeToDeviceId, async (node?: MirrorNode) => model.syncNodeToDevice(node)));
-  context.subscriptions.push(vscode.commands.registerCommand(commandOpenLocalItemId, async (node: MirrorNode) => model.openLocalNode(node)));
+  context.subscriptions.push(vscode.commands.registerCommand(commandOpenComputerItemId, async (node: MirrorNode) => model.openComputerNode(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandPullAndOpenDeviceItemId, async (node: MirrorNode) => model.pullDeviceNodeAndOpen(node)));
-  context.subscriptions.push(vscode.commands.registerCommand(commandOpenRemoteFileId, async (node?: MirrorNode) => model.openRemoteFile(node)));
-  context.subscriptions.push(vscode.commands.registerCommand(commandCompareRemoteWithLocalId, async (node?: MirrorNode) => model.compareRemoteWithLocal(node)));
+  context.subscriptions.push(vscode.commands.registerCommand(commandOpenDeviceFileId, async (node?: MirrorNode) => model.openDeviceFile(node)));
+  context.subscriptions.push(vscode.commands.registerCommand(commandCompareDeviceWithComputerId, async (node?: MirrorNode) => model.compareDeviceWithComputer(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandCreateMirrorFileId, async (node?: MirrorNode) => model.createMirrorFile(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandCreateMirrorFolderId, async (node?: MirrorNode) => model.createMirrorFolder(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandRenameMirrorPathId, async (node?: MirrorNode) => model.renameMirrorPath(node)));

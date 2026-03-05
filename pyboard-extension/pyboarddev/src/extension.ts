@@ -51,11 +51,11 @@ export const activate = async (context: vscode.ExtensionContext) => {
 
 // This method is called when your extension is deactivated
 export async function deactivate() {
-  const hasDirtyRemoteDocuments = vscode.workspace.textDocuments.some(
-    (document) => document.uri.scheme === 'pyboarddev-remote' && document.isDirty
+  const hasDirtyDeviceDocuments = vscode.workspace.textDocuments.some(
+    (document) => document.uri.scheme === 'pyboarddev-device' && document.isDirty
   );
 
-  if (hasDirtyRemoteDocuments) {
+  if (hasDirtyDeviceDocuments) {
     return;
   }
 

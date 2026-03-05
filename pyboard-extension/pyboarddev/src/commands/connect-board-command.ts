@@ -8,7 +8,7 @@ const reconnectLastSessionStateKey = 'reconnectLastSession';
 const reconnectDevicePathsStateKey = 'reconnectDevicePaths';
 const defaultBaudRate = 115200;
 const autoReconnectSettingKey = 'autoReconnectLastDevice';
-const remoteDocumentScheme = 'pyboarddev-remote';
+const deviceDocumentScheme = 'pyboarddev-device';
 const pyboardDebugType = 'pyboarddev';
 
 interface ConnectedBoardState {
@@ -128,8 +128,8 @@ const updateReconnectState = async (shouldReconnectOnStartup: boolean): Promise<
   await writePersistentState(reconnectLastSessionStateKey, shouldReconnectOnStartup);
 };
 
-const parseDeviceIdFromRemoteUri = (uri: vscode.Uri): string | undefined => {
-  if (uri.scheme !== remoteDocumentScheme) {
+const parseDeviceIdFromDeviceUri = (uri: vscode.Uri): string | undefined => {
+  if (uri.scheme !== deviceDocumentScheme) {
     return undefined;
   }
 
@@ -150,9 +150,9 @@ const parseDeviceIdFromRemoteUri = (uri: vscode.Uri): string | undefined => {
   }
 };
 
-const getDirtyRemoteDocuments = (deviceId?: string): vscode.TextDocument[] => {
+const getDirtyDeviceDocuments = (deviceId?: string): vscode.TextDocument[] => {
   return vscode.workspace.textDocuments.filter((document) => {
-    if (document.uri.scheme !== remoteDocumentScheme || !document.isDirty) {
+    if (document.uri.scheme !== deviceDocumentScheme || !document.isDirty) {
       return false;
     }
 
@@ -160,12 +160,12 @@ const getDirtyRemoteDocuments = (deviceId?: string): vscode.TextDocument[] => {
       return true;
     }
 
-    return parseDeviceIdFromRemoteUri(document.uri) === deviceId;
+    return parseDeviceIdFromDeviceUri(document.uri) === deviceId;
   });
 };
 
-const saveDirtyRemoteDocumentsBeforeDisconnect = async (deviceId?: string): Promise<boolean> => {
-  const dirtyDocuments = getDirtyRemoteDocuments(deviceId);
+const saveDirtyDeviceDocumentsBeforeDisconnect = async (deviceId?: string): Promise<boolean> => {
+  const dirtyDocuments = getDirtyDeviceDocuments(deviceId);
   if (dirtyDocuments.length === 0) {
     return true;
   }
@@ -194,7 +194,7 @@ const saveDirtyRemoteDocumentsBeforeDisconnect = async (deviceId?: string): Prom
   return true;
 };
 
-const getOpenRemoteTabs = (deviceId?: string): vscode.Tab[] => {
+const getOpenDeviceTabs = (deviceId?: string): vscode.Tab[] => {
   const tabs: vscode.Tab[] = [];
   for (const group of vscode.window.tabGroups.all) {
     for (const tab of group.tabs) {
@@ -202,12 +202,12 @@ const getOpenRemoteTabs = (deviceId?: string): vscode.Tab[] => {
         continue;
       }
 
-      if (tab.input.uri.scheme !== remoteDocumentScheme) {
+      if (tab.input.uri.scheme !== deviceDocumentScheme) {
         continue;
       }
 
       if (deviceId) {
-        const tabDeviceId = parseDeviceIdFromRemoteUri(tab.input.uri);
+        const tabDeviceId = parseDeviceIdFromDeviceUri(tab.input.uri);
         if (tabDeviceId !== deviceId) {
           continue;
         }
@@ -220,15 +220,15 @@ const getOpenRemoteTabs = (deviceId?: string): vscode.Tab[] => {
   return tabs;
 };
 
-const closeOpenRemoteTabsAfterDisconnect = async (deviceId?: string): Promise<void> => {
-  const remoteTabs = getOpenRemoteTabs(deviceId);
-  if (remoteTabs.length === 0) {
+const closeOpenDeviceTabsAfterDisconnect = async (deviceId?: string): Promise<void> => {
+  const deviceTabs = getOpenDeviceTabs(deviceId);
+  if (deviceTabs.length === 0) {
     return;
   }
 
-  const closed = await vscode.window.tabGroups.close(remoteTabs, true);
+  const closed = await vscode.window.tabGroups.close(deviceTabs, true);
   if (!closed) {
-    logChannelOutput('Disconnected, but some remote device tabs could not be closed.', true);
+    logChannelOutput('Disconnected, but some device tabs could not be closed.', true);
   }
 };
 
@@ -356,7 +356,7 @@ export const closeConnectedBoardByDeviceId = async (
   showSuccessMessage = true,
   preserveReconnectState = false,
   promptToSaveDirtyDeviceFiles = true,
-  closeRemoteTabsAfterDisconnect = true
+  closeDeviceTabsAfterDisconnect = true
 ): Promise<boolean> => {
   const state = connectedBoards.get(deviceId);
   if (!state) {
@@ -369,7 +369,7 @@ export const closeConnectedBoardByDeviceId = async (
   }
 
   if (promptToSaveDirtyDeviceFiles) {
-    const canClose = await saveDirtyRemoteDocumentsBeforeDisconnect(deviceId);
+    const canClose = await saveDirtyDeviceDocumentsBeforeDisconnect(deviceId);
     if (!canClose) {
       return false;
     }
@@ -389,8 +389,8 @@ export const closeConnectedBoardByDeviceId = async (
 
     notifyStateChanged();
 
-    if (closeRemoteTabsAfterDisconnect) {
-      await closeOpenRemoteTabsAfterDisconnect(deviceId);
+    if (closeDeviceTabsAfterDisconnect) {
+      await closeOpenDeviceTabsAfterDisconnect(deviceId);
     }
 
     if (showSuccessMessage) {
@@ -414,7 +414,7 @@ export const closeConnectedBoard = async (
   showSuccessMessage = true,
   preserveReconnectState = false,
   promptToSaveDirtyDeviceFiles = true,
-  closeRemoteTabsAfterDisconnect = true
+  closeDeviceTabsAfterDisconnect = true
 ): Promise<boolean> => {
   const active = getActiveBoardState();
   if (!active) {
@@ -431,7 +431,7 @@ export const closeConnectedBoard = async (
     showSuccessMessage,
     preserveReconnectState,
     promptToSaveDirtyDeviceFiles,
-    closeRemoteTabsAfterDisconnect
+    closeDeviceTabsAfterDisconnect
   );
 };
 
@@ -439,7 +439,7 @@ export const closeAllConnectedBoards = async (
   showSuccessMessage = false,
   preserveReconnectState = false,
   promptToSaveDirtyDeviceFiles = false,
-  closeRemoteTabsAfterDisconnect = false
+  closeDeviceTabsAfterDisconnect = false
 ): Promise<boolean> => {
   const deviceIds = getConnectedDeviceIds();
   for (const deviceId of deviceIds) {
@@ -448,7 +448,7 @@ export const closeAllConnectedBoards = async (
       showSuccessMessage,
       preserveReconnectState,
       promptToSaveDirtyDeviceFiles,
-      closeRemoteTabsAfterDisconnect
+      closeDeviceTabsAfterDisconnect
     );
     if (!closed) {
       return false;

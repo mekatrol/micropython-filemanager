@@ -11,7 +11,7 @@ import { getDeviceHostFolderMappings, loadConfiguration } from './utils/configur
 import { toRelativePath } from './utils/device-filesystem';
 
 const debugType = 'pyboarddev';
-const remoteDocumentScheme = 'pyboarddev-remote';
+const deviceDocumentScheme = 'pyboarddev-device';
 const defaultTimeoutMs = 60000;
 
 interface DapRequest {
@@ -215,7 +215,7 @@ class PyboardDebugAdapter implements vscode.DebugAdapter {
   private resolveProgramUri(program: string | undefined): vscode.Uri | undefined {
     if (!program) {
       const active = vscode.window.activeTextEditor?.document.uri;
-      if (active && (active.scheme === 'file' || active.scheme === remoteDocumentScheme)) {
+      if (active && (active.scheme === 'file' || active.scheme === deviceDocumentScheme)) {
         return active;
       }
       return undefined;
@@ -247,7 +247,7 @@ class PyboardDebugAdapter implements vscode.DebugAdapter {
   }
 
   private async resolveTargetDeviceId(targetUri: vscode.Uri): Promise<string | undefined> {
-    if (targetUri.scheme === remoteDocumentScheme) {
+    if (targetUri.scheme === deviceDocumentScheme) {
       const segments = toRelativePath(targetUri.path.replace(/^\/+/, '')).split('/').filter(Boolean);
       if (segments.length > 1) {
         try {
@@ -292,7 +292,7 @@ class PyboardDebugAdapter implements vscode.DebugAdapter {
                   description: `${item.devicePath} @ ${item.baudRate}`
                 })),
                 {
-                  placeHolder: 'Multiple mapped devices match this host folder. Select target device.',
+                  placeHolder: 'Multiple mapped devices match this computer folder. Select target device.',
                   canPickMany: false,
                   ignoreFocusOut: true
                 }
@@ -379,14 +379,14 @@ class PyboardDebugConfigurationProvider implements vscode.DebugConfigurationProv
 
     if (config.type === debugType && !config.program) {
       const activeUri = vscode.window.activeTextEditor?.document.uri;
-      if (activeUri && (activeUri.scheme === 'file' || activeUri.scheme === remoteDocumentScheme)) {
+      if (activeUri && (activeUri.scheme === 'file' || activeUri.scheme === deviceDocumentScheme)) {
         config.program = activeUri.toString();
       }
     }
 
     if (config.type === debugType && config.program === '${file}') {
       const activeUri = vscode.window.activeTextEditor?.document.uri;
-      if (activeUri && (activeUri.scheme === 'file' || activeUri.scheme === remoteDocumentScheme)) {
+      if (activeUri && (activeUri.scheme === 'file' || activeUri.scheme === deviceDocumentScheme)) {
         config.program = activeUri.toString();
       }
     }
@@ -396,8 +396,8 @@ class PyboardDebugConfigurationProvider implements vscode.DebugConfigurationProv
 
   private buildDefaultConfig(): vscode.DebugConfiguration | undefined {
     const activeUri = vscode.window.activeTextEditor?.document.uri;
-    if (!activeUri || (activeUri.scheme !== 'file' && activeUri.scheme !== remoteDocumentScheme)) {
-      vscode.window.showErrorMessage('Open a local or remote device Python file before running.');
+    if (!activeUri || (activeUri.scheme !== 'file' && activeUri.scheme !== deviceDocumentScheme)) {
+      vscode.window.showErrorMessage('Open a computer or device Python file before running.');
       return undefined;
     }
 

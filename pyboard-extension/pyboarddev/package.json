@@ -13,7 +13,7 @@
   ],
   "activationEvents": [
     "onStartupFinished",
-    "onFileSystem:pyboarddev-remote"
+    "onFileSystem:pyboarddev-device"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -65,39 +65,39 @@
       },
       {
         "command": "mekatrol.pyboarddev.syncfromdevice",
-        "title": "Pyboard Dev: Sync from device",
+        "title": "Pyboard Dev: Sync from device to computer",
         "icon": "$(cloud-download)"
       },
       {
         "command": "mekatrol.pyboarddev.synctodevice",
-        "title": "Pyboard Dev: Sync to device",
+        "title": "Pyboard Dev: Sync from computer to device",
         "icon": "$(cloud-upload)"
       },
       {
         "command": "mekatrol.pyboarddev.syncnodefromdevice",
-        "title": "Sync From Device",
+        "title": "Sync from device to computer",
         "icon": "$(cloud-download)"
       },
       {
         "command": "mekatrol.pyboarddev.syncnodetodevice",
-        "title": "Sync To Device",
+        "title": "Sync from computer to device",
         "icon": "$(cloud-upload)"
       },
       {
-        "command": "mekatrol.pyboarddev.openlocalmirroritem",
-        "title": "Open Local Mirror Item"
+        "command": "mekatrol.pyboarddev.opencomputermirroritem",
+        "title": "Open Computer Mirror Item"
       },
       {
         "command": "mekatrol.pyboarddev.pullandopendeviceitem",
         "title": "Pull and Open Device Item"
       },
       {
-        "command": "mekatrol.pyboarddev.openremotefile",
-        "title": "Open Remote Device File"
+        "command": "mekatrol.pyboarddev.opendevicefile",
+        "title": "Open Device File"
       },
       {
-        "command": "mekatrol.pyboarddev.compareremotewithlocal",
-        "title": "Compare Device File With Host",
+        "command": "mekatrol.pyboarddev.comparedevicewithcomputer",
+        "title": "Compare Device File With Computer",
         "icon": "$(diff)"
       },
       {
@@ -140,11 +140,11 @@
       },
       {
         "command": "mekatrol.pyboarddev.linkdevicehostfolder",
-        "title": "Pyboard Dev: Link device to host folder"
+        "title": "Pyboard Dev: Link device to computer folder"
       },
       {
         "command": "mekatrol.pyboarddev.unlinkdevicehostfolder",
-        "title": "Pyboard Dev: Unlink device from host folder"
+        "title": "Pyboard Dev: Unlink device from computer folder"
       },
       {
         "command": "mekatrol.pyboarddev.setdevicealias",
@@ -267,7 +267,7 @@
       ],
       "view/item/context": [
         {
-          "command": "mekatrol.pyboarddev.openlocalmirroritem",
+          "command": "mekatrol.pyboarddev.opencomputermirroritem",
           "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFileExcluded)",
           "group": "navigation@1"
         },
@@ -287,12 +287,12 @@
           "group": "inline@3"
         },
         {
-          "command": "mekatrol.pyboarddev.openremotefile",
+          "command": "mekatrol.pyboarddev.opendevicefile",
           "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFileExcluded)",
           "group": "navigation@2"
         },
         {
-          "command": "mekatrol.pyboarddev.compareremotewithlocal",
+          "command": "mekatrol.pyboarddev.comparedevicewithcomputer",
           "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFileExcluded || viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFileExcluded)",
           "group": "navigation@3"
         },
@@ -371,7 +371,7 @@
         "when": "view == mekatrol.pyboarddev.mirrorExplorer && listFocus"
       },
       {
-        "command": "mekatrol.pyboarddev.compareremotewithlocal",
+        "command": "mekatrol.pyboarddev.comparedevicewithcomputer",
         "key": "ctrl+alt+d",
         "mac": "cmd+alt+d",
         "when": "view == mekatrol.pyboarddev.mirrorExplorer && listFocus"
@@ -390,11 +390,11 @@
           "default": false,
           "description": "Show low-level REPL TX/RX transport logs in the extension output channel (for troubleshooting)."
         },
-        "mekatrol.pyboarddev.remoteFileOpenWaitForConnectionMs": {
+        "mekatrol.pyboarddev.deviceFileOpenWaitForConnectionMs": {
           "type": "number",
           "default": 120000,
           "minimum": 0,
-          "description": "How long to wait for board connection before opening/saving remote device files fails. Set to 0 to wait indefinitely."
+          "description": "How long to wait for board connection before opening/saving device files fails. Set to 0 to wait indefinitely."
         },
         "mekatrol.pyboarddev.mountHostInWorkspaceExplorer": {
           "type": "boolean",

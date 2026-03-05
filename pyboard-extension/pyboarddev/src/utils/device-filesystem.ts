@@ -16,7 +16,7 @@ export interface FileEntry {
   obfuscated?: boolean;
 }
 
-export type SyncState = 'synced' | 'out_of_sync' | 'device_only' | 'local_only' | 'obfuscated';
+export type SyncState = 'synced' | 'out_of_sync' | 'device_only' | 'computer_only' | 'obfuscated';
 
 const toPosixRelative = (input: string): string => {
   return input.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
@@ -303,7 +303,7 @@ print('${endMarker}')
   await runDeviceScript(board, script);
 };
 
-const walkLocalDirectory = async (basePath: string, currentRelativePath: string, entries: FileEntry[]): Promise<void> => {
+const walkComputerDirectory = async (basePath: string, currentRelativePath: string, entries: FileEntry[]): Promise<void> => {
   const currentPath = currentRelativePath.length === 0 ? basePath : path.join(basePath, currentRelativePath);
   const children = await fs.readdir(currentPath, { withFileTypes: true });
 
@@ -313,7 +313,7 @@ const walkLocalDirectory = async (basePath: string, currentRelativePath: string,
 
     if (child.isDirectory()) {
       entries.push({ relativePath: relative, isDirectory: true });
-      await walkLocalDirectory(basePath, relative, entries);
+      await walkComputerDirectory(basePath, relative, entries);
       continue;
     }
 
@@ -332,12 +332,12 @@ const walkLocalDirectory = async (basePath: string, currentRelativePath: string,
   }
 };
 
-export const scanLocalMirrorEntries = async (mirrorRoot: string): Promise<FileEntry[]> => {
+export const scanComputerMirrorEntries = async (mirrorRoot: string): Promise<FileEntry[]> => {
   const entries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
 
   try {
     await fs.mkdir(mirrorRoot, { recursive: true });
-    await walkLocalDirectory(mirrorRoot, '', entries);
+    await walkComputerDirectory(mirrorRoot, '', entries);
   } catch {
     return entries;
   }
@@ -358,13 +358,13 @@ export const normaliseObfuscationSet = (obfuscateOnPull: string[]): Set<string> 
 export const toRelativePath = toPosixRelative;
 
 export const buildSyncStateMap = (
-  localEntries: FileEntry[],
+  computerEntries: FileEntry[],
   deviceEntries: FileEntry[],
   obfuscationSet: Set<string>
 ): Map<string, SyncState> => {
-  const localFiles = new Map(localEntries.filter((item) => !item.isDirectory).map((item) => [item.relativePath, item]));
+  const computerFiles = new Map(computerEntries.filter((item) => !item.isDirectory).map((item) => [item.relativePath, item]));
   const deviceFiles = new Map(deviceEntries.filter((item) => !item.isDirectory).map((item) => [item.relativePath, item]));
-  const allPaths = new Set<string>([...localFiles.keys(), ...deviceFiles.keys()]);
+  const allPaths = new Set<string>([...computerFiles.keys(), ...deviceFiles.keys()]);
 
   const status = new Map<string, SyncState>();
   for (const relativePath of allPaths) {
@@ -373,29 +373,29 @@ export const buildSyncStateMap = (
       continue;
     }
 
-    const local = localFiles.get(relativePath);
+    const computer = computerFiles.get(relativePath);
     const device = deviceFiles.get(relativePath);
 
-    if (!local && device) {
+    if (!computer && device) {
       status.set(relativePath, 'device_only');
       continue;
     }
 
-    if (local && !device) {
-      status.set(relativePath, 'local_only');
+    if (computer && !device) {
+      status.set(relativePath, 'computer_only');
       continue;
     }
 
-    if (!local || !device) {
+    if (!computer || !device) {
       continue;
     }
 
-    if (local.sha1 && device.sha1 && local.sha1 === device.sha1) {
+    if (computer.sha1 && device.sha1 && computer.sha1 === device.sha1) {
       status.set(relativePath, 'synced');
       continue;
     }
 
-    if (!device.sha1 && local.size !== undefined && device.size !== undefined && local.size === device.size) {
+    if (!device.sha1 && computer.size !== undefined && device.size !== undefined && computer.size === device.size) {
       status.set(relativePath, 'synced');
       continue;
     }
