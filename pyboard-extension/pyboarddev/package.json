@@ -131,6 +131,13 @@
           "title": "Pyboard Dev",
           "icon": "images/pyboarddev-sidebar.svg"
         }
+      ],
+      "panel": [
+        {
+          "id": "mekatrol-pyboarddev-panel",
+          "title": "Pyboard REPL",
+          "icon": "images/pyboarddev-sidebar.svg"
+        }
       ]
     },
     "views": {
@@ -143,6 +150,13 @@
           "id": "mekatrol.pyboarddev.statusView",
           "name": "PYBOARD",
           "when": "mekatrol.pyboarddev.showExtensionStatusView"
+        }
+      ],
+      "mekatrol-pyboarddev-panel": [
+        {
+          "id": "mekatrol.pyboarddev.replView",
+          "name": "REPL",
+          "type": "webview"
         }
       ]
     },

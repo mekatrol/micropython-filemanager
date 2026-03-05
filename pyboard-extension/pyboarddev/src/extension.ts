@@ -14,7 +14,7 @@ import {
 } from './commands/connect-board-command';
 import { initDeviceMirrorExplorer } from './device-mirror-explorer';
 import { initPyboardDebug } from './pyboard-debug';
-import { initTerminal } from './terminal';
+import { initReplView } from './repl-view';
 import { initExtensionStatusView } from './extension-status-view';
 
 // This method is called when your extension is activated
@@ -32,7 +32,7 @@ export const activate = async (context: vscode.ExtensionContext) => {
   initSoftRebootBoardCommand(context);
   initSetAutoReconnectCommand(context);
   initToggleBoardConnectionCommand(context);
-  initTerminal(context);
+  initReplView(context);
   await tryReconnectBoardOnStartup(context);
 
   // Init status bar
