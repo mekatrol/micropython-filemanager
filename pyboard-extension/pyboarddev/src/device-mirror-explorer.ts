@@ -495,6 +495,16 @@ class DeviceMirrorModel {
     if (this.notifyRemoteFilesChanged) {
       await this.notifyRemoteFilesChanged([relativePath]);
     }
+    const createdNode = new MirrorNode(
+      {
+        side: 'device',
+        relativePath,
+        isDirectory: false
+      },
+      path.posix.basename(relativePath),
+      vscode.TreeItemCollapsibleState.None
+    );
+    await this.pullDeviceNodeAndOpen(createdNode);
 
     const msg = `Created remote file: /${relativePath}`;
     vscode.window.showInformationMessage(msg);
@@ -816,6 +826,8 @@ class DeviceMirrorModel {
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
     await fs.writeFile(absolutePath, Buffer.alloc(0));
     await this.refresh(false);
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(absolutePath));
+    await vscode.window.showTextDocument(document, { preview: false });
 
     const msg = `Created host file: /${relativePath}`;
     vscode.window.showInformationMessage(msg);
