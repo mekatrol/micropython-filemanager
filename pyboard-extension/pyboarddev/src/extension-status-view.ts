@@ -45,7 +45,6 @@ class ExtensionStatusViewProvider implements vscode.TreeDataProvider<ExtensionSt
     const selectedPythonType = await getActivePythonType();
 
     const items: ExtensionStatusNode[] = [];
-    items.push(new ExtensionStatusNode(`Status: ${connected ? 'Connected' : 'Disconnected'}`, connected ? 'debug-disconnect' : 'plug'));
     items.push(new ExtensionStatusNode(`Device: ${selectedDevice} [${selectedBaudRate}]`, 'circuit-board'));
     items.push(new ExtensionStatusNode(`Python: ${selectedPythonType}`, 'symbol-class'));
     if (connected) {
@@ -75,7 +74,7 @@ class ExtensionStatusViewProvider implements vscode.TreeDataProvider<ExtensionSt
     );
     items.push(
       new ExtensionStatusNode(
-        connected ? '[ Disconnect Board ]' : '[ Connect Board ]',
+        connected ? '[ Board: Connected | Disconnect ]' : '[ Board: Disconnected | Connect ]',
         connected ? 'debug-disconnect' : 'plug',
         connected ? 'Click to disconnect from board' : 'Click to connect to board',
         { command: toggleBoardConnectionCommandId, title: 'Toggle board connection' }
