@@ -43,6 +43,7 @@ const defaultBaudRate = 115200;
 const remoteExplorerAutoRefreshIntervalMs = 5000;
 const hostMirrorRootFolder = '.pyboard-mirror';
 const hasHostMirrorChildFoldersContextKey = 'mekatrol.pyboarddev.hasHostMirrorChildFolders';
+const hasLinkedHostMappingsContextKey = 'mekatrol.pyboarddev.hasLinkedHostMappings';
 
 const obfuscatedPlaceholder = '# pyboarddev: obfuscated on pull\n';
 
@@ -103,6 +104,7 @@ class DeviceMirrorModel {
       this.syncStates = new Map();
       this.linkableHostFolders = [];
       await vscode.commands.executeCommand('setContext', hasHostMirrorChildFoldersContextKey, false);
+      await vscode.commands.executeCommand('setContext', hasLinkedHostMappingsContextKey, false);
       this.onDidChangeDataEmitter.fire();
       return;
     }
@@ -112,6 +114,7 @@ class DeviceMirrorModel {
     this.deviceHostFolderMappings = Object.assign({}, config.deviceHostFolderMappings ?? {});
     this.linkableHostFolders = await this.getLinkableHostFolders();
     await vscode.commands.executeCommand('setContext', hasHostMirrorChildFoldersContextKey, this.linkableHostFolders.length > 0);
+    await vscode.commands.executeCommand('setContext', hasLinkedHostMappingsContextKey, Object.keys(this.deviceHostFolderMappings).length > 0);
     this.knownDeviceIds = new Set(Object.keys(this.deviceHostFolderMappings));
     Object.keys(this.deviceHostFolderMappings).forEach((deviceId) => this.knownDeviceIds.add(deviceId));
 
@@ -1163,6 +1166,14 @@ class DeviceMirrorModel {
     return Object.keys(this.deviceHostFolderMappings).sort((a, b) => a.localeCompare(b));
   }
 
+  getLinkedHostFolderCount(): number {
+    return new Set(
+      Object.values(this.deviceHostFolderMappings)
+        .map((item) => toRelativePath(item))
+        .filter((item) => item.length > 0)
+    ).size;
+  }
+
   getAvailableHostFolderCount(): number {
     return this.linkableHostFolders.length;
   }
@@ -2012,7 +2023,7 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
         const count = this.model.getConnectedDeviceIds().length;
         element.description = count > 0 ? `${count} connected` : 'disconnected';
       } else {
-        const linkedCount = this.model.getLinkedHostDeviceIds().length;
+        const linkedCount = this.model.getLinkedHostFolderCount();
         element.description = linkedCount > 0
           ? `${linkedCount} linked`
           : `${this.model.getAvailableHostFolderCount()} host folders`;
@@ -2029,10 +2040,14 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
     }
 
     if (data.isDeviceIdNode) {
-      element.contextValue = data.side === 'device' ? 'pyboarddev.deviceIdNode' : 'pyboarddev.hostDeviceMappingNode';
+      const mappedFolder = data.deviceId ? this.model.getMappedHostFolder(data.deviceId) : undefined;
+      if (data.side === 'device') {
+        element.contextValue = mappedFolder ? 'pyboarddev.deviceIdNodeLinked' : 'pyboarddev.deviceIdNode';
+      } else {
+        element.contextValue = 'pyboarddev.hostDeviceMappingNode';
+      }
       element.iconPath = new vscode.ThemeIcon('device-mobile');
       if (data.deviceId) {
-        const mappedFolder = this.model.getMappedHostFolder(data.deviceId);
         if (data.side === 'device') {
           const connected = this.model.getConnectedDevice(data.deviceId);
           const state = connected ? 'connected' : 'disconnected';
@@ -2095,10 +2110,24 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
       if (element.data.side === 'local') {
         const linkedHostDeviceIds = this.model.getLinkedHostDeviceIds();
         if (linkedHostDeviceIds.length > 0) {
-          return linkedHostDeviceIds.map((deviceId) => {
+          const linkedByFolder = new Map<string, string>();
+          for (const deviceId of linkedHostDeviceIds) {
             const mappedFolder = this.model.getMappedHostFolder(deviceId);
-            const label = mappedFolder ? path.posix.basename(mappedFolder) : deviceId;
-            return new MirrorNode(
+            const folderKey = mappedFolder && mappedFolder.trim().length > 0
+              ? toRelativePath(mappedFolder)
+              : `__device__/${deviceId}`;
+            if (!linkedByFolder.has(folderKey)) {
+              linkedByFolder.set(folderKey, deviceId);
+            }
+          }
+
+          return [...linkedByFolder.entries()]
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([folderKey, deviceId]) => {
+              const label = folderKey.startsWith('__device__/')
+                ? deviceId
+                : path.posix.basename(folderKey);
+              return new MirrorNode(
               {
                 side: 'local',
                 relativePath: '',
@@ -2109,7 +2138,7 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
               label,
               vscode.TreeItemCollapsibleState.Collapsed
             );
-          });
+            });
         }
 
         const availableHostFolders = this.model.getAvailableHostFolders();

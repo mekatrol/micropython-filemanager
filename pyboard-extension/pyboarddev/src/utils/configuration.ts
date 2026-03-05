@@ -116,7 +116,7 @@ export const saveConfiguration = async (configuration: PyboardDevConfiguration):
   const merged: PyboardDevConfigurationWithMeta = {
     ...existing,
     ...configuration,
-    deviceHostFolderMappings: Object.assign({}, existing.deviceHostFolderMappings ?? {}, configuration.deviceHostFolderMappings ?? {})
+    deviceHostFolderMappings: Object.assign({}, configuration.deviceHostFolderMappings ?? {})
   };
 
   const content = JSON.stringify(merged, null, 2);
