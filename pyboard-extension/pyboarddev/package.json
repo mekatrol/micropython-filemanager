@@ -255,6 +255,16 @@
           "default": 120000,
           "minimum": 0,
           "description": "How long to wait for board connection before opening/saving remote device files fails. Set to 0 to wait indefinitely."
+        },
+        "mekatrol.pyboarddev.mountHostInWorkspaceExplorer": {
+          "type": "boolean",
+          "default": false,
+          "description": "Mount HOST mirror folder as a workspace folder in the native Explorer. Disabled by default to avoid workspace-save prompts."
+        },
+        "mekatrol.pyboarddev.mountDeviceInWorkspaceExplorer": {
+          "type": "boolean",
+          "default": false,
+          "description": "Mount DEVICE as a workspace folder in the native Explorer. Enable only if your tooling supports non-file workspace schemes."
         }
       }
     },

@@ -27,6 +27,19 @@ let boardConnectionStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 let boardRuntimeStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 let extensionContext: vscode.ExtensionContext | undefined = undefined;
 
+const readPersistentState = <T>(context: vscode.ExtensionContext | undefined, key: string): T | undefined => {
+  if (!context) {
+    return undefined;
+  }
+
+  const fromGlobal = context.globalState.get<T>(key);
+  if (fromGlobal !== undefined) {
+    return fromGlobal;
+  }
+
+  return context.workspaceState.get<T>(key);
+};
+
 export const initStatusBar = async (context: vscode.ExtensionContext): Promise<void> => {
   extensionContext = context;
 
@@ -133,7 +146,7 @@ const createBoardRuntimeStatusBarItem = (context: vscode.ExtensionContext) => {
 };
 
 const getActiveDevice = (): string | undefined => {
-  const selectedFromState = extensionContext?.workspaceState.get<string>(selectedSerialPortStateKey);
+  const selectedFromState = readPersistentState<string>(extensionContext, selectedSerialPortStateKey);
   if (selectedFromState && selectedFromState.length) {
     return selectedFromState;
   }
@@ -142,7 +155,7 @@ const getActiveDevice = (): string | undefined => {
 };
 
 const getActiveBaudRate = (): number => {
-  return extensionContext?.workspaceState.get<number>(selectedBaudRateStateKey) ?? defaultBaudRate;
+  return readPersistentState<number>(extensionContext, selectedBaudRateStateKey) ?? defaultBaudRate;
 };
 
 const isPythonType = (value: string): value is PythonType => {
@@ -227,7 +240,9 @@ const selectSerialDevice = async (): Promise<void> => {
     return;
   }
 
+  await extensionContext.globalState.update(selectedSerialPortStateKey, selected.label);
   await extensionContext.workspaceState.update(selectedSerialPortStateKey, selected.label);
+  await extensionContext.globalState.update(selectedBaudRateStateKey, getActiveBaudRate());
   await extensionContext.workspaceState.update(selectedBaudRateStateKey, getActiveBaudRate());
 
   const msg = `Selected serial device: ${selected.label}`;

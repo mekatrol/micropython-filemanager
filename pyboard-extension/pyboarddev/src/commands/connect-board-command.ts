@@ -30,12 +30,26 @@ const notifyBoardRuntimeInfoChanged = (): void => {
   boardRuntimeInfoChangedEmitter.fire(connectedBoardRuntimeInfo);
 };
 
+const readPersistentState = <T>(context: vscode.ExtensionContext, key: string): T | undefined => {
+  const fromGlobal = context.globalState.get<T>(key);
+  if (fromGlobal !== undefined) {
+    return fromGlobal;
+  }
+
+  return context.workspaceState.get<T>(key);
+};
+
+const writePersistentState = async <T>(context: vscode.ExtensionContext, key: string, value: T): Promise<void> => {
+  await context.globalState.update(key, value);
+  await context.workspaceState.update(key, value);
+};
+
 const updateReconnectState = async (shouldReconnectOnStartup: boolean): Promise<void> => {
   if (!extensionContext) {
     return;
   }
 
-  await extensionContext.workspaceState.update(reconnectLastSessionStateKey, shouldReconnectOnStartup);
+  await writePersistentState(extensionContext, reconnectLastSessionStateKey, shouldReconnectOnStartup);
 };
 
 const getDirtyRemoteDocuments = (): vscode.TextDocument[] =>
@@ -158,8 +172,8 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
   extensionContext = context;
 
   const command = vscode.commands.registerCommand('mekatrol.pyboarddev.connectboard', async () => {
-    const device = context.workspaceState.get<string>(selectedSerialPortStateKey);
-    const baudRate = context.workspaceState.get<number>(selectedBaudRateStateKey) ?? defaultBaudRate;
+    const device = readPersistentState<string>(context, selectedSerialPortStateKey);
+    const baudRate = readPersistentState<number>(context, selectedBaudRateStateKey) ?? defaultBaudRate;
 
     if (!device) {
       const msg = 'No serial device selected. Select a serial port first.';
@@ -243,7 +257,7 @@ export const tryReconnectBoardOnStartup = async (context: vscode.ExtensionContex
     return;
   }
 
-  const shouldReconnect = context.workspaceState.get<boolean>(reconnectLastSessionStateKey) ?? false;
+  const shouldReconnect = readPersistentState<boolean>(context, reconnectLastSessionStateKey) ?? false;
   if (!shouldReconnect) {
     return;
   }

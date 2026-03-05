@@ -963,6 +963,10 @@ class DeviceMirrorModel {
     return getConnectedBoard() !== undefined;
   }
 
+  getMirrorRootPath(): string | undefined {
+    return this.mirrorRootPath;
+  }
+
   setSelectedRemoteNode(node: MirrorNode | undefined): void {
     this.selectedNode = node;
   }
@@ -1089,25 +1093,63 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
   }
 
   async stat(uri: vscode.Uri): Promise<vscode.FileStat> {
-    const file = await this.readFile(uri);
+    const board = await this.getConnectedBoardOrWait();
+    const relativePath = this.toRelativeRemotePathOrRoot(uri, board);
+    const entries = await listDeviceEntries(board);
+    const entry = entries.find((item) => item.relativePath === relativePath);
+    if (!entry) {
+      throw vscode.FileSystemError.FileNotFound(uri);
+    }
+
     const key = uri.toString();
     const previous = this.statCache.get(key);
     const next: vscode.FileStat = {
-      type: vscode.FileType.File,
+      type: entry.isDirectory ? vscode.FileType.Directory : vscode.FileType.File,
       ctime: previous?.ctime ?? 0,
-      mtime: previous?.mtime ?? 0,
-      size: file.length
+      mtime: previous?.mtime ?? Date.now(),
+      size: entry.size ?? previous?.size ?? 0
     };
     this.statCache.set(key, next);
     return next;
   }
 
-  readDirectory(): [string, vscode.FileType][] {
-    return [];
+  async readDirectory(uri: vscode.Uri): Promise<[string, vscode.FileType][]> {
+    const board = await this.getConnectedBoardOrWait();
+    const parentPath = this.toRelativeRemotePathOrRoot(uri, board);
+    const entries = await listDeviceEntries(board);
+
+    const children: [string, vscode.FileType][] = [];
+    for (const entry of entries) {
+      if (entry.relativePath.length === 0 || entry.relativePath === parentPath) {
+        continue;
+      }
+
+      const parent = path.posix.dirname(entry.relativePath);
+      const directParent = parent === '.' ? '' : toRelativePath(parent);
+      if (directParent !== parentPath) {
+        continue;
+      }
+
+      children.push([
+        path.posix.basename(entry.relativePath),
+        entry.isDirectory ? vscode.FileType.Directory : vscode.FileType.File
+      ]);
+    }
+
+    return children.sort((a, b) => a[0].localeCompare(b[0]));
   }
 
-  createDirectory(): void {
-    throw vscode.FileSystemError.NoPermissions('Creating directories on remote URI is not supported.');
+  async createDirectory(uri: vscode.Uri): Promise<void> {
+    const board = await this.getConnectedBoardOrWait();
+    const relativePath = this.toRelativeRemotePathOrRoot(uri, board);
+    if (!relativePath) {
+      return;
+    }
+
+    await createDeviceDirectory(board, relativePath);
+    const createdUri = this.toRemoteUri(relativePath);
+    this.statCache.delete(createdUri.toString());
+    this.onDidChangeFileEmitter.fire([{ type: vscode.FileChangeType.Created, uri: createdUri }]);
   }
 
   async readFile(uri: vscode.Uri): Promise<Uint8Array> {
@@ -1140,11 +1182,13 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/no such file|enoent|not found/i.test(message)) {
-        const friendlyMessage = `the file no longer exists on the device. File: ${relativePath}. ${this.getDeviceDetails(board)}`;
-        vscode.window.showWarningMessage(friendlyMessage);
-        logChannelOutput(`Remote file not opened. ${friendlyMessage}`, true);
-        await this.closeRemoteTabsForUriWithRetry(uri);
-        throw vscode.FileSystemError.FileNotFound(friendlyMessage);
+        if (!this.shouldSuppressMissingPathWarning(relativePath)) {
+          const friendlyMessage = `the file no longer exists on the device. File: ${relativePath}. ${this.getDeviceDetails(board)}`;
+          vscode.window.showWarningMessage(friendlyMessage);
+          logChannelOutput(`Remote file not opened. ${friendlyMessage}`, true);
+          await this.closeRemoteTabsForUriWithRetry(uri);
+        }
+        throw vscode.FileSystemError.FileNotFound(uri);
       }
       const readFailureMessage = `failed to open remote file. File: ${relativePath}. ${this.getDeviceDetails(board)}. ${message}`;
       logChannelOutput(`Remote file not opened. ${readFailureMessage}`, true);
@@ -1153,9 +1197,22 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     }
   }
 
-  async writeFile(uri: vscode.Uri, content: Uint8Array): Promise<void> {
+  async writeFile(
+    uri: vscode.Uri,
+    content: Uint8Array,
+    options: { readonly create: boolean; readonly overwrite: boolean }
+  ): Promise<void> {
     const board = await this.getConnectedBoardOrWait();
     const relativePath = this.toRelativeRemotePath(uri, board);
+    const entries = await listDeviceEntries(board);
+    const existing = entries.find((entry) => entry.relativePath === relativePath);
+    if (!existing && !options.create) {
+      throw vscode.FileSystemError.FileNotFound(uri);
+    }
+    if (existing && options.create && !options.overwrite) {
+      throw vscode.FileSystemError.FileExists(uri);
+    }
+
     try {
       await writeDeviceFile(board, relativePath, Buffer.from(content));
       await this.removeWorkingCopy(uri);
@@ -1175,12 +1232,52 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     }
   }
 
-  delete(): void {
-    throw vscode.FileSystemError.NoPermissions('Deleting on remote URI is not supported.');
+  async delete(uri: vscode.Uri, options: { readonly recursive: boolean }): Promise<void> {
+    const board = await this.getConnectedBoardOrWait();
+    const relativePath = this.toRelativeRemotePathOrRoot(uri, board);
+    if (!relativePath) {
+      throw vscode.FileSystemError.NoPermissions('Deleting the device root is not allowed.');
+    }
+
+    if (!options.recursive) {
+      const entries = await listDeviceEntries(board);
+      const hasChildren = entries.some((entry) => entry.relativePath.startsWith(`${relativePath}/`));
+      if (hasChildren) {
+        throw vscode.FileSystemError.NoPermissions('Folder is not empty. Use recursive delete.');
+      }
+    }
+
+    await deleteDevicePath(board, relativePath);
+    await this.notifyRemotePathDeleted(relativePath, true);
+    this.onDidChangeFileEmitter.fire([{ type: vscode.FileChangeType.Deleted, uri }]);
   }
 
-  rename(): void {
-    throw vscode.FileSystemError.NoPermissions('Renaming on remote URI is not supported.');
+  async rename(
+    oldUri: vscode.Uri,
+    newUri: vscode.Uri,
+    options: { readonly overwrite: boolean }
+  ): Promise<void> {
+    const board = await this.getConnectedBoardOrWait();
+    const sourcePath = this.toRelativeRemotePath(oldUri, board);
+    const targetPath = this.toRelativeRemotePath(newUri, board);
+    const entries = await listDeviceEntries(board);
+    const targetExists = entries.some((entry) => entry.relativePath === targetPath);
+    if (targetExists && !options.overwrite) {
+      throw vscode.FileSystemError.FileExists(newUri);
+    }
+
+    if (targetExists && options.overwrite) {
+      await deleteDevicePath(board, targetPath);
+      await this.notifyRemotePathDeleted(targetPath, true);
+    }
+
+    await renameDevicePath(board, sourcePath, targetPath);
+    await this.notifyRemotePathDeleted(sourcePath, true);
+    await this.notifyRemoteFilesChanged([targetPath]);
+    this.onDidChangeFileEmitter.fire([
+      { type: vscode.FileChangeType.Deleted, uri: oldUri },
+      { type: vscode.FileChangeType.Created, uri: newUri }
+    ]);
   }
 
   async notifyRemoteFilesChanged(relativePaths: string[]): Promise<void> {
@@ -1279,6 +1376,32 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
     }
 
     return relativePath;
+  }
+
+  private toRelativeRemotePathOrRoot(uri: vscode.Uri, board: NonNullable<ReturnType<typeof getConnectedBoard>>): string {
+    const rawPath = toRelativePath(uri.path.replace(/^\/+/, ''));
+    if (!rawPath) {
+      return '';
+    }
+
+    const segments = rawPath
+      .split('/')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+    if (segments.length === 0) {
+      return '';
+    }
+
+    if (segments[0].endsWith(':') && segments.length > 1) {
+      segments.shift();
+    }
+
+    const deviceName = (path.basename(board.device) || board.device).replace(/[^\w.-]/g, '_');
+    if (segments[0] === deviceName && segments.length > 1) {
+      segments.shift();
+    }
+
+    return toRelativePath(segments.join('/'));
   }
 
   private toRemoteUri(relativePath: string): vscode.Uri {
@@ -1425,8 +1548,11 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
   }
 
   private getDeviceDetails(board?: NonNullable<ReturnType<typeof getConnectedBoard>>): string {
-    const selectedDevice = this.context.workspaceState.get<string>(selectedSerialPortStateKey);
-    const selectedBaudRate = this.context.workspaceState.get<number>(selectedBaudRateStateKey) ?? defaultBaudRate;
+    const selectedDevice = this.context.globalState.get<string>(selectedSerialPortStateKey)
+      ?? this.context.workspaceState.get<string>(selectedSerialPortStateKey);
+    const selectedBaudRate = this.context.globalState.get<number>(selectedBaudRateStateKey)
+      ?? this.context.workspaceState.get<number>(selectedBaudRateStateKey)
+      ?? defaultBaudRate;
     const activeBoard = board ?? getConnectedBoard();
     const device = activeBoard?.device ?? selectedDevice ?? 'unknown device';
     const baudRate = activeBoard?.baudrate ?? selectedBaudRate;
@@ -1495,6 +1621,12 @@ class RemoteDeviceFileSystemProvider implements vscode.FileSystemProvider {
 
   private async delay(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private shouldSuppressMissingPathWarning(relativePath: string): boolean {
+    // VS Code and other extensions can probe for workspace metadata files on every workspace folder.
+    // Those files generally won't exist on a microcontroller filesystem and should not surface warnings.
+    return relativePath.startsWith('.vscode/');
   }
 }
 
@@ -1595,6 +1727,53 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
   }
 }
 
+const hostWorkspaceFolderName = 'HOST';
+const deviceWorkspaceFolderName = 'DEVICE';
+const mountHostWorkspaceFolderSettingKey = 'mountHostInWorkspaceExplorer';
+const mountDeviceWorkspaceFolderSettingKey = 'mountDeviceInWorkspaceExplorer';
+
+const ensureNativeExplorerRoots = async (model: DeviceMirrorModel): Promise<void> => {
+  const mirrorRootPath = model.getMirrorRootPath();
+  if (!mirrorRootPath) {
+    return;
+  }
+
+  const hostUri = vscode.Uri.file(mirrorRootPath);
+  const deviceUri = vscode.Uri.parse(`${remoteDocumentScheme}:/`);
+  const configuration = vscode.workspace.getConfiguration('mekatrol.pyboarddev');
+  const mountHostWorkspaceFolder = configuration.get<boolean>(mountHostWorkspaceFolderSettingKey, false);
+  const mountDeviceWorkspaceFolder = configuration.get<boolean>(mountDeviceWorkspaceFolderSettingKey, false);
+  const existing = vscode.workspace.workspaceFolders ?? [];
+  const existingHostIndex = existing.findIndex((folder) => folder.uri.toString() === hostUri.toString());
+  const existingDeviceIndex = existing.findIndex((folder) => folder.uri.toString() === deviceUri.toString());
+
+  if (!mountHostWorkspaceFolder && existingHostIndex >= 0) {
+    vscode.workspace.updateWorkspaceFolders(existingHostIndex, 1);
+  }
+
+  if (!mountDeviceWorkspaceFolder && existingDeviceIndex >= 0) {
+    vscode.workspace.updateWorkspaceFolders(existingDeviceIndex, 1);
+  }
+
+  const currentFolders = vscode.workspace.workspaceFolders ?? [];
+  const hostExists = currentFolders.some((folder) => folder.uri.toString() === hostUri.toString());
+  const deviceExists = currentFolders.some((folder) => folder.uri.toString() === deviceUri.toString());
+
+  const additions: { uri: vscode.Uri; name: string }[] = [];
+  if (mountHostWorkspaceFolder && !hostExists) {
+    additions.push({ uri: hostUri, name: hostWorkspaceFolderName });
+  }
+  if (mountDeviceWorkspaceFolder && !deviceExists) {
+    additions.push({ uri: deviceUri, name: deviceWorkspaceFolderName });
+  }
+
+  if (additions.length === 0) {
+    return;
+  }
+
+  vscode.workspace.updateWorkspaceFolders(currentFolders.length, 0, ...additions);
+};
+
 export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext): Promise<void> => {
   const remoteFsProvider = new RemoteDeviceFileSystemProvider(context);
   const model = new DeviceMirrorModel(context, async (relativePaths: string[]) => {
@@ -1662,4 +1841,5 @@ export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext)
   context.subscriptions.push(vscode.commands.registerCommand(commandDeleteMirrorPathId, async (node?: MirrorNode) => model.deleteMirrorPath(node)));
 
   await model.refresh();
+  await ensureNativeExplorerRoots(model);
 };

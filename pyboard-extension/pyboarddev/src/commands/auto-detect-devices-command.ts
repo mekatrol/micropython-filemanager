@@ -45,6 +45,20 @@ const buildDeviceDetails = (device: DetectedDevice): string => {
   return parts.length > 0 ? parts.join(' | ') : 'No USB metadata';
 };
 
+const readPersistentState = <T>(context: vscode.ExtensionContext, key: string): T | undefined => {
+  const fromGlobal = context.globalState.get<T>(key);
+  if (fromGlobal !== undefined) {
+    return fromGlobal;
+  }
+
+  return context.workspaceState.get<T>(key);
+};
+
+const writePersistentState = async <T>(context: vscode.ExtensionContext, key: string, value: T): Promise<void> => {
+  await context.globalState.update(key, value);
+  await context.workspaceState.update(key, value);
+};
+
 export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): void => {
   const command = vscode.commands.registerCommand(autoDetectDevicesCommandId, async () => {
     if (isBoardConnected()) {
@@ -97,7 +111,7 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
       return;
     }
 
-    const activeDevice = context.workspaceState.get<string>(selectedSerialPortStateKey);
+    const activeDevice = readPersistentState<string>(context, selectedSerialPortStateKey);
     const items: DetectedDevicePickItem[] = detectedDevices.map((device) => ({
       label: device.port.path,
       description: device.runtimeInfo?.banner ?? 'MicroPython device',
@@ -123,8 +137,8 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
       return;
     }
 
-    await context.workspaceState.update(selectedSerialPortStateKey, selected.device.port.path);
-    await context.workspaceState.update(selectedBaudRateStateKey, defaultBaudRate);
+    await writePersistentState(context, selectedSerialPortStateKey, selected.device.port.path);
+    await writePersistentState(context, selectedBaudRateStateKey, defaultBaudRate);
     logChannelOutput(`Auto detect selected serial device: ${selected.device.port.path}`, true);
 
     await vscode.commands.executeCommand('mekatrol.pyboarddev.connectboard');
