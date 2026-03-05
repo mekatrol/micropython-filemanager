@@ -7,6 +7,10 @@ import { getWorkspaceCacheValue, setWorkspaceCacheValue } from '../utils/workspa
 const reconnectLastSessionStateKey = 'reconnectLastSession';
 const reconnectDevicePathsStateKey = 'reconnectDevicePaths';
 const defaultBaudRate = 115200;
+const runtimeInfoConnectRetryAttempts = 3;
+const runtimeInfoConnectRetryDelayMs = 250;
+const runtimeInfoBackgroundRetryAttempts = 5;
+const runtimeInfoBackgroundRetryDelayMs = 1000;
 const autoReconnectSettingKey = 'autoReconnectLastDevice';
 const deviceDocumentScheme = 'pyboarddev-device';
 const pyboardDebugType = 'pyboarddev';
@@ -91,6 +95,10 @@ const normaliseDeviceId = (value: string): string => {
   return trimmed.replace(/\s+/g, '-').replace(/[^\w.-]/g, '_');
 };
 
+const wait = async (ms: number): Promise<void> => {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+};
+
 const toDeviceId = (devicePath: string, runtimeInfo?: BoardRuntimeInfo): string => {
   if (runtimeInfo?.uniqueId && runtimeInfo.uniqueId.trim().length > 0) {
     return normaliseDeviceId(runtimeInfo.uniqueId);
@@ -106,6 +114,29 @@ const getConnectedBoardStateByPortPath = (devicePath: string): ConnectedBoardSta
   }
 
   return connectedBoards.get(existingDeviceId);
+};
+
+const readBoardRuntimeInfoWithRetries = async (
+  board: Pyboard,
+  devicePath: string,
+  attempts: number,
+  delayMs: number
+): Promise<BoardRuntimeInfo | undefined> => {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await board.getBoardRuntimeInfo();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) {
+        await wait(delayMs);
+      }
+    }
+  }
+
+  const reason = lastError instanceof Error ? lastError.message : String(lastError);
+  logChannelOutput(`Connected, but failed to read board runtime info for ${devicePath} after ${attempts} attempt(s): ${reason}`, false);
+  return undefined;
 };
 
 const toSnapshot = (state: ConnectedBoardState): ConnectedBoardSnapshot => ({
@@ -315,13 +346,12 @@ const connectBoardForPath = async (
   const board = new Pyboard(devicePath, baudRate);
   await board.open();
 
-  let runtimeInfo: BoardRuntimeInfo | undefined;
-  try {
-    runtimeInfo = await board.getBoardRuntimeInfo();
-  } catch (infoError) {
-    const reason = infoError instanceof Error ? infoError.message : String(infoError);
-    logChannelOutput(`Connected, but failed to read board runtime info: ${reason}`, false);
-  }
+  const runtimeInfo = await readBoardRuntimeInfoWithRetries(
+    board,
+    devicePath,
+    runtimeInfoConnectRetryAttempts,
+    runtimeInfoConnectRetryDelayMs
+  );
 
   const deviceId = toDeviceId(devicePath, runtimeInfo);
   if (connectedBoards.has(deviceId)) {
@@ -341,6 +371,36 @@ const connectBoardForPath = async (
   await addReconnectDevicePath(board.device);
   await updateReconnectState(true);
   notifyStateChanged();
+
+  if (!runtimeInfo) {
+    void (async () => {
+      let lastError: unknown;
+      for (let attempt = 1; attempt <= runtimeInfoBackgroundRetryAttempts; attempt += 1) {
+        await wait(runtimeInfoBackgroundRetryDelayMs);
+
+        const currentState = connectedBoards.get(state.deviceId);
+        if (!currentState || currentState !== state) {
+          return;
+        }
+
+        try {
+          const refreshedRuntimeInfo = await state.board.getBoardRuntimeInfo();
+          state.runtimeInfo = refreshedRuntimeInfo;
+          notifyStateChanged();
+          logChannelOutput(`Runtime info recovered for ${state.deviceId} on attempt ${attempt}.`, false);
+          return;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      const reason = lastError instanceof Error ? lastError.message : String(lastError);
+      logChannelOutput(
+        `Runtime info remained unavailable for ${state.deviceId} after ${runtimeInfoBackgroundRetryAttempts} background attempt(s): ${reason}`,
+        false
+      );
+    })();
+  }
 
   if (showMessages) {
     const msg = `Connected to board ${deviceId} on ${devicePath} @ ${baudRate}.`;
