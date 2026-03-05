@@ -166,7 +166,8 @@
           "when": "mekatrol.pyboarddev.boardConnected"
         },
         {
-          "command": "mekatrol.pyboarddev.linkdevicehostfolder"
+          "command": "mekatrol.pyboarddev.linkdevicehostfolder",
+          "when": "mekatrol.pyboarddev.hasHostMirrorChildFolders"
         },
         {
           "command": "mekatrol.pyboarddev.unlinkdevicehostfolder"
@@ -237,7 +238,7 @@
         },
         {
           "command": "mekatrol.pyboarddev.linkdevicehostfolder",
-          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceIdNode || viewItem == pyboarddev.hostDeviceMappingNode)",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && mekatrol.pyboarddev.hasHostMirrorChildFolders && (viewItem == pyboarddev.deviceIdNode || viewItem == pyboarddev.hostDeviceMappingNode)",
           "group": "navigation@10"
         },
         {
