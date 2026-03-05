@@ -125,7 +125,6 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
 
     this.appendLine(deviceId, `${replPrompt}${command}`);
     if (command.length === 0) {
-      this.appendLine(deviceId, replPrompt);
       this.postState();
       return;
     }
@@ -147,7 +146,6 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       this.appendLine(deviceId, `[execution failed] ${message}`);
     }
 
-    this.appendLine(deviceId, replPrompt);
     this.postState();
   }
 
@@ -241,7 +239,6 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       this.clearPromptFallbackTimer(state);
       this.appendLine(deviceId, snapshot.runtimeInfo.banner);
       this.appendLine(deviceId, 'Type "help()" for more information.');
-      this.appendLine(deviceId, replPrompt);
       state.hasRenderedConnectedIntro = true;
       return;
     }
@@ -260,7 +257,6 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
         return;
       }
 
-      this.appendLine(deviceId, replPrompt);
       state.hasRenderedConnectedIntro = true;
       this.postState();
     }, promptFallbackDelayMs);
@@ -412,20 +408,23 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     .tab.active { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); border-color: var(--vscode-list-activeSelectionBackground); }
     .tab-title { white-space: nowrap; max-width: 260px; text-overflow: ellipsis; overflow: hidden; }
     .empty { display: grid; place-items: center; height: 100%; color: var(--vscode-descriptionForeground); }
-    .console { flex: 1; overflow: auto; padding: 8px 10px; font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); white-space: pre-wrap; }
-    .input-row { display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--vscode-panel-border); }
-    .input { flex: 1; border: 1px solid var(--vscode-input-border); background: var(--vscode-input-background); color: var(--vscode-input-foreground); padding: 6px 8px; }
-    .send { border: 1px solid var(--vscode-button-border); background: var(--vscode-button-background); color: var(--vscode-button-foreground); padding: 6px 10px; cursor: pointer; }
-    .send:hover { background: var(--vscode-button-hoverBackground); }
+    .console { flex: 1; overflow: auto; padding: 8px 10px; font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); }
+    .output { margin: 0; white-space: pre-wrap; word-break: break-word; }
+    .prompt-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); }
+    .prompt-row.disabled { opacity: 0.6; }
+    .prompt-label { color: var(--vscode-editor-foreground); user-select: none; }
+    .input { flex: 1; border: none; outline: none; background: transparent; color: var(--vscode-editor-foreground); padding: 0; font-family: inherit; font-size: inherit; }
   </style>
 </head>
 <body>
   <div class="layout">
     <div id="tabs" class="tabs"></div>
-    <div id="content" class="console"></div>
-    <div class="input-row">
-      <input id="commandInput" class="input" type="text" spellcheck="false" placeholder="Enter REPL command and press Enter" />
-      <button id="sendButton" class="send" type="button">Run</button>
+    <div id="content" class="console">
+      <pre id="output" class="output"></pre>
+      <div id="promptRow" class="prompt-row">
+        <span class="prompt-label">>>> </span>
+        <input id="commandInput" class="input" type="text" spellcheck="false" aria-label="REPL command input" />
+      </div>
     </div>
   </div>
   <script nonce="${nonce}">
@@ -434,8 +433,9 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
 
     const tabsEl = document.getElementById('tabs');
     const contentEl = document.getElementById('content');
+    const outputEl = document.getElementById('output');
+    const promptRowEl = document.getElementById('promptRow');
     const inputEl = document.getElementById('commandInput');
-    const sendButtonEl = document.getElementById('sendButton');
     const historyCursorByDevice = new Map();
     const historyDraftByDevice = new Map();
 
@@ -486,14 +486,15 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     const render = () => {
       tabsEl.innerHTML = '';
       if (currentState.devices.length === 0) {
-        contentEl.innerHTML = '<div class="empty">No connected devices.</div>';
+        outputEl.textContent = 'No connected devices.';
+        promptRowEl.classList.add('disabled');
         inputEl.disabled = true;
-        sendButtonEl.disabled = true;
+        contentEl.scrollTop = contentEl.scrollHeight;
         return;
       }
 
+      promptRowEl.classList.remove('disabled');
       inputEl.disabled = false;
-      sendButtonEl.disabled = false;
 
       for (const device of currentState.devices) {
         const tab = document.createElement('button');
@@ -514,11 +515,13 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
 
       const active = getActiveDevice();
       if (!active) {
-        contentEl.innerHTML = '<div class="empty">No active device.</div>';
+        outputEl.textContent = 'No active device.';
+        promptRowEl.classList.add('disabled');
+        inputEl.disabled = true;
         return;
       }
 
-      contentEl.textContent = active.lines.join('\\n');
+      outputEl.textContent = active.lines.join('\\n');
       contentEl.scrollTop = contentEl.scrollHeight;
       if (document.activeElement !== inputEl) {
         inputEl.focus();
@@ -548,7 +551,6 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       historyDraftByDevice.set(active.deviceId, inputEl.value);
     });
 
-    sendButtonEl.addEventListener('click', submitCommand);
     inputEl.addEventListener('keydown', (event) => {
       if (event.key === 'ArrowUp') {
         event.preventDefault();
