@@ -42,6 +42,11 @@
         "icon": "$(plug)"
       },
       {
+        "command": "mekatrol.pyboarddev.connectboardesp32recovery",
+        "title": "Pyboard Dev: ESP32 Recovery Connect",
+        "icon": "$(debug-restart)"
+      },
+      {
         "command": "mekatrol.pyboarddev.disconnectboard",
         "title": "Pyboard Dev: Disconnect from board"
       },
@@ -217,6 +222,9 @@
           "command": "mekatrol.pyboarddev.connectboard"
         },
         {
+          "command": "mekatrol.pyboarddev.connectboardesp32recovery"
+        },
+        {
           "command": "mekatrol.pyboarddev.disconnectboard",
           "when": "mekatrol.pyboarddev.boardConnected"
         },
@@ -275,6 +283,11 @@
           "command": "mekatrol.pyboarddev.connectboardwithpicker",
           "when": "view == mekatrol.pyboarddev.mirrorExplorer && viewItem == pyboarddev.deviceRoot",
           "group": "inline@1"
+        },
+        {
+          "command": "mekatrol.pyboarddev.connectboardesp32recovery",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && viewItem == pyboarddev.deviceRoot",
+          "group": "inline@1.5"
         },
         {
           "command": "mekatrol.pyboarddev.closealldeviceconnections",

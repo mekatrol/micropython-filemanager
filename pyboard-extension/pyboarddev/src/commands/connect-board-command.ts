@@ -11,6 +11,10 @@ const runtimeInfoConnectRetryAttempts = 3;
 const runtimeInfoConnectRetryDelayMs = 250;
 const runtimeInfoBackgroundRetryAttempts = 5;
 const runtimeInfoBackgroundRetryDelayMs = 1000;
+const runtimeInfoRecoveryProbeAttempts = 5;
+const runtimeInfoRecoveryProbeDelayMs = 300;
+const runtimeInfoRecoveryRebootAttempts = 2;
+const runtimeInfoRecoveryRebootDelayMs = 500;
 const autoReconnectSettingKey = 'autoReconnectLastDevice';
 const deviceDocumentScheme = 'pyboarddev-device';
 const pyboardDebugType = 'pyboarddev';
@@ -136,6 +140,44 @@ const readBoardRuntimeInfoWithRetries = async (
 
   const reason = lastError instanceof Error ? lastError.message : String(lastError);
   logChannelOutput(`Connected, but failed to read board runtime info for ${devicePath} after ${attempts} attempt(s): ${reason}`, false);
+  return undefined;
+};
+
+const readBoardRuntimeInfoWithRecovery = async (
+  board: Pyboard,
+  devicePath: string
+): Promise<BoardRuntimeInfo | undefined> => {
+  let lastError: unknown;
+
+  // Probe-first: this path repeatedly issues Ctrl-C and enters raw REPL without soft reboot.
+  for (let attempt = 1; attempt <= runtimeInfoRecoveryProbeAttempts; attempt += 1) {
+    try {
+      return await board.probeBoardRuntimeInfo(3500);
+    } catch (error) {
+      lastError = error;
+      if (attempt < runtimeInfoRecoveryProbeAttempts) {
+        await wait(runtimeInfoRecoveryProbeDelayMs);
+      }
+    }
+  }
+
+  // Soft-reboot fallback for boards that only recover after a reset.
+  for (let attempt = 1; attempt <= runtimeInfoRecoveryRebootAttempts; attempt += 1) {
+    try {
+      return await board.getBoardRuntimeInfo(9000);
+    } catch (error) {
+      lastError = error;
+      if (attempt < runtimeInfoRecoveryRebootAttempts) {
+        await wait(runtimeInfoRecoveryRebootDelayMs);
+      }
+    }
+  }
+
+  const reason = lastError instanceof Error ? lastError.message : String(lastError);
+  logChannelOutput(
+    `Recovery connect: failed to read board runtime info for ${devicePath} after ${runtimeInfoRecoveryProbeAttempts + runtimeInfoRecoveryRebootAttempts} attempt(s): ${reason}`,
+    false
+  );
   return undefined;
 };
 
@@ -331,7 +373,8 @@ export const isBoardExecuting = (deviceId: string): boolean => {
 const connectBoardForPath = async (
   devicePath: string,
   baudRate: number,
-  showMessages: boolean
+  showMessages: boolean,
+  recoveryMode: boolean = false
 ): Promise<ConnectedBoardState | undefined> => {
   const existingForPath = getConnectedBoardStateByPortPath(devicePath);
   if (existingForPath) {
@@ -346,12 +389,14 @@ const connectBoardForPath = async (
   const board = new Pyboard(devicePath, baudRate);
   await board.open();
 
-  const runtimeInfo = await readBoardRuntimeInfoWithRetries(
-    board,
-    devicePath,
-    runtimeInfoConnectRetryAttempts,
-    runtimeInfoConnectRetryDelayMs
-  );
+  const runtimeInfo = recoveryMode
+    ? await readBoardRuntimeInfoWithRecovery(board, devicePath)
+    : await readBoardRuntimeInfoWithRetries(
+      board,
+      devicePath,
+      runtimeInfoConnectRetryAttempts,
+      runtimeInfoConnectRetryDelayMs
+    );
 
   const deviceId = toDeviceId(devicePath, runtimeInfo);
   if (connectedBoards.has(deviceId)) {
@@ -594,6 +639,9 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
       arg === true
       || (typeof arg === 'object' && arg && 'forcePickPort' in arg && (arg as { forcePickPort?: unknown }).forcePickPort === true)
     );
+    const recoveryMode = Boolean(
+      typeof arg === 'object' && arg && 'recoveryMode' in arg && (arg as { recoveryMode?: unknown }).recoveryMode === true
+    );
     let devicePath = typeof arg === 'string'
       ? arg
       : typeof arg === 'object' && arg && 'devicePath' in arg && typeof (arg as { devicePath?: unknown }).devicePath === 'string'
@@ -625,10 +673,10 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
     }
 
     try {
-      await connectBoardForPath(devicePath, baudRate, true);
+      await connectBoardForPath(devicePath, baudRate, true, recoveryMode);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      const msg = `Failed to connect to board on ${devicePath} @ ${baudRate}. ${reason}`;
+      const msg = `Failed to connect to board on ${devicePath} @ ${baudRate}${recoveryMode ? ' (recovery mode)' : ''}. ${reason}`;
       vscode.window.showErrorMessage(msg);
       logChannelOutput(msg, true);
     }
@@ -636,6 +684,24 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
 
   context.subscriptions.push(command);
   notifyStateChanged();
+};
+
+export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext) => {
+  const command = vscode.commands.registerCommand('mekatrol.pyboarddev.connectboardesp32recovery', async (arg?: unknown) => {
+    const devicePath = typeof arg === 'string'
+      ? arg
+      : typeof arg === 'object' && arg && 'devicePath' in arg && typeof (arg as { devicePath?: unknown }).devicePath === 'string'
+        ? (arg as { devicePath: string }).devicePath
+        : undefined;
+
+    await vscode.commands.executeCommand('mekatrol.pyboarddev.connectboard', {
+      forcePickPort: !devicePath,
+      devicePath,
+      recoveryMode: true
+    });
+  });
+
+  context.subscriptions.push(command);
 };
 
 export const initDisconnectBoardCommand = (context: vscode.ExtensionContext) => {
