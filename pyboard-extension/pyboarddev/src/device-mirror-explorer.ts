@@ -1886,7 +1886,7 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
       element.iconPath = new vscode.ThemeIcon('device-mobile');
       if (data.side === 'device' && data.deviceId) {
         const connected = this.model.getConnectedDevice(data.deviceId);
-        element.description = connected ? this.toSerialPortName(connected.devicePath) : 'disconnected';
+        element.description = connected ? 'connected' : 'disconnected';
       } else {
         element.description = 'mirror';
       }
@@ -1960,7 +1960,7 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
       return deviceIds.map((deviceId) => {
         const connected = this.model.getConnectedDevice(deviceId);
         const label = element.data.side === 'device' && connected
-          ? `${deviceId} (${this.toSerialPortName(connected.devicePath)})`
+          ? this.toDeviceLeafLabel(connected)
           : deviceId;
         return new MirrorNode(
           {
@@ -1985,6 +1985,13 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
 
   private toSerialPortName(devicePath: string): string {
     return path.basename(devicePath) || devicePath;
+  }
+
+  private toDeviceLeafLabel(device: ReturnType<DeviceMirrorModel['getConnectedDevice']> extends infer T ? T : never): string {
+    const machine = device?.runtimeInfo?.machine?.trim() || 'Unknown device';
+    const port = this.toSerialPortName(device?.devicePath ?? '');
+    const deviceId = device?.deviceId ?? 'unknown';
+    return `${machine} [${port}: ${deviceId}]`;
   }
 }
 
