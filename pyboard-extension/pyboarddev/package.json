@@ -28,10 +28,6 @@
         "enablement": "!mekatrol.pyboarddev.boardConnected"
       },
       {
-        "command": "mekatrol.pyboarddev.selectpythontype",
-        "title": "Pyboard Dev: Select Python type"
-      },
-      {
         "command": "mekatrol.pyboarddev.autodetectdevices",
         "title": "Pyboard Dev: Auto detect serial devices",
         "enablement": "!mekatrol.pyboarddev.boardConnected"

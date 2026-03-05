@@ -4,7 +4,6 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConnectedBoard, onBoardConnectionStateChanged } from './commands/connect-board-command';
 import { logChannelOutput } from './output-channel';
-import { onPythonTypeChanged } from './status-bar';
 import { loadConfiguration } from './utils/configuration';
 import {
   createDeviceDirectory,
@@ -37,7 +36,6 @@ const commandCreateMirrorFolderId = 'mekatrol.pyboarddev.createmirrorfolder';
 const commandRenameMirrorPathId = 'mekatrol.pyboarddev.renamemirrorpath';
 const commandDeleteMirrorPathId = 'mekatrol.pyboarddev.deletemirrorpath';
 const remoteDocumentScheme = 'pyboarddev-remote';
-const selectedPythonTypeStateKey = 'selectedPythonType';
 const selectedSerialPortStateKey = 'selectedSerialPort';
 const selectedBaudRateStateKey = 'selectedBaudRate';
 const defaultBaudRate = 115200;
@@ -71,7 +69,6 @@ class DeviceMirrorModel {
   private workspaceFolder: vscode.WorkspaceFolder | undefined;
   private mirrorRootPath: string | undefined;
   private obfuscationSet: Set<string> = new Set();
-  private pythonType = 'MicroPython';
 
   private localEntries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
   private deviceEntries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
@@ -83,15 +80,6 @@ class DeviceMirrorModel {
     private readonly notifyRemoteFilesChanged?: (relativePaths: string[]) => Promise<void>,
     private readonly notifyRemotePathDeleted?: (relativePath: string, includeDescendants: boolean) => Promise<void>
   ) {}
-
-  private normalisePythonType(value: string | undefined): 'MicroPython' | 'CircuitPython' {
-    const lowered = (value ?? '').toLowerCase();
-    if (lowered === 'circuitpython') {
-      return 'CircuitPython';
-    }
-
-    return 'MicroPython';
-  }
 
   async refresh(fetchDevice: boolean = true): Promise<void> {
     this.workspaceFolder = vscode.workspace.workspaceFolders?.[0];
@@ -105,8 +93,6 @@ class DeviceMirrorModel {
 
     const config = await loadConfiguration();
     this.obfuscationSet = normaliseObfuscationSet(config.obfuscateOnPull ?? []);
-    const selectedPythonType = this.context.workspaceState.get<string>(selectedPythonTypeStateKey);
-    this.pythonType = this.normalisePythonType(selectedPythonType || config.pythonType);
     this.mirrorRootPath = await resolveMirrorRootPath(this.workspaceFolder, config.mirrorFolder);
 
     this.localEntries = await scanLocalMirrorEntries(this.mirrorRootPath);
@@ -1824,7 +1810,6 @@ export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext)
   context.subscriptions.push(new vscode.Disposable(() => clearInterval(remoteExplorerAutoRefreshTimer)));
 
   context.subscriptions.push(onBoardConnectionStateChanged(() => model.refresh()));
-  context.subscriptions.push(onPythonTypeChanged(() => model.refresh(false)));
   context.subscriptions.push(vscode.workspace.onDidSaveTextDocument((document) => model.handleDocumentSaved(document)));
   context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => void remoteFsProvider.updateWorkingCopyFromDocument(event.document)));
   context.subscriptions.push(vscode.workspace.onDidOpenTextDocument((document) => void remoteFsProvider.restoreWorkingCopyToDocument(document)));

@@ -1,10 +1,9 @@
 import * as vscode from 'vscode';
 import { getConnectedBoardRuntimeInfo, isBoardConnected, onBoardConnectionStateChanged, onConnectedBoardRuntimeInfoChanged } from './commands/connect-board-command';
-import { getActiveBaudRate, getActiveDevice, getActivePythonType, getStatusDisplayMode, onPythonTypeChanged, onStatusDataChanged } from './status-bar';
+import { getActiveBaudRate, getActiveDevice, getActivePythonType, getStatusDisplayMode, onStatusDataChanged } from './status-bar';
 
 const statusViewId = 'mekatrol.pyboarddev.statusView';
 const selectDeviceCommandId = 'mekatrol.pyboarddev.selectdevice';
-const selectPythonTypeCommandId = 'mekatrol.pyboarddev.selectpythontype';
 const toggleBoardConnectionCommandId = 'mekatrol.pyboarddev.toggleboardconnection';
 const softRebootCommandId = 'mekatrol.pyboarddev.softreboot';
 
@@ -42,7 +41,7 @@ class ExtensionStatusViewProvider implements vscode.TreeDataProvider<ExtensionSt
     const connected = isBoardConnected();
     const selectedDevice = getActiveDevice() ?? '<select device>';
     const selectedBaudRate = getActiveBaudRate();
-    const selectedPythonType = await getActivePythonType();
+    const selectedPythonType = getActivePythonType();
 
     const items: ExtensionStatusNode[] = [];
     items.push(new ExtensionStatusNode(`Device: ${selectedDevice} [${selectedBaudRate}]`, 'circuit-board'));
@@ -62,14 +61,6 @@ class ExtensionStatusViewProvider implements vscode.TreeDataProvider<ExtensionSt
         'circuit-board',
         connected ? 'Disconnect board first, then select serial port' : 'Click to select serial port',
         connected ? undefined : { command: selectDeviceCommandId, title: 'Select serial port' }
-      )
-    );
-    items.push(
-      new ExtensionStatusNode(
-        '[ Change Python Type ]',
-        'symbol-class',
-        'Click to select Python type',
-        { command: selectPythonTypeCommandId, title: 'Select Python type' }
       )
     );
     items.push(
@@ -106,7 +97,6 @@ export const initExtensionStatusView = (context: vscode.ExtensionContext): void 
   context.subscriptions.push(view);
   context.subscriptions.push(onBoardConnectionStateChanged(() => provider.refresh()));
   context.subscriptions.push(onConnectedBoardRuntimeInfoChanged(() => provider.refresh()));
-  context.subscriptions.push(onPythonTypeChanged(() => provider.refresh()));
   context.subscriptions.push(onStatusDataChanged(() => provider.refresh()));
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((event) => {

@@ -18,6 +18,7 @@ export interface PyboardIOEvent {
 }
 
 export interface BoardRuntimeInfo {
+  runtimeName: 'MicroPython' | 'CircuitPython';
   version: string;
   machine: string;
   banner: string;
@@ -447,9 +448,12 @@ export class Pyboard {
       throw new Error(`Incomplete runtime info response: ${stdout}`);
     }
 
-    const banner = `MicroPython ${version}; ${machine}`;
+    const loweredVersion = version.toLowerCase();
+    const runtimeName: 'MicroPython' | 'CircuitPython' = loweredVersion.includes('circuitpython') ? 'CircuitPython' : 'MicroPython';
+    const banner = `${runtimeName} ${version}; ${machine}`;
 
     return {
+      runtimeName,
       version,
       machine,
       banner
