@@ -278,7 +278,7 @@
         },
         "mekatrol.pyboarddev.statusDisplayMode": {
           "type": "string",
-          "default": "extensionView",
+          "default": "statusBar",
           "enum": [
             "statusBar",
             "extensionView"

@@ -43,12 +43,11 @@ class ExtensionStatusViewProvider implements vscode.TreeDataProvider<ExtensionSt
     const selectedBaudRate = getActiveBaudRate();
 
     const items: ExtensionStatusNode[] = [];
-    items.push(new ExtensionStatusNode(`Device: ${selectedDevice} [${selectedBaudRate}]`, 'circuit-board'));
     if (connected) {
       const runtimeInfo = getConnectedBoardRuntimeInfo();
       if (runtimeInfo) {
         items.push(new ExtensionStatusNode(`Runtime: ${runtimeInfo.runtimeName} ${runtimeInfo.version}`, 'info'));
-        items.push(new ExtensionStatusNode(`Device: ${runtimeInfo.machine}`, 'circuit-board'));
+        items.push(new ExtensionStatusNode(`Device: ${runtimeInfo.machine}`, 'info'));
       } else {
         items.push(new ExtensionStatusNode('Runtime: Reading board runtime info...', 'sync~spin'));
         items.push(new ExtensionStatusNode('Device: Reading board details...', 'sync~spin'));
@@ -57,15 +56,17 @@ class ExtensionStatusViewProvider implements vscode.TreeDataProvider<ExtensionSt
 
     items.push(
       new ExtensionStatusNode(
-        '[ Change Device ]',
+        connected
+          ? `Serial Port: ${selectedDevice} @ ${selectedBaudRate}`
+          : `Serial Port: ${selectedDevice} @ ${selectedBaudRate} | [ Change ]`,
         'circuit-board',
-        connected ? 'Disconnect board first, then select serial port' : 'Click to select serial port',
+        connected ? 'Disconnect board first, then change serial port' : 'Click to change serial port',
         connected ? undefined : { command: selectDeviceCommandId, title: 'Select serial port' }
       )
     );
     items.push(
       new ExtensionStatusNode(
-        connected ? '[ Board: Connected | Disconnect ]' : '[ Board: Disconnected | Connect ]',
+        connected ? 'Board: Connected | [Disconnect ]' : 'Board: Disconnected | [ Connect ]',
         connected ? 'debug-disconnect' : 'plug',
         connected ? 'Click to disconnect from board' : 'Click to connect to board',
         { command: toggleBoardConnectionCommandId, title: 'Toggle board connection' }
