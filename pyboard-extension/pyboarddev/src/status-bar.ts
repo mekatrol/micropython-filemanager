@@ -8,15 +8,12 @@ import {
 import { configurationFileName } from './utils/configuration';
 import { listSerialDevices } from './utils/serial-port';
 import { logChannelOutput } from './output-channel';
-import { getWorkspaceCacheValue, setWorkspaceCacheValue } from './utils/workspace-cache';
 
 const statusBarSelectCommunicationId = 'mekatrol.pyboarddev.selectdevice';
 const statusBarToggleBoardConnectionId = 'mekatrol.pyboarddev.toggleboardconnection';
 const statusBarSoftRebootId = 'mekatrol.pyboarddev.softreboot';
 const statusDisplayModeSettingKey = 'statusDisplayMode';
 const extensionStatusViewContextKey = 'mekatrol.pyboarddev.showExtensionStatusView';
-const selectedSerialPortStateKey = 'selectedSerialPort';
-const selectedBaudRateStateKey = 'selectedBaudRate';
 const defaultBaudRate = 115200;
 export type StatusDisplayMode = 'statusBar' | 'extensionView';
 const statusDataChangedEmitter = new vscode.EventEmitter<void>();
@@ -26,15 +23,8 @@ let deviceStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 let boardConnectionStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 let boardRuntimeStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 let softRebootStatusBarItem: vscode.StatusBarItem | undefined = undefined;
-let extensionContext: vscode.ExtensionContext | undefined = undefined;
-
-const readPersistentState = <T>(key: string): T | undefined => {
-  return getWorkspaceCacheValue<T>(key);
-};
 
 export const initStatusBar = async (context: vscode.ExtensionContext): Promise<void> => {
-  extensionContext = context;
-
   createDeviceNameStatusBarItem(context);
   createBoardConnectionStatusBarItem(context);
   createBoardRuntimeStatusBarItem(context);
@@ -163,16 +153,16 @@ const createSoftRebootStatusBarItem = (context: vscode.ExtensionContext) => {
 };
 
 export const getActiveDevice = (): string | undefined => {
-  const selectedFromState = readPersistentState<string>(selectedSerialPortStateKey);
-  if (selectedFromState && selectedFromState.length) {
-    return selectedFromState;
+  const active = getConnectedBoards()[0];
+  if (active?.devicePath && active.devicePath.length > 0) {
+    return active.devicePath;
   }
 
   return undefined;
 };
 
 export const getActiveBaudRate = (): number => {
-  return readPersistentState<number>(selectedBaudRateStateKey) ?? defaultBaudRate;
+  return getConnectedBoards()[0]?.baudRate ?? defaultBaudRate;
 };
 
 export const getActivePythonType = (): 'MicroPython' | 'CircuitPython' | 'Unknown' => {
@@ -231,15 +221,7 @@ const selectSerialDevice = async (): Promise<void> => {
     return;
   }
 
-  if (!extensionContext) {
-    const msg = 'Extension context not initialised. Unable to persist selected serial device.';
-    vscode.window.showErrorMessage(msg);
-    logChannelOutput(msg, true);
-    return;
-  }
-
-  await setWorkspaceCacheValue(selectedSerialPortStateKey, selected.label);
-  await setWorkspaceCacheValue(selectedBaudRateStateKey, getActiveBaudRate());
+  await vscode.commands.executeCommand('mekatrol.pyboarddev.connectboard', { devicePath: selected.label });
 
   const msg = `Selected serial device: ${selected.label}`;
   logChannelOutput(msg, true);

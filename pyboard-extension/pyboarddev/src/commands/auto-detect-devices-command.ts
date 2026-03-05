@@ -2,12 +2,9 @@ import * as vscode from 'vscode';
 import { logChannelOutput } from '../output-channel';
 import { listAllSerialPorts, PortInfo } from '../utils/serial-port';
 import { BoardRuntimeInfo, Pyboard } from '../utils/pyboard';
-import { getWorkspaceCacheValue, setWorkspaceCacheValue } from '../utils/workspace-cache';
 import { getConnectedBoardByPortPath } from './connect-board-command';
 
 const autoDetectDevicesCommandId = 'mekatrol.pyboarddev.autodetectdevices';
-const selectedSerialPortStateKey = 'selectedSerialPort';
-const selectedBaudRateStateKey = 'selectedBaudRate';
 const defaultBaudRate = 115200;
 
 interface DetectedDevice {
@@ -44,14 +41,6 @@ const detectDevice = async (port: PortInfo): Promise<DetectedDevice | undefined>
 const buildDeviceDetails = (device: DetectedDevice): string => {
   const parts = [device.port.manufacturer, `VID:${device.port.vendorId}`, `PID:${device.port.productId}`].filter(Boolean);
   return parts.length > 0 ? parts.join(' | ') : 'No USB metadata';
-};
-
-const readPersistentState = <T>(key: string): T | undefined => {
-  return getWorkspaceCacheValue<T>(key);
-};
-
-const writePersistentState = async <T>(key: string, value: T): Promise<void> => {
-  await setWorkspaceCacheValue(key, value);
 };
 
 export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): void => {
@@ -104,14 +93,13 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
       return;
     }
 
-    const activeDevice = readPersistentState<string>(selectedSerialPortStateKey);
     const items: DetectedDevicePickItem[] = detectedDevices.map((device) => ({
       label: device.port.path,
       description: device.runtimeInfo
         ? `${device.runtimeInfo.banner}${device.runtimeInfo.uniqueId ? ` | UID:${device.runtimeInfo.uniqueId}` : ''}`
         : 'MicroPython device',
       detail: `${buildDeviceDetails(device)}${device.runtimeInfo?.uniqueId ? ` | Unique ID: ${device.runtimeInfo.uniqueId}` : ''}`,
-      picked: device.port.path === activeDevice,
+      picked: false,
       device
     }));
 
@@ -125,10 +113,7 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
       return;
     }
 
-    await writePersistentState(selectedSerialPortStateKey, selected.device.port.path);
-    await writePersistentState(selectedBaudRateStateKey, defaultBaudRate);
-
-    await vscode.commands.executeCommand('mekatrol.pyboarddev.connectboard');
+    await vscode.commands.executeCommand('mekatrol.pyboarddev.connectboard', { devicePath: selected.device.port.path });
   });
 
   context.subscriptions.push(command);

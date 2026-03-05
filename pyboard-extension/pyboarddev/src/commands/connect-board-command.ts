@@ -4,8 +4,6 @@ import { BoardRuntimeInfo, Pyboard } from '../utils/pyboard';
 import { listSerialDevices } from '../utils/serial-port';
 import { getWorkspaceCacheValue, setWorkspaceCacheValue } from '../utils/workspace-cache';
 
-const selectedSerialPortStateKey = 'selectedSerialPort';
-const selectedBaudRateStateKey = 'selectedBaudRate';
 const reconnectLastSessionStateKey = 'reconnectLastSession';
 const reconnectDevicePathsStateKey = 'reconnectDevicePaths';
 const defaultBaudRate = 115200;
@@ -28,7 +26,6 @@ export interface ConnectedBoardSnapshot {
   executionCount: number;
 }
 
-let extensionContext: vscode.ExtensionContext | undefined;
 const connectedBoards = new Map<string, ConnectedBoardState>();
 const deviceIdByPortPath = new Map<string, string>();
 const boardConnectionStateEmitter = new vscode.EventEmitter<boolean>();
@@ -123,19 +120,7 @@ const getSnapshots = (): ConnectedBoardSnapshot[] => {
   return [...connectedBoards.values()].map(toSnapshot).sort((a, b) => a.deviceId.localeCompare(b.deviceId));
 };
 
-const getPreferredDevicePath = (): string | undefined => {
-  return readPersistentState<string>(selectedSerialPortStateKey);
-};
-
 const getActiveBoardState = (): ConnectedBoardState | undefined => {
-  const preferredPath = getPreferredDevicePath();
-  if (preferredPath) {
-    const byPreferredPath = getConnectedBoardStateByPortPath(preferredPath);
-    if (byPreferredPath) {
-      return byPreferredPath;
-    }
-  }
-
   return connectedBoards.values().next().value as ConnectedBoardState | undefined;
 };
 
@@ -513,7 +498,6 @@ const pickSerialPortToConnect = async (onlyUnconnected: boolean = false): Promis
   }
 
   const connectedPaths = new Set(getSnapshots().map((item) => item.devicePath));
-  const activePath = readPersistentState<string>(selectedSerialPortStateKey);
   const candidatePorts = onlyUnconnected
     ? ports.filter((port) => !connectedPaths.has(port.path))
     : ports;
@@ -531,7 +515,7 @@ const pickSerialPortToConnect = async (onlyUnconnected: boolean = false): Promis
     return {
       label: port.path,
       description: alreadyConnected ? `already connected${details ? ` | ${details}` : ''}` : details,
-      picked: port.path === activePath
+      picked: false
     };
   });
 
@@ -541,29 +525,25 @@ const pickSerialPortToConnect = async (onlyUnconnected: boolean = false): Promis
     ignoreFocusOut: true
   });
 
-  if (!selected) {
-    return undefined;
-  }
-
-  await writePersistentState(selectedSerialPortStateKey, selected.label);
-  return selected.label;
+  return selected?.label;
 };
 
 export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
-  extensionContext = context;
-
   const command = vscode.commands.registerCommand('mekatrol.pyboarddev.connectboard', async (arg?: unknown) => {
     const forcePickPort = Boolean(
       arg === true
       || (typeof arg === 'object' && arg && 'forcePickPort' in arg && (arg as { forcePickPort?: unknown }).forcePickPort === true)
     );
-    let devicePath = readPersistentState<string>(selectedSerialPortStateKey);
-    const baudRate = readPersistentState<number>(selectedBaudRateStateKey) ?? defaultBaudRate;
-    const selectedIsAlreadyConnected = Boolean(devicePath && getConnectedBoardByPortPath(devicePath));
+    let devicePath = typeof arg === 'string'
+      ? arg
+      : typeof arg === 'object' && arg && 'devicePath' in arg && typeof (arg as { devicePath?: unknown }).devicePath === 'string'
+        ? (arg as { devicePath: string }).devicePath
+        : undefined;
+    const baudRate = defaultBaudRate;
 
-    if (forcePickPort || !devicePath || selectedIsAlreadyConnected) {
+    if (forcePickPort || !devicePath) {
       try {
-        devicePath = await pickSerialPortToConnect(forcePickPort || selectedIsAlreadyConnected);
+        devicePath = await pickSerialPortToConnect(forcePickPort);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         const msg = `Unable to list serial ports. ${reason}`;
@@ -599,8 +579,6 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
 };
 
 export const initDisconnectBoardCommand = (context: vscode.ExtensionContext) => {
-  extensionContext = context;
-
   const command = vscode.commands.registerCommand('mekatrol.pyboarddev.disconnectboard', async (arg?: unknown) => {
     const targetDeviceId = typeof arg === 'string'
       ? arg
@@ -619,8 +597,6 @@ export const initDisconnectBoardCommand = (context: vscode.ExtensionContext) => 
 };
 
 export const initToggleBoardConnectionCommand = (context: vscode.ExtensionContext) => {
-  extensionContext = context;
-
   const command = vscode.commands.registerCommand('mekatrol.pyboarddev.toggleboardconnection', async () => {
     if (isBoardConnected()) {
       const action = await vscode.window.showQuickPick(
@@ -665,8 +641,6 @@ export const initToggleBoardConnectionCommand = (context: vscode.ExtensionContex
 };
 
 export const tryReconnectBoardOnStartup = async (context: vscode.ExtensionContext): Promise<void> => {
-  extensionContext = context;
-
   const autoReconnectEnabled = vscode.workspace
     .getConfiguration('mekatrol.pyboarddev')
     .get<boolean>('autoReconnectLastDevice', false);
@@ -681,7 +655,7 @@ export const tryReconnectBoardOnStartup = async (context: vscode.ExtensionContex
   }
 
   const reconnectDevicePaths = readReconnectDevicePaths();
-  const baudRate = readPersistentState<number>(selectedBaudRateStateKey) ?? defaultBaudRate;
+  const baudRate = defaultBaudRate;
 
   if (reconnectDevicePaths.length === 0) {
     await vscode.commands.executeCommand('mekatrol.pyboarddev.connectboard');
@@ -703,8 +677,6 @@ export const tryReconnectBoardOnStartup = async (context: vscode.ExtensionContex
 };
 
 export const initSetAutoReconnectCommand = (context: vscode.ExtensionContext) => {
-  extensionContext = context;
-
   const command = vscode.commands.registerCommand('mekatrol.pyboarddev.setautoreconnect', async () => {
     const configuration = vscode.workspace.getConfiguration('mekatrol.pyboarddev');
     const currentValue = configuration.get<boolean>(autoReconnectSettingKey, false);
@@ -743,8 +715,6 @@ export const initSetAutoReconnectCommand = (context: vscode.ExtensionContext) =>
 };
 
 export const initSoftRebootBoardCommand = (context: vscode.ExtensionContext) => {
-  extensionContext = context;
-
   const command = vscode.commands.registerCommand('mekatrol.pyboarddev.softreboot', async (arg?: unknown) => {
     const targetDeviceId = typeof arg === 'string'
       ? arg
