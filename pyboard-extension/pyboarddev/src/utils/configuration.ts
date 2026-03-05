@@ -438,6 +438,29 @@ export const updateDeviceSyncExclusion = async (
   return updated;
 };
 
+export const updateDeviceSyncExcludedPaths = async (
+  deviceId: string,
+  relativePaths: readonly string[]
+): Promise<PyboardDevConfiguration> => {
+  const configuration = await loadConfiguration();
+  const nextDevices = cloneDevices(configuration.devices ?? {});
+  const nextDeviceConfig = nextDevices[deviceId] ?? new DeviceConfiguration();
+  nextDeviceConfig.setSyncExcludedPaths(relativePaths);
+
+  if (nextDeviceConfig.isEmpty()) {
+    delete nextDevices[deviceId];
+  } else {
+    nextDevices[deviceId] = nextDeviceConfig;
+  }
+
+  const updated: PyboardDevConfiguration = {
+    ...configuration,
+    devices: pruneEmptyDevices(nextDevices)
+  };
+  await saveConfiguration(updated);
+  return updated;
+};
+
 export const createDefaultConfiguration = async (): Promise<[PyboardDevConfigurationResult, string?]> => {
   let configuration: PyboardDevConfigurationWithMeta = Object.assign(
     {

@@ -1,4 +1,5 @@
 import { Buffer } from 'buffer';
+import { createHash } from 'crypto';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -10,6 +11,7 @@ import {
   getDeviceSyncExcludedPaths,
   loadConfiguration,
   updateDeviceAlias,
+  updateDeviceSyncExcludedPaths,
   updateDeviceHostFolderMapping,
   updateDeviceSyncExclusion
 } from './utils/configuration';
@@ -58,6 +60,7 @@ const hasHostMirrorChildFoldersContextKey = 'mekatrol.pyboarddev.hasHostMirrorCh
 const hasLinkedHostMappingsContextKey = 'mekatrol.pyboarddev.hasLinkedHostMappings';
 
 const obfuscatedPlaceholder = '# pyboarddev: obfuscated on pull\n';
+const obfuscatedPlaceholderSha1 = createHash('sha1').update(Buffer.from(obfuscatedPlaceholder, 'utf8')).digest('hex');
 
 type NodeSide = 'device' | 'local';
 
@@ -69,6 +72,24 @@ interface NodeData {
   isDeviceIdNode?: boolean;
   isRoot?: boolean;
   isIndicator?: boolean;
+}
+
+type SyncAction = 'create' | 'modify' | 'delete';
+
+interface SyncOperation {
+  id: string;
+  action: SyncAction;
+  relativePath: string;
+  isDirectory: boolean;
+  excluded: boolean;
+}
+
+type SyncOperationRunStatus = 'pending' | 'in_progress' | 'success' | 'skipped' | 'error';
+
+interface SyncOperationsDialog {
+  selectedIds: Set<string>;
+  setStatus: (operationId: string, status: SyncOperationRunStatus, errorText?: string) => void;
+  finish: (summary: string) => Promise<void>;
 }
 
 class MirrorNode extends vscode.TreeItem {
@@ -306,70 +327,177 @@ class DeviceMirrorModel {
     }
 
     const deviceEntries = await listDeviceEntries(board);
-    const excludedPaths = this.getDeviceSyncExclusionSet(this.activeDeviceId);
-    const updatedDeviceFiles: string[] = [];
-    const desiredDevicePaths = new Set(deviceEntries.map((entry) => toRelativePath(entry.relativePath)));
-
-    // Remove local mirror entries that no longer exist on the device.
-    const existingLocalEntries = await scanLocalMirrorEntries(this.mirrorRootPath);
-    const staleLocalEntries = existingLocalEntries
-      .filter((entry) => {
-        if (entry.relativePath.length === 0 || desiredDevicePaths.has(entry.relativePath)) {
-          return false;
-        }
-        if (excludedPaths.has(entry.relativePath)) {
-          return false;
-        }
-        if (entry.isDirectory && this.hasExcludedDescendant(entry.relativePath, this.activeDeviceId)) {
-          return false;
-        }
-        return true;
-      })
-      .sort((a, b) => b.relativePath.length - a.relativePath.length);
-    for (const staleEntry of staleLocalEntries) {
-      const stalePath = path.join(this.mirrorRootPath, staleEntry.relativePath);
-      await fs.rm(stalePath, { recursive: true, force: true });
+    if (this.activeDeviceId) {
+      await this.pruneMissingDeviceSyncExclusions(this.activeDeviceId, deviceEntries);
     }
+    const excludedPaths = this.getDeviceSyncExclusionSet(this.activeDeviceId);
+    const localEntries = await scanLocalMirrorEntries(this.mirrorRootPath);
+    const deviceEntryMap = new Map(deviceEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
+    const localEntryMap = new Map(localEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
+    const protectedLocalPaths = this.getProtectedSyncPaths(localEntries, this.activeDeviceId);
+    const desiredDevicePaths = new Set(deviceEntries.map((entry) => toRelativePath(entry.relativePath)));
+    const syncOperations: SyncOperation[] = [];
 
     for (const entry of deviceEntries) {
-      if (entry.relativePath.length === 0) {
+      const relativePath = toRelativePath(entry.relativePath);
+      if (!relativePath) {
         continue;
       }
-      if (!entry.isDirectory && excludedPaths.has(entry.relativePath)) {
+      const isExcluded = !entry.isDirectory && excludedPaths.has(relativePath);
+
+      const localEntry = localEntryMap.get(relativePath);
+      if (!localEntry) {
+        const operation: Omit<SyncOperation, 'id'> = {
+          action: 'create',
+          relativePath,
+          isDirectory: entry.isDirectory,
+          excluded: isExcluded
+        };
+        syncOperations.push({ ...operation, id: this.toSyncOperationId(operation) });
         continue;
       }
 
-      const localPath = path.join(this.mirrorRootPath, entry.relativePath);
+      if (localEntry.isDirectory !== entry.isDirectory) {
+        const operation: Omit<SyncOperation, 'id'> = {
+          action: 'modify',
+          relativePath,
+          isDirectory: entry.isDirectory,
+          excluded: isExcluded
+        };
+        syncOperations.push({ ...operation, id: this.toSyncOperationId(operation) });
+        continue;
+      }
+
       if (entry.isDirectory) {
+        continue;
+      }
+
+      const needsWrite = this.obfuscationSet.has(relativePath)
+        ? localEntry.sha1 !== obfuscatedPlaceholderSha1
+        : (!entry.sha1 || !localEntry.sha1 || entry.sha1 !== localEntry.sha1);
+      if (needsWrite) {
+        const operation: Omit<SyncOperation, 'id'> = {
+          action: 'modify',
+          relativePath,
+          isDirectory: false,
+          excluded: isExcluded
+        };
+        syncOperations.push({ ...operation, id: this.toSyncOperationId(operation) });
+      }
+    }
+
+    for (const entry of localEntries) {
+      const relativePath = toRelativePath(entry.relativePath);
+      if (!relativePath) {
+        continue;
+      }
+      if (desiredDevicePaths.has(relativePath)) {
+        continue;
+      }
+      if (protectedLocalPaths.has(relativePath)) {
+        if (!entry.isDirectory && excludedPaths.has(relativePath)) {
+          const operation: Omit<SyncOperation, 'id'> = {
+            action: 'delete',
+            relativePath,
+            isDirectory: false,
+            excluded: true
+          };
+          syncOperations.push({ ...operation, id: this.toSyncOperationId(operation) });
+        }
+        continue;
+      }
+      const operation: Omit<SyncOperation, 'id'> = {
+        action: 'delete',
+        relativePath,
+        isDirectory: entry.isDirectory,
+        excluded: false
+      };
+      syncOperations.push({ ...operation, id: this.toSyncOperationId(operation) });
+    }
+
+    const syncDialog = await this.pickSyncOperations('Sync From Device Preview', syncOperations);
+    if (!syncDialog) {
+      vscode.window.showInformationMessage('Sync from device cancelled.');
+      return;
+    }
+
+    const updatedDeviceFiles: string[] = [];
+    const selectedOperations = syncOperations.filter((operation) => syncDialog.selectedIds.has(operation.id));
+    const unselectedOperations = syncOperations.filter((operation) => !syncDialog.selectedIds.has(operation.id));
+    for (const operation of unselectedOperations) {
+      syncDialog.setStatus(operation.id, 'skipped');
+    }
+    let failedCount = 0;
+    const selectedDeletes = selectedOperations
+      .filter((operation) => operation.action === 'delete')
+      .sort((a, b) => b.relativePath.length - a.relativePath.length);
+    for (const operation of selectedDeletes) {
+      syncDialog.setStatus(operation.id, 'in_progress');
+      try {
+        await fs.rm(path.join(this.mirrorRootPath, operation.relativePath), { recursive: true, force: true });
+        syncDialog.setStatus(operation.id, 'success');
+      } catch (error) {
+        failedCount += 1;
+        syncDialog.setStatus(operation.id, 'error', this.toErrorMessage(error));
+      }
+    }
+
+    const selectedDirCreates = selectedOperations
+      .filter((operation) => operation.action !== 'delete' && operation.isDirectory)
+      .sort((a, b) => a.relativePath.length - b.relativePath.length);
+    for (const operation of selectedDirCreates) {
+      syncDialog.setStatus(operation.id, 'in_progress');
+      try {
+        const localPath = path.join(this.mirrorRootPath, operation.relativePath);
         try {
           const stat = await fs.stat(localPath);
           if (!stat.isDirectory()) {
             await fs.rm(localPath, { recursive: true, force: true });
           }
         } catch {
-          // Path does not exist; create it below.
+          // Path does not exist; create below.
         }
         await fs.mkdir(localPath, { recursive: true });
-        continue;
+        syncDialog.setStatus(operation.id, 'success');
+      } catch (error) {
+        failedCount += 1;
+        syncDialog.setStatus(operation.id, 'error', this.toErrorMessage(error));
       }
+    }
 
+    const selectedFileWrites = selectedOperations
+      .filter((operation) => !operation.isDirectory && operation.action !== 'delete');
+    for (const operation of selectedFileWrites) {
+      syncDialog.setStatus(operation.id, 'in_progress');
       try {
-        const stat = await fs.stat(localPath);
-        if (stat.isDirectory()) {
-          await fs.rm(localPath, { recursive: true, force: true });
+        const entry = deviceEntryMap.get(operation.relativePath);
+        if (!entry || entry.isDirectory) {
+          syncDialog.setStatus(operation.id, 'skipped');
+          continue;
         }
-      } catch {
-        // Path does not exist; create parent below.
+        const localPath = path.join(this.mirrorRootPath, operation.relativePath);
+        try {
+          const stat = await fs.stat(localPath);
+          if (stat.isDirectory()) {
+            await fs.rm(localPath, { recursive: true, force: true });
+          }
+        } catch {
+          // Path does not exist; create parent below.
+        }
+        await fs.mkdir(path.dirname(localPath), { recursive: true });
+        if (this.obfuscationSet.has(operation.relativePath)) {
+          await fs.writeFile(localPath, obfuscatedPlaceholder, 'utf8');
+          syncDialog.setStatus(operation.id, 'success');
+          continue;
+        }
+        const content = await readDeviceFile(board, operation.relativePath);
+        await fs.writeFile(localPath, content);
+        updatedDeviceFiles.push(operation.relativePath);
+        syncDialog.setStatus(operation.id, 'success');
+      } catch (error) {
+        failedCount += 1;
+        syncDialog.setStatus(operation.id, 'error', this.toErrorMessage(error));
       }
-      await fs.mkdir(path.dirname(localPath), { recursive: true });
-      if (this.obfuscationSet.has(entry.relativePath)) {
-        await fs.writeFile(localPath, obfuscatedPlaceholder, 'utf8');
-        continue;
-      }
-
-      const content = await readDeviceFile(board, entry.relativePath);
-      await fs.writeFile(localPath, content);
-      updatedDeviceFiles.push(entry.relativePath);
     }
 
     this.deviceEntries = deviceEntries;
@@ -380,7 +508,10 @@ class DeviceMirrorModel {
       await this.notifyRemoteFilesChanged(updatedDeviceFiles);
     }
 
-    const msg = 'Sync from device complete.';
+    const msg = failedCount > 0
+      ? `Sync from device finished with ${failedCount} error(s).`
+      : 'Sync from device complete.';
+    await syncDialog.finish(msg);
     vscode.window.showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
@@ -403,32 +534,160 @@ class DeviceMirrorModel {
     }
 
     const localEntries = await scanLocalMirrorEntries(this.mirrorRootPath);
+    const deviceEntries = await listDeviceEntries(board);
+    if (this.activeDeviceId) {
+      await this.pruneMissingDeviceSyncExclusions(this.activeDeviceId, deviceEntries);
+    }
     const excludedPaths = this.getDeviceSyncExclusionSet(this.activeDeviceId);
-    const localDirectories = localEntries
-      .filter((entry) => entry.isDirectory && entry.relativePath.length > 0)
+    const localEntryMap = new Map(localEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
+    const deviceEntryMap = new Map(deviceEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
+    const protectedDevicePaths = this.getProtectedSyncPaths(deviceEntries, this.activeDeviceId);
+    const desiredLocalPaths = new Set(localEntries.map((entry) => toRelativePath(entry.relativePath)));
+    const syncOperations: SyncOperation[] = [];
+
+    for (const entry of localEntries) {
+      const relativePath = toRelativePath(entry.relativePath);
+      if (!relativePath) {
+        continue;
+      }
+      const isExcluded = !entry.isDirectory && excludedPaths.has(relativePath);
+      if (!entry.isDirectory && this.obfuscationSet.has(relativePath) && !isExcluded) {
+        continue;
+      }
+
+      const deviceEntry = deviceEntryMap.get(relativePath);
+      if (!deviceEntry) {
+        const operation: Omit<SyncOperation, 'id'> = {
+          action: 'create',
+          relativePath,
+          isDirectory: entry.isDirectory,
+          excluded: isExcluded
+        };
+        syncOperations.push({ ...operation, id: this.toSyncOperationId(operation) });
+        continue;
+      }
+
+      if (deviceEntry.isDirectory !== entry.isDirectory) {
+        const operation: Omit<SyncOperation, 'id'> = {
+          action: 'modify',
+          relativePath,
+          isDirectory: entry.isDirectory,
+          excluded: isExcluded
+        };
+        syncOperations.push({ ...operation, id: this.toSyncOperationId(operation) });
+        continue;
+      }
+
+      if (entry.isDirectory) {
+        continue;
+      }
+
+      const needsWrite = !deviceEntry.sha1 || !entry.sha1 || deviceEntry.sha1 !== entry.sha1;
+      if (needsWrite) {
+        const operation: Omit<SyncOperation, 'id'> = {
+          action: 'modify',
+          relativePath,
+          isDirectory: false,
+          excluded: isExcluded
+        };
+        syncOperations.push({ ...operation, id: this.toSyncOperationId(operation) });
+      }
+    }
+
+    for (const entry of deviceEntries) {
+      const relativePath = toRelativePath(entry.relativePath);
+      if (!relativePath) {
+        continue;
+      }
+      if (desiredLocalPaths.has(relativePath)) {
+        continue;
+      }
+      if (protectedDevicePaths.has(relativePath)) {
+        if (!entry.isDirectory && excludedPaths.has(relativePath)) {
+          const operation: Omit<SyncOperation, 'id'> = {
+            action: 'delete',
+            relativePath,
+            isDirectory: false,
+            excluded: true
+          };
+          syncOperations.push({ ...operation, id: this.toSyncOperationId(operation) });
+        }
+        continue;
+      }
+      const operation: Omit<SyncOperation, 'id'> = {
+        action: 'delete',
+        relativePath,
+        isDirectory: entry.isDirectory,
+        excluded: false
+      };
+      syncOperations.push({ ...operation, id: this.toSyncOperationId(operation) });
+    }
+
+    const syncDialog = await this.pickSyncOperations('Sync To Device Preview', syncOperations);
+    if (!syncDialog) {
+      vscode.window.showInformationMessage('Sync to device cancelled.');
+      return;
+    }
+
+    const selectedOperations = syncOperations.filter((operation) => syncDialog.selectedIds.has(operation.id));
+    const unselectedOperations = syncOperations.filter((operation) => !syncDialog.selectedIds.has(operation.id));
+    for (const operation of unselectedOperations) {
+      syncDialog.setStatus(operation.id, 'skipped');
+    }
+    let failedCount = 0;
+    const staleDeviceEntries = selectedOperations
+      .filter((operation) => operation.action === 'delete')
+      .sort((a, b) => b.relativePath.length - a.relativePath.length);
+    for (const operation of staleDeviceEntries) {
+      syncDialog.setStatus(operation.id, 'in_progress');
+      try {
+        await deleteDevicePath(board, operation.relativePath);
+        if (this.activeDeviceId) {
+          await this.removeSyncExclusionsForDeletedDevicePath(this.activeDeviceId, operation.relativePath, operation.isDirectory);
+        }
+        if (this.notifyRemotePathDeleted) {
+          await this.notifyRemotePathDeleted(operation.relativePath, operation.isDirectory);
+        }
+        syncDialog.setStatus(operation.id, 'success');
+      } catch (error) {
+        failedCount += 1;
+        syncDialog.setStatus(operation.id, 'error', this.toErrorMessage(error));
+      }
+    }
+
+    const localDirectories = selectedOperations
+      .filter((operation) => operation.action !== 'delete' && operation.isDirectory)
       .sort((a, b) => a.relativePath.split('/').length - b.relativePath.split('/').length);
     for (const directory of localDirectories) {
-      await createDeviceDirectory(board, directory.relativePath);
+      syncDialog.setStatus(directory.id, 'in_progress');
+      try {
+        await createDeviceDirectory(board, directory.relativePath);
+        syncDialog.setStatus(directory.id, 'success');
+      } catch (error) {
+        failedCount += 1;
+        syncDialog.setStatus(directory.id, 'error', this.toErrorMessage(error));
+      }
     }
 
     const writtenDeviceFiles: string[] = [];
-    for (const entry of localEntries) {
-      if (entry.isDirectory || entry.relativePath.length === 0) {
-        continue;
+    const fileOperations = selectedOperations.filter((operation) => !operation.isDirectory && operation.action !== 'delete');
+    for (const operation of fileOperations) {
+      syncDialog.setStatus(operation.id, 'in_progress');
+      try {
+        const localEntry = localEntryMap.get(operation.relativePath);
+        if (!localEntry || localEntry.isDirectory) {
+          syncDialog.setStatus(operation.id, 'skipped');
+          continue;
+        }
+        const localPath = path.join(this.mirrorRootPath, operation.relativePath);
+        const content = await fs.readFile(localPath);
+        await writeDeviceFile(board, operation.relativePath, Buffer.from(content));
+        writtenDeviceFiles.push(operation.relativePath);
+        syncDialog.setStatus(operation.id, 'success');
+      } catch (error) {
+        failedCount += 1;
+        syncDialog.setStatus(operation.id, 'error', this.toErrorMessage(error));
       }
-      if (excludedPaths.has(entry.relativePath)) {
-        continue;
-      }
-
-      if (this.obfuscationSet.has(entry.relativePath)) {
-        logChannelOutput(`Skipping obfuscated file during sync to device: ${entry.relativePath}`, false);
-        continue;
-      }
-
-      const localPath = path.join(this.mirrorRootPath, entry.relativePath);
-      const content = await fs.readFile(localPath);
-      await writeDeviceFile(board, entry.relativePath, Buffer.from(content));
-      writtenDeviceFiles.push(entry.relativePath);
     }
 
     this.localEntries = localEntries;
@@ -439,7 +698,10 @@ class DeviceMirrorModel {
       await this.notifyRemoteFilesChanged(writtenDeviceFiles);
     }
 
-    const msg = 'Sync to device complete.';
+    const msg = failedCount > 0
+      ? `Sync to device finished with ${failedCount} error(s).`
+      : 'Sync to device complete.';
+    await syncDialog.finish(msg);
     vscode.window.showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
@@ -447,36 +709,44 @@ class DeviceMirrorModel {
   async syncNodeFromDevice(node?: MirrorNode): Promise<void> {
     const targetNode = this.resolveTargetNode(node);
     await this.ensureActiveDevice(targetNode);
+    if (!targetNode || targetNode.data.isRoot || targetNode.data.isDeviceIdNode) {
+      await this.syncFromDevice();
+      return;
+    }
     if (this.isNodeExcludedFromSync(targetNode)) {
       const excludedPath = targetNode ? toRelativePath(targetNode.data.relativePath) : '';
       vscode.window.showInformationMessage(`File is excluded from sync: /${excludedPath}`);
       return;
     }
     if (targetNode?.data.side === 'local') {
-      await this.pullFromDevicePath(targetNode.data.relativePath, targetNode.data.isDirectory || targetNode.data.isRoot === true);
+      await this.pullFromDevicePath(targetNode.data.relativePath, targetNode.data.isDirectory);
       return;
     }
 
     const relativePath = targetNode?.data.relativePath ?? '';
-    const isDirectory = targetNode ? targetNode.data.isDirectory || targetNode.data.isRoot === true : true;
+    const isDirectory = targetNode ? targetNode.data.isDirectory : true;
     await this.pullFromDevicePath(relativePath, isDirectory);
   }
 
   async syncNodeToDevice(node?: MirrorNode): Promise<void> {
     const targetNode = this.resolveTargetNode(node);
     await this.ensureActiveDevice(targetNode);
+    if (!targetNode || targetNode.data.isRoot || targetNode.data.isDeviceIdNode) {
+      await this.syncToDevice();
+      return;
+    }
     if (this.isNodeExcludedFromSync(targetNode)) {
       const excludedPath = targetNode ? toRelativePath(targetNode.data.relativePath) : '';
       vscode.window.showInformationMessage(`File is excluded from sync: /${excludedPath}`);
       return;
     }
     if (targetNode?.data.side === 'device') {
-      await this.pushToDevicePath(targetNode.data.relativePath, targetNode.data.isDirectory || targetNode.data.isRoot === true);
+      await this.pushToDevicePath(targetNode.data.relativePath, targetNode.data.isDirectory);
       return;
     }
 
     const relativePath = targetNode?.data.relativePath ?? '';
-    const isDirectory = targetNode ? targetNode.data.isDirectory || targetNode.data.isRoot === true : true;
+    const isDirectory = targetNode ? targetNode.data.isDirectory : true;
     await this.pushToDevicePath(relativePath, isDirectory);
   }
 
@@ -816,6 +1086,9 @@ class DeviceMirrorModel {
     }
 
     await deleteDevicePath(board, targetPath);
+    if (this.activeDeviceId) {
+      await this.removeSyncExclusionsForDeletedDevicePath(this.activeDeviceId, targetPath, node.data.isDirectory);
+    }
     if (this.notifyRemotePathDeleted) {
       await this.notifyRemotePathDeleted(targetPath, node.data.isDirectory);
     }
@@ -846,6 +1119,336 @@ class DeviceMirrorModel {
     return entryPath.startsWith(`${targetPath}/`);
   }
 
+  private toSyncOperationId(operation: Omit<SyncOperation, 'id'>): string {
+    const type = operation.isDirectory ? 'dir' : 'file';
+    const excluded = operation.excluded ? 'excluded' : 'included';
+    return `${operation.action}:${type}:${excluded}:${operation.relativePath}`;
+  }
+
+  private async pickSyncOperations(
+    title: string,
+    operations: SyncOperation[]
+  ): Promise<SyncOperationsDialog | undefined> {
+    const rows = operations
+      .sort((a, b) => {
+        if (a.relativePath === b.relativePath) {
+          return a.action.localeCompare(b.action);
+        }
+        return a.relativePath.localeCompare(b.relativePath);
+      })
+      .map((operation) => ({
+        id: operation.id,
+        action: operation.action,
+        actionIcon: operation.action === 'create' ? '+' : (operation.action === 'modify' ? '~' : '-'),
+        relativePath: operation.relativePath,
+        isDirectory: operation.isDirectory,
+        excluded: operation.excluded,
+        checked: !operation.excluded
+      }));
+
+    const panel = vscode.window.createWebviewPanel(
+      'pyboarddev.syncPreview',
+      title,
+      { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
+      { enableScripts: true }
+    );
+
+    const rowsJson = JSON.stringify(rows);
+    const titleText = this.escapeHtml(title);
+    panel.webview.html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${titleText}</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin: 0; font-family: var(--vscode-font-family); color: var(--vscode-foreground); }
+    .wrap { max-width: 1100px; margin: 28px auto; padding: 0 20px 20px; }
+    h2 { margin: 0 0 10px; font-size: 16px; }
+    .hint { margin: 0 0 12px; opacity: 0.9; }
+    table { width: 100%; border-collapse: collapse; border: 1px solid var(--vscode-editorWidget-border); table-layout: fixed; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid var(--vscode-editorWidget-border); vertical-align: middle; }
+    th { text-align: left; font-weight: 600; }
+    th.check, td.check { width: 48px; text-align: center; }
+    th.action, td.action { width: 90px; text-align: center; }
+    th.status, td.status { width: 120px; }
+    th.error, td.error { width: 280px; }
+    td.path { font-family: var(--vscode-editor-font-family); font-size: 12px; }
+    td.note { color: var(--vscode-descriptionForeground); }
+    td.error { color: var(--vscode-errorForeground); }
+    .status-pending { color: var(--vscode-descriptionForeground); }
+    .status-in_progress { color: var(--vscode-charts-blue); }
+    .status-success { color: var(--vscode-charts-green); }
+    .status-skipped { color: var(--vscode-descriptionForeground); }
+    .status-error { color: var(--vscode-errorForeground); }
+    .action-create { color: var(--vscode-charts-green); font-weight: 700; }
+    .action-modify { color: var(--vscode-charts-blue); font-weight: 700; }
+    .action-delete { color: var(--vscode-charts-red); font-weight: 700; }
+    .empty { padding: 20px; text-align: center; color: var(--vscode-descriptionForeground); }
+    .buttons { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }
+    button {
+      border: 1px solid var(--vscode-button-border, transparent);
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      padding: 6px 14px;
+      cursor: pointer;
+    }
+    button.secondary {
+      background: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
+    }
+    input[type="checkbox"] { transform: scale(1.1); cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h2>${titleText}</h2>
+    <p class="hint">Unchecking a folder unchecks all children. Checking a folder does not auto-check children.</p>
+    <table>
+      <thead>
+        <tr>
+          <th class="check"></th>
+          <th class="action">Action</th>
+          <th>Path</th>
+          <th></th>
+          <th class="status">Status</th>
+          <th class="error"></th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="buttons">
+      <button id="cancel" class="secondary">Cancel</button>
+      <button id="continue">Continue</button>
+      <button id="close" class="secondary" style="display:none">Close</button>
+    </div>
+    <p id="summary" class="hint" style="display:none; margin-top:12px;"></p>
+  </div>
+  <script>
+    const vscode = acquireVsCodeApi();
+    const rows = ${rowsJson};
+    const tbody = document.getElementById('rows');
+    const toClass = (action) => action === 'create' ? 'action-create' : (action === 'modify' ? 'action-modify' : 'action-delete');
+    const noteText = 'this file is configured to be excluded by default';
+
+    if (rows.length === 0) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 6;
+      td.className = 'empty';
+      td.textContent = 'Nothing needs synchronisation';
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    } else {
+      for (const row of rows) {
+        const tr = document.createElement('tr');
+        tr.dataset.path = row.relativePath;
+
+        const checkTd = document.createElement('td');
+        checkTd.className = 'check';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = !!row.checked;
+        checkbox.dataset.id = row.id;
+        checkbox.dataset.path = row.relativePath;
+        checkbox.dataset.dir = row.isDirectory ? 'true' : 'false';
+        checkTd.appendChild(checkbox);
+        tr.appendChild(checkTd);
+
+        const actionTd = document.createElement('td');
+        actionTd.className = 'action';
+        const actionSpan = document.createElement('span');
+        actionSpan.className = toClass(row.action);
+        actionSpan.textContent = row.actionIcon;
+        actionSpan.title = row.action;
+        actionTd.appendChild(actionSpan);
+        tr.appendChild(actionTd);
+
+        const pathTd = document.createElement('td');
+        pathTd.className = 'path';
+        pathTd.textContent = row.relativePath;
+        tr.appendChild(pathTd);
+
+        const noteTd = document.createElement('td');
+        noteTd.className = 'note';
+        noteTd.textContent = row.excluded ? noteText : '';
+        tr.appendChild(noteTd);
+
+        const statusTd = document.createElement('td');
+        statusTd.className = 'status status-pending';
+        statusTd.textContent = row.checked ? 'pending' : 'skipped';
+        statusTd.dataset.status = 'pending';
+        statusTd.dataset.id = row.id;
+        tr.appendChild(statusTd);
+
+        const errorTd = document.createElement('td');
+        errorTd.className = 'error';
+        errorTd.textContent = '';
+        errorTd.dataset.id = row.id;
+        tr.appendChild(errorTd);
+
+        tbody.appendChild(tr);
+      }
+    }
+
+    const isDescendant = (child, parent) => parent && child.startsWith(parent + '/');
+    const checkboxes = Array.from(document.querySelectorAll('input[type="checkbox"][data-id]'));
+    for (const checkbox of checkboxes) {
+      checkbox.addEventListener('change', () => {
+        if (checkbox.dataset.dir === 'true' && checkbox.checked === false) {
+          const parentPath = checkbox.dataset.path || '';
+          for (const other of checkboxes) {
+            if (other === checkbox) continue;
+            const childPath = other.dataset.path || '';
+            if (isDescendant(childPath, parentPath)) {
+              other.checked = false;
+            }
+          }
+        }
+        const id = checkbox.dataset.id;
+        const statusCell = document.querySelector('td.status[data-id="' + id + '"]');
+        if (statusCell) {
+          statusCell.textContent = checkbox.checked ? 'pending' : 'skipped';
+          statusCell.className = 'status ' + (checkbox.checked ? 'status-pending' : 'status-skipped');
+        }
+      });
+    }
+
+    document.getElementById('continue').addEventListener('click', () => {
+      const selectedIds = checkboxes.filter((cb) => cb.checked).map((cb) => cb.dataset.id);
+      vscode.postMessage({ type: 'continue', selectedIds });
+    });
+
+    document.getElementById('cancel').addEventListener('click', () => {
+      vscode.postMessage({ type: 'cancel' });
+    });
+
+    document.getElementById('close').addEventListener('click', () => {
+      vscode.postMessage({ type: 'close' });
+    });
+
+    window.addEventListener('message', (event) => {
+      const message = event.data;
+      if (!message || typeof message !== 'object') {
+        return;
+      }
+
+      if (message.type === 'lock') {
+        for (const checkbox of checkboxes) {
+          checkbox.disabled = true;
+        }
+        document.getElementById('continue').disabled = true;
+        document.getElementById('cancel').disabled = true;
+      }
+
+      if (message.type === 'update') {
+        const statusCell = document.querySelector('td.status[data-id="' + message.id + '"]');
+        const errorCell = document.querySelector('td.error[data-id="' + message.id + '"]');
+        if (statusCell) {
+          statusCell.textContent = message.status;
+          statusCell.className = 'status status-' + message.status;
+        }
+        if (errorCell) {
+          errorCell.textContent = message.errorText || '';
+        }
+      }
+
+      if (message.type === 'finish') {
+        const summary = document.getElementById('summary');
+        summary.textContent = message.summary || '';
+        summary.style.display = 'block';
+        document.getElementById('continue').style.display = 'none';
+        document.getElementById('cancel').style.display = 'none';
+        document.getElementById('close').style.display = 'inline-block';
+      }
+    });
+  </script>
+</body>
+</html>`;
+
+    const selectedIds = await new Promise<Set<string> | undefined>((resolve) => {
+      let resolved = false;
+      const settle = (value: Set<string> | undefined): void => {
+        if (resolved) {
+          return;
+        }
+        resolved = true;
+        resolve(value);
+      };
+
+      panel.onDidDispose(() => settle(undefined));
+      panel.webview.onDidReceiveMessage((message: unknown) => {
+        if (!message || typeof message !== 'object') {
+          return;
+        }
+        const typed = message as { type?: string; selectedIds?: unknown };
+        if (typed.type === 'cancel') {
+          panel.dispose();
+          settle(undefined);
+          return;
+        }
+        if (typed.type === 'continue') {
+          const selected = Array.isArray(typed.selectedIds)
+            ? typed.selectedIds.filter((item): item is string => typeof item === 'string')
+            : [];
+          void panel.webview.postMessage({ type: 'lock' });
+          settle(new Set(selected));
+        }
+      });
+    });
+    if (!selectedIds) {
+      return undefined;
+    }
+
+    return {
+      selectedIds,
+      setStatus: (operationId: string, status: SyncOperationRunStatus, errorText?: string) => {
+        void panel.webview.postMessage({ type: 'update', id: operationId, status, errorText });
+      },
+      finish: async (summary: string) => {
+        void panel.webview.postMessage({ type: 'finish', summary });
+        await new Promise<void>((resolve) => {
+          let settled = false;
+          const settle = (): void => {
+            if (settled) {
+              return;
+            }
+            settled = true;
+            resolve();
+          };
+          panel.onDidDispose(() => settle());
+          panel.webview.onDidReceiveMessage((message: unknown) => {
+            if (!message || typeof message !== 'object') {
+              return;
+            }
+            const typed = message as { type?: string };
+            if (typed.type === 'close') {
+              panel.dispose();
+              settle();
+            }
+          });
+        });
+      }
+    };
+  }
+
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  private toErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return String(error);
+  }
+
   private getDeviceSyncExclusionSet(deviceId?: string): Set<string> {
     if (!deviceId) {
       return new Set();
@@ -861,19 +1464,89 @@ class DeviceMirrorModel {
     return this.getDeviceSyncExclusionSet(deviceId).has(normalised);
   }
 
-  private hasExcludedDescendant(relativePath: string, deviceId?: string): boolean {
-    const normalised = toRelativePath(relativePath);
-    if (!normalised) {
-      return false;
+  private getProtectedSyncPaths(
+    destinationEntries: FileEntry[],
+    deviceId?: string
+  ): Set<string> {
+    const protectedPaths = new Set<string>();
+    const excludedPaths = this.getDeviceSyncExclusionSet(deviceId);
+    if (excludedPaths.size === 0) {
+      return protectedPaths;
     }
 
-    const prefix = `${normalised}/`;
-    for (const excludedPath of this.getDeviceSyncExclusionSet(deviceId)) {
-      if (excludedPath.startsWith(prefix)) {
-        return true;
+    const existingFilePaths = new Set(
+      destinationEntries
+        .filter((entry) => !entry.isDirectory)
+        .map((entry) => toRelativePath(entry.relativePath))
+        .filter((entryPath) => entryPath.length > 0)
+    );
+
+    for (const excludedPath of excludedPaths) {
+      if (!existingFilePaths.has(excludedPath)) {
+        continue;
+      }
+
+      protectedPaths.add(excludedPath);
+      let parent = path.posix.dirname(excludedPath);
+      while (parent && parent !== '.') {
+        protectedPaths.add(toRelativePath(parent));
+        parent = path.posix.dirname(parent);
       }
     }
-    return false;
+
+    return protectedPaths;
+  }
+
+  private async pruneMissingDeviceSyncExclusions(deviceId: string, deviceEntries: FileEntry[]): Promise<void> {
+    const current = this.deviceSyncExcludedPaths[deviceId];
+    if (!current || current.size === 0) {
+      return;
+    }
+
+    const existingPaths = new Set(
+      deviceEntries
+        .map((entry) => toRelativePath(entry.relativePath))
+        .filter((relativePath) => relativePath.length > 0)
+    );
+    const nextPaths = [...current].filter((relativePath) => existingPaths.has(relativePath));
+    if (nextPaths.length === current.size) {
+      return;
+    }
+
+    const updated = await updateDeviceSyncExcludedPaths(deviceId, nextPaths);
+    this.deviceSyncExcludedPaths = Object.fromEntries(
+      Object.entries(getDeviceSyncExcludedPaths(updated)).map(([id, relativePaths]) => [id, new Set(relativePaths)])
+    );
+  }
+
+  private async removeSyncExclusionsForDeletedDevicePath(deviceId: string, deletedPath: string, includeDescendants: boolean): Promise<void> {
+    const normalisedDeletedPath = toRelativePath(deletedPath);
+    if (!normalisedDeletedPath) {
+      return;
+    }
+
+    const current = this.deviceSyncExcludedPaths[deviceId];
+    if (!current || current.size === 0) {
+      return;
+    }
+
+    const nextPaths = [...current].filter((relativePath) => {
+      if (relativePath === normalisedDeletedPath) {
+        return false;
+      }
+      if (includeDescendants && relativePath.startsWith(`${normalisedDeletedPath}/`)) {
+        return false;
+      }
+      return true;
+    });
+    if (nextPaths.length === current.size) {
+      return;
+    }
+
+    const updated = await updateDeviceSyncExcludedPaths(deviceId, nextPaths);
+    this.deviceSyncExcludedPaths = Object.fromEntries(
+      Object.entries(getDeviceSyncExcludedPaths(updated)).map(([id, relativePaths]) => [id, new Set(relativePaths)])
+    );
   }
 
   private isNodeExcludedFromSync(node: MirrorNode | undefined): boolean {
@@ -986,14 +1659,14 @@ class DeviceMirrorModel {
     const desiredPaths = new Set(scopedEntries.map((entry) => entry.relativePath));
 
     const existingLocalEntries = await scanLocalMirrorEntries(this.mirrorRootPath);
+    const protectedLocalPaths = this.getProtectedSyncPaths(existingLocalEntries, this.activeDeviceId);
     const staleLocalEntries = existingLocalEntries
       .filter(
         (entry) =>
           entry.relativePath.length > 0 &&
           this.matchesTarget(entry.relativePath, normalisedTarget, includeDescendants) &&
           !desiredPaths.has(entry.relativePath) &&
-          !excludedPaths.has(entry.relativePath) &&
-          (!entry.isDirectory || !this.hasExcludedDescendant(entry.relativePath, this.activeDeviceId))
+          !protectedLocalPaths.has(entry.relativePath)
       )
       .sort((a, b) => b.relativePath.length - a.relativePath.length);
     for (const staleEntry of staleLocalEntries) {
@@ -1060,9 +1733,35 @@ class DeviceMirrorModel {
     const normalisedTarget = toRelativePath(targetPath);
     const excludedPaths = this.getDeviceSyncExclusionSet(this.activeDeviceId);
     const localEntries = await scanLocalMirrorEntries(this.mirrorRootPath);
+    const deviceEntries = await listDeviceEntries(board);
+    const protectedDevicePaths = this.getProtectedSyncPaths(deviceEntries, this.activeDeviceId);
     const scopedEntries = localEntries.filter(
       (entry) => entry.relativePath.length > 0 && this.matchesTarget(entry.relativePath, normalisedTarget, includeDescendants)
     );
+    const scopedDeviceEntries = deviceEntries.filter(
+      (entry) => entry.relativePath.length > 0 && this.matchesTarget(entry.relativePath, normalisedTarget, includeDescendants)
+    );
+    const desiredLocalPaths = new Set(scopedEntries.map((entry) => entry.relativePath));
+    const staleDeviceEntries = scopedDeviceEntries
+      .filter((entry) => {
+        if (desiredLocalPaths.has(entry.relativePath)) {
+          return false;
+        }
+        if (protectedDevicePaths.has(entry.relativePath)) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => b.relativePath.length - a.relativePath.length);
+    for (const staleEntry of staleDeviceEntries) {
+      await deleteDevicePath(board, staleEntry.relativePath);
+      if (this.activeDeviceId) {
+        await this.removeSyncExclusionsForDeletedDevicePath(this.activeDeviceId, staleEntry.relativePath, staleEntry.isDirectory);
+      }
+      if (this.notifyRemotePathDeleted) {
+        await this.notifyRemotePathDeleted(staleEntry.relativePath, staleEntry.isDirectory);
+      }
+    }
 
     const localDirectories = scopedEntries
       .filter((entry) => entry.isDirectory)
