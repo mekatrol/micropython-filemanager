@@ -101,10 +101,10 @@ export const updateStatusBarItem = async (): Promise<void> => {
   deviceStatusBarItem.show();
 
   boardConnectionStatusBarItem.text = connected
-    ? `$(debug-disconnect) Boards: ${connectedBoards.length} Connected`
+    ? `$(plug) Boards: ${connectedBoards.length} Connected`
     : '$(plug) Board: Disconnected';
   boardConnectionStatusBarItem.tooltip = connected
-    ? 'Disconnect one connected board'
+    ? 'Manage boards (connect another or disconnect one)'
     : 'Connect selected board';
   boardConnectionStatusBarItem.backgroundColor = !connected && !selectedDevice
     ? new vscode.ThemeColor('statusBarItem.warningBackground')

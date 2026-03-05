@@ -79,9 +79,9 @@ class ExtensionStatusViewProvider implements vscode.TreeDataProvider<ExtensionSt
     );
     items.push(
       new ExtensionStatusNode(
-        connected ? 'Board: Connected | [Disconnect ]' : 'Board: Disconnected | [ Connect ]',
-        connected ? 'debug-disconnect' : 'plug',
-        connected ? 'Click to disconnect one connected board' : 'Click to connect selected board',
+        connected ? 'Boards: Connected | [ Manage ]' : 'Board: Disconnected | [ Connect ]',
+        'plug',
+        connected ? 'Click to connect another board or disconnect one' : 'Click to connect selected board',
         { command: toggleBoardConnectionCommandId, title: 'Toggle board connection' }
       )
     );

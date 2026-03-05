@@ -474,7 +474,10 @@ const pickConnectedDeviceId = async (placeHolder: string): Promise<string | unde
   return selected?.label;
 };
 
-const pickSerialPortToConnect = async (context: vscode.ExtensionContext): Promise<string | undefined> => {
+const pickSerialPortToConnect = async (
+  context: vscode.ExtensionContext,
+  onlyUnconnected: boolean = false
+): Promise<string | undefined> => {
   const ports = await listSerialDevices();
   if (ports.length === 0) {
     const msg = 'No serial devices found.';
@@ -485,7 +488,18 @@ const pickSerialPortToConnect = async (context: vscode.ExtensionContext): Promis
 
   const connectedPaths = new Set(getSnapshots().map((item) => item.devicePath));
   const activePath = readPersistentState<string>(context, selectedSerialPortStateKey);
-  const items = ports.map((port) => {
+  const candidatePorts = onlyUnconnected
+    ? ports.filter((port) => !connectedPaths.has(port.path))
+    : ports;
+
+  if (candidatePorts.length === 0) {
+    const msg = 'No additional serial devices available to connect.';
+    vscode.window.showWarningMessage(msg);
+    logChannelOutput(msg, true);
+    return undefined;
+  }
+
+  const items = candidatePorts.map((port) => {
     const details = [port.manufacturer, `VID:${port.vendorId}`, `PID:${port.productId}`].filter(Boolean).join(' | ');
     const alreadyConnected = connectedPaths.has(port.path);
     return {
@@ -512,13 +526,18 @@ const pickSerialPortToConnect = async (context: vscode.ExtensionContext): Promis
 export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
   extensionContext = context;
 
-  const command = vscode.commands.registerCommand('mekatrol.pyboarddev.connectboard', async () => {
+  const command = vscode.commands.registerCommand('mekatrol.pyboarddev.connectboard', async (arg?: unknown) => {
+    const forcePickPort = Boolean(
+      arg === true
+      || (typeof arg === 'object' && arg && 'forcePickPort' in arg && (arg as { forcePickPort?: unknown }).forcePickPort === true)
+    );
     let devicePath = readPersistentState<string>(context, selectedSerialPortStateKey);
     const baudRate = readPersistentState<number>(context, selectedBaudRateStateKey) ?? defaultBaudRate;
+    const selectedIsAlreadyConnected = Boolean(devicePath && getConnectedBoardByPortPath(devicePath));
 
-    if (!devicePath) {
+    if (forcePickPort || !devicePath || selectedIsAlreadyConnected) {
       try {
-        devicePath = await pickSerialPortToConnect(context);
+        devicePath = await pickSerialPortToConnect(context, forcePickPort || selectedIsAlreadyConnected);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         const msg = `Unable to list serial ports. ${reason}`;
@@ -529,6 +548,13 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
     }
 
     if (!devicePath) {
+      return;
+    }
+
+    if (getConnectedBoardByPortPath(devicePath)) {
+      const msg = `Device on ${devicePath} is already connected. Choose another serial port.`;
+      vscode.window.showWarningMessage(msg);
+      logChannelOutput(msg, true);
       return;
     }
 
@@ -571,11 +597,37 @@ export const initToggleBoardConnectionCommand = (context: vscode.ExtensionContex
 
   const command = vscode.commands.registerCommand('mekatrol.pyboarddev.toggleboardconnection', async () => {
     if (isBoardConnected()) {
+      const action = await vscode.window.showQuickPick(
+        [
+          {
+            label: 'Connect another board',
+            description: 'Select a serial port and add another active connection'
+          },
+          {
+            label: 'Disconnect a board',
+            description: 'Choose one connected board to disconnect'
+          }
+        ],
+        {
+          placeHolder: 'Manage connected boards',
+          canPickMany: false,
+          ignoreFocusOut: true
+        }
+      );
+
+      if (!action) {
+        return;
+      }
+
+      if (action.label === 'Connect another board') {
+        await vscode.commands.executeCommand('mekatrol.pyboarddev.connectboard', { forcePickPort: true });
+        return;
+      }
+
       const targetDeviceId = await pickConnectedDeviceId('Select a connected device to disconnect');
       if (!targetDeviceId) {
         return;
       }
-
       await closeConnectedBoardByDeviceId(targetDeviceId, true);
       return;
     }
