@@ -1,15 +1,12 @@
 import * as vscode from 'vscode';
 import {
   getConnectedBoards,
-  isBoardConnected,
   onBoardConnectionStateChanged,
   onBoardConnectionsChanged
 } from './commands/connect-board-command';
 import { getStatusDisplayMode, onStatusDataChanged } from './status-bar';
 
 const statusViewId = 'mekatrol.pyboarddev.statusView';
-const autoDetectDevicesCommandId = 'mekatrol.pyboarddev.autodetectdevices';
-const toggleBoardConnectionCommandId = 'mekatrol.pyboarddev.toggleboardconnection';
 const softRebootCommandId = 'mekatrol.pyboarddev.softreboot';
 
 class ExtensionStatusNode extends vscode.TreeItem {
@@ -43,30 +40,12 @@ class ExtensionStatusViewProvider implements vscode.TreeDataProvider<ExtensionSt
       return [];
     }
 
-    const connected = isBoardConnected();
     const connections = getConnectedBoards();
 
     const items: ExtensionStatusNode[] = [];
     items.push(new ExtensionStatusNode(`Connected Devices: ${connections.length}`, 'circuit-board'));
 
-    items.push(
-      new ExtensionStatusNode(
-        '[ Scan Devices ]',
-        'search',
-        'Click to enumerate serial ports (skips currently connected ports)',
-        { command: autoDetectDevicesCommandId, title: 'Auto detect serial devices' }
-      )
-    );
-    items.push(
-      new ExtensionStatusNode(
-        connected ? 'Boards: Connected | [ Manage ]' : 'Board: Disconnected | [ Connect ]',
-        'plug',
-        connected ? 'Click to connect another board or disconnect one' : 'Click to connect selected board',
-        { command: toggleBoardConnectionCommandId, title: 'Toggle board connection' }
-      )
-    );
-
-    if (connected) {
+    if (connections.length > 0) {
       items.push(
         new ExtensionStatusNode(
           '[ Soft Reboot Device ]',

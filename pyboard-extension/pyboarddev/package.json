@@ -28,11 +28,18 @@
       },
       {
         "command": "mekatrol.pyboarddev.autodetectdevices",
-        "title": "Pyboard Dev: Auto detect serial devices"
+        "title": "Pyboard Dev: Auto detect serial devices",
+        "icon": "$(search)"
       },
       {
         "command": "mekatrol.pyboarddev.connectboard",
-        "title": "Pyboard Dev: Connect to board"
+        "title": "Pyboard Dev: Connect to board",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "mekatrol.pyboarddev.connectboardwithpicker",
+        "title": "Pyboard Dev: Connect to board (choose port)",
+        "icon": "$(plug)"
       },
       {
         "command": "mekatrol.pyboarddev.disconnectboard",
@@ -142,6 +149,16 @@
       {
         "command": "mekatrol.pyboarddev.setdevicealias",
         "title": "Pyboard Dev: Set device alias"
+      },
+      {
+        "command": "mekatrol.pyboarddev.closedeviceconnection",
+        "title": "Close Connection",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "mekatrol.pyboarddev.closealldeviceconnections",
+        "title": "Close All Connections",
+        "icon": "$(debug-disconnect)"
       }
     ],
     "viewsContainers": {
@@ -247,6 +264,21 @@
           "group": "navigation@1"
         },
         {
+          "command": "mekatrol.pyboarddev.connectboardwithpicker",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && viewItem == pyboarddev.deviceRoot",
+          "group": "inline@1"
+        },
+        {
+          "command": "mekatrol.pyboarddev.closealldeviceconnections",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && viewItem == pyboarddev.deviceRoot && mekatrol.pyboarddev.boardConnected",
+          "group": "inline@2"
+        },
+        {
+          "command": "mekatrol.pyboarddev.autodetectdevices",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && viewItem == pyboarddev.deviceRoot",
+          "group": "inline@3"
+        },
+        {
           "command": "mekatrol.pyboarddev.openremotefile",
           "when": "view == mekatrol.pyboarddev.mirrorExplorer && viewItem == pyboarddev.deviceFile",
           "group": "navigation@2"
@@ -300,6 +332,11 @@
           "command": "mekatrol.pyboarddev.setdevicealias",
           "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceIdNode || viewItem == pyboarddev.deviceIdNodeLinked || viewItem == pyboarddev.hostDeviceMappingNode)",
           "group": "navigation@12"
+        },
+        {
+          "command": "mekatrol.pyboarddev.closedeviceconnection",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceIdNode || viewItem == pyboarddev.deviceIdNodeLinked)",
+          "group": "navigation@13"
         }
       ]
     },

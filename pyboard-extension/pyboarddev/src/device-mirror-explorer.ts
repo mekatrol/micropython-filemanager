@@ -2,7 +2,7 @@ import { Buffer } from 'buffer';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { getConnectedBoard, getConnectedBoards, onBoardConnectionStateChanged, onBoardConnectionsChanged } from './commands/connect-board-command';
+import { closeAllConnectedBoards, getConnectedBoard, getConnectedBoards, onBoardConnectionStateChanged, onBoardConnectionsChanged } from './commands/connect-board-command';
 import { logChannelOutput } from './output-channel';
 import { loadConfiguration, updateDeviceAlias, updateDeviceHostFolderMapping } from './utils/configuration';
 import {
@@ -37,6 +37,9 @@ const commandDeleteMirrorPathId = 'mekatrol.pyboarddev.deletemirrorpath';
 const commandLinkDeviceHostFolderId = 'mekatrol.pyboarddev.linkdevicehostfolder';
 const commandUnlinkDeviceHostFolderId = 'mekatrol.pyboarddev.unlinkdevicehostfolder';
 const commandSetDeviceAliasId = 'mekatrol.pyboarddev.setdevicealias';
+const commandCloseDeviceConnectionId = 'mekatrol.pyboarddev.closedeviceconnection';
+const commandCloseAllDeviceConnectionsId = 'mekatrol.pyboarddev.closealldeviceconnections';
+const commandConnectBoardWithPickerId = 'mekatrol.pyboarddev.connectboardwithpicker';
 const remoteDocumentScheme = 'pyboarddev-remote';
 const selectedSerialPortStateKey = 'selectedSerialPort';
 const selectedBaudRateStateKey = 'selectedBaudRate';
@@ -1348,6 +1351,44 @@ class DeviceMirrorModel {
     await this.refresh(true);
   }
 
+  async closeDeviceConnection(node?: MirrorNode): Promise<void> {
+    const deviceId = this.getNodeDeviceId(node);
+    if (!deviceId) {
+      vscode.window.showWarningMessage('Select a connected device to disconnect.');
+      return;
+    }
+
+    await vscode.commands.executeCommand('mekatrol.pyboarddev.disconnectboard', { deviceId });
+  }
+
+  async closeAllDeviceConnections(): Promise<void> {
+    const connected = this.getConnectedDeviceIds();
+    if (connected.length === 0) {
+      vscode.window.showInformationMessage('No active board connections to close.');
+      return;
+    }
+
+    const action = await vscode.window.showWarningMessage(
+      `Close all ${connected.length} active board connection(s)?`,
+      { modal: true },
+      'Close All'
+    );
+    if (action !== 'Close All') {
+      return;
+    }
+
+    const closed = await closeAllConnectedBoards(
+      false,
+      false,
+      true,
+      true
+    );
+    if (closed) {
+      await this.refresh(false);
+      vscode.window.showInformationMessage(`Closed ${connected.length} board connection(s).`);
+    }
+  }
+
   setSelectedRemoteNode(node: MirrorNode | undefined): void {
     this.selectedNode = node;
     void this.ensureActiveDevice(node);
@@ -2246,18 +2287,7 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
 
       const deviceIds = this.model.getConnectedDeviceIds();
       if (deviceIds.length === 0) {
-        return [
-          new MirrorNode(
-            {
-              side: 'device',
-              relativePath: '',
-              isDirectory: false,
-              isIndicator: true
-            },
-            'Device not connected',
-            vscode.TreeItemCollapsibleState.None
-          )
-        ];
+        return [];
       }
 
       return deviceIds.map((deviceId) => {
@@ -2414,6 +2444,11 @@ export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext)
   context.subscriptions.push(vscode.commands.registerCommand(commandLinkDeviceHostFolderId, async (node?: MirrorNode) => model.linkDeviceToHostFolder(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandUnlinkDeviceHostFolderId, async (node?: MirrorNode) => model.unlinkDeviceFromHostFolder(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandSetDeviceAliasId, async (node?: MirrorNode) => model.setDeviceAlias(node)));
+  context.subscriptions.push(vscode.commands.registerCommand(commandCloseDeviceConnectionId, async (node?: MirrorNode) => model.closeDeviceConnection(node)));
+  context.subscriptions.push(vscode.commands.registerCommand(commandCloseAllDeviceConnectionsId, async () => model.closeAllDeviceConnections()));
+  context.subscriptions.push(vscode.commands.registerCommand(commandConnectBoardWithPickerId, async () => {
+    await vscode.commands.executeCommand('mekatrol.pyboarddev.connectboard', { forcePickPort: true });
+  }));
 
   await model.refresh();
   await ensureNativeExplorerRoots(model);
