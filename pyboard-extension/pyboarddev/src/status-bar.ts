@@ -112,7 +112,7 @@ export const updateStatusBarItem = async (): Promise<void> => {
     boardRuntimeStatusBarItem.hide();
   }
 
-  softRebootStatusBarItem.text = '$(debug-restart)';
+  softRebootStatusBarItem.text = '$(circuit-board) $(debug-restart)';
   softRebootStatusBarItem.tooltip = 'Soft reboot device';
   if (connected) {
     softRebootStatusBarItem.show();
