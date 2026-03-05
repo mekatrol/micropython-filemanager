@@ -438,6 +438,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     const inputEl = document.getElementById('commandInput');
     const historyCursorByDevice = new Map();
     const historyDraftByDevice = new Map();
+    const pendingEchoByDevice = new Map();
 
     const getActiveDevice = () => currentState.devices.find((item) => item.deviceId === currentState.activeDeviceId);
 
@@ -483,6 +484,15 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       inputEl.value = history[nextCursor] ?? '';
     };
 
+    const getRenderLines = (active) => {
+      const lines = Array.isArray(active?.lines) ? [...active.lines] : [];
+      const pending = pendingEchoByDevice.get(active?.deviceId);
+      if (typeof pending === 'string' && pending.length > 0) {
+        lines.push('>>> ' + pending);
+      }
+      return lines;
+    };
+
     const render = () => {
       tabsEl.innerHTML = '';
       if (currentState.devices.length === 0) {
@@ -521,7 +531,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
         return;
       }
 
-      outputEl.textContent = active.lines.join('\\n');
+      outputEl.textContent = getRenderLines(active).join('\\n');
       contentEl.scrollTop = contentEl.scrollHeight;
       if (document.activeElement !== inputEl) {
         inputEl.focus();
@@ -535,11 +545,16 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       }
 
       const command = inputEl.value;
+      const trimmedCommand = command.trimEnd();
+      if (trimmedCommand.length > 0) {
+        pendingEchoByDevice.set(active.deviceId, trimmedCommand);
+      }
       vscode.postMessage({ type: 'submit', deviceId: active.deviceId, command });
       inputEl.value = '';
       const submitted = command.trimEnd().length > 0;
       const expectedNextLength = (Array.isArray(active.history) ? active.history.length : 0) + (submitted ? 1 : 0);
       resetHistoryCursor(active.deviceId, expectedNextLength);
+      render();
     };
 
     inputEl.addEventListener('input', () => {
@@ -618,6 +633,16 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
         currentState = message.value;
         if (!currentState.activeDeviceId && currentState.devices.length > 0) {
           currentState.activeDeviceId = currentState.devices[0].deviceId;
+        }
+        for (const device of currentState.devices) {
+          const pending = pendingEchoByDevice.get(device.deviceId);
+          if (typeof pending !== 'string' || pending.length === 0) {
+            continue;
+          }
+          const commandLine = '>>> ' + pending;
+          if (Array.isArray(device.lines) && device.lines.includes(commandLine)) {
+            pendingEchoByDevice.delete(device.deviceId);
+          }
         }
         const active = getActiveDevice();
         if (active) {
