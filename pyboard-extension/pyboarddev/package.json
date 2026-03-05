@@ -98,6 +98,14 @@
         "title": "Pyboard Dev: Open REPL console"
       },
       {
+        "command": "mekatrol.pyboarddev.clearrepl",
+        "title": "Pyboard Dev: Clear REPL console",
+        "icon": {
+          "light": "images/clear-all-light.svg",
+          "dark": "images/clear-all-dark.svg"
+        }
+      },
+      {
         "command": "mekatrol.pyboarddev.createmirrorfile",
         "title": "Create File",
         "icon": "$(new-file)"
@@ -204,6 +212,11 @@
           "command": "mekatrol.pyboarddev.synctodevice",
           "when": "view == mekatrol.pyboarddev.mirrorExplorer",
           "group": "navigation@3"
+        },
+        {
+          "command": "mekatrol.pyboarddev.clearrepl",
+          "when": "view == mekatrol.pyboarddev.replView",
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [
@@ -311,6 +324,12 @@
           "type": "boolean",
           "default": false,
           "description": "Mount DEVICE as a workspace folder in the native Explorer. Enable only if your tooling supports non-file workspace schemes."
+        },
+        "mekatrol.pyboarddev.replHistoryLimit": {
+          "type": "number",
+          "default": 100,
+          "minimum": 0,
+          "description": "Maximum number of REPL history commands retained per device. Oldest entries are removed when limit is exceeded. Set to 0 to disable history retention."
         },
         "mekatrol.pyboarddev.statusDisplayMode": {
           "type": "string",
