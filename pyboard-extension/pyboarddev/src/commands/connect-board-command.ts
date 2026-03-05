@@ -6,6 +6,7 @@ import { listSerialDevices } from '../utils/serial-port';
 const selectedSerialPortStateKey = 'selectedSerialPort';
 const selectedBaudRateStateKey = 'selectedBaudRate';
 const reconnectLastSessionStateKey = 'reconnectLastSession';
+const reconnectDevicePathsStateKey = 'reconnectDevicePaths';
 const defaultBaudRate = 115200;
 const autoReconnectSettingKey = 'autoReconnectLastDevice';
 const remoteDocumentScheme = 'pyboarddev-remote';
@@ -55,6 +56,50 @@ const readPersistentState = <T>(context: vscode.ExtensionContext | undefined, ke
 const writePersistentState = async <T>(context: vscode.ExtensionContext, key: string, value: T): Promise<void> => {
   await context.globalState.update(key, value);
   await context.workspaceState.update(key, value);
+};
+
+const readReconnectDevicePaths = (context: vscode.ExtensionContext | undefined): string[] => {
+  const stored = readPersistentState<unknown>(context, reconnectDevicePathsStateKey);
+  if (!Array.isArray(stored)) {
+    return [];
+  }
+
+  const normalised = stored
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  return [...new Set(normalised)];
+};
+
+const writeReconnectDevicePaths = async (context: vscode.ExtensionContext, devicePaths: string[]): Promise<void> => {
+  const next = [...new Set(devicePaths.map((item) => item.trim()).filter((item) => item.length > 0))];
+  await writePersistentState(context, reconnectDevicePathsStateKey, next);
+};
+
+const addReconnectDevicePath = async (context: vscode.ExtensionContext | undefined, devicePath: string): Promise<void> => {
+  if (!context) {
+    return;
+  }
+
+  const current = readReconnectDevicePaths(context);
+  if (current.includes(devicePath)) {
+    return;
+  }
+
+  await writeReconnectDevicePaths(context, [...current, devicePath]);
+};
+
+const removeReconnectDevicePath = async (context: vscode.ExtensionContext | undefined, devicePath: string): Promise<void> => {
+  if (!context) {
+    return;
+  }
+
+  const current = readReconnectDevicePaths(context);
+  if (!current.includes(devicePath)) {
+    return;
+  }
+
+  await writeReconnectDevicePaths(context, current.filter((item) => item !== devicePath));
 };
 
 const normaliseDeviceId = (value: string): string => {
@@ -329,6 +374,7 @@ const connectBoardForPath = async (
 
   connectedBoards.set(deviceId, state);
   deviceIdByPortPath.set(board.device, deviceId);
+  await addReconnectDevicePath(extensionContext, board.device);
   await updateReconnectState(true);
   notifyStateChanged();
 
@@ -369,6 +415,9 @@ export const closeConnectedBoardByDeviceId = async (
     await state.board.close();
     connectedBoards.delete(deviceId);
     deviceIdByPortPath.delete(state.board.device);
+    if (!preserveReconnectState) {
+      await removeReconnectDevicePath(extensionContext, state.board.device);
+    }
 
     if (!preserveReconnectState && connectedBoards.size === 0) {
       await updateReconnectState(false);
@@ -444,6 +493,9 @@ export const closeAllConnectedBoards = async (
 
   if (!preserveReconnectState) {
     await updateReconnectState(false);
+    if (extensionContext) {
+      await writeReconnectDevicePaths(extensionContext, []);
+    }
   }
 
   return true;
@@ -654,7 +706,26 @@ export const tryReconnectBoardOnStartup = async (context: vscode.ExtensionContex
     return;
   }
 
-  await vscode.commands.executeCommand('mekatrol.pyboarddev.connectboard');
+  const reconnectDevicePaths = readReconnectDevicePaths(context);
+  const baudRate = readPersistentState<number>(context, selectedBaudRateStateKey) ?? defaultBaudRate;
+
+  if (reconnectDevicePaths.length === 0) {
+    await vscode.commands.executeCommand('mekatrol.pyboarddev.connectboard');
+    return;
+  }
+
+  for (const devicePath of reconnectDevicePaths) {
+    if (getConnectedBoardByPortPath(devicePath)) {
+      continue;
+    }
+
+    try {
+      await connectBoardForPath(devicePath, baudRate, false);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      logChannelOutput(`Auto reconnect skipped for ${devicePath}: ${reason}`, false);
+    }
+  }
 };
 
 export const initSetAutoReconnectCommand = (context: vscode.ExtensionContext) => {
