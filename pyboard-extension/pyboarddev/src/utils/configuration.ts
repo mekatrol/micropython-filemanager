@@ -218,6 +218,29 @@ const parseDevices = (source: Partial<PyboardDevConfiguration> & LegacyPyboardDe
   return pruneEmptyDevices(devices);
 };
 
+const findDuplicateAliases = (devices: Record<string, DeviceConfiguration>): Array<{ alias: string; deviceIds: string[] }> => {
+  const aliasBuckets = new Map<string, { alias: string; deviceIds: string[] }>();
+  for (const [deviceId, device] of Object.entries(devices)) {
+    const alias = device.getAlias()?.trim();
+    if (!alias) {
+      continue;
+    }
+
+    const key = alias.toLocaleLowerCase();
+    const existing = aliasBuckets.get(key);
+    if (existing) {
+      existing.deviceIds.push(deviceId);
+    } else {
+      aliasBuckets.set(key, { alias, deviceIds: [deviceId] });
+    }
+  }
+
+  return [...aliasBuckets.values()]
+    .filter((item) => item.deviceIds.length > 1)
+    .map((item) => ({ alias: item.alias, deviceIds: [...item.deviceIds].sort((a, b) => a.localeCompare(b)) }))
+    .sort((a, b) => a.alias.localeCompare(b.alias));
+};
+
 const stripLegacyDeviceFields = <T extends object>(value: T): Omit<T, 'deviceHostFolderMappings' | 'deviceAliases'> => {
   const {
     deviceHostFolderMappings: _legacyMappings,
@@ -360,6 +383,11 @@ export const saveConfiguration = async (configuration: PyboardDevConfiguration):
     ...configuration,
     devices: pruneEmptyDevices(cloneDevices(configuration.devices ?? {}))
   };
+  const duplicateAliases = findDuplicateAliases(merged.devices);
+  if (duplicateAliases.length > 0) {
+    const details = duplicateAliases.map((item) => `${item.alias} (${item.deviceIds.join(', ')})`).join('; ');
+    throw new Error(`Duplicate device aliases are not allowed: ${details}`);
+  }
 
   const content = JSON.stringify(merged, null, 2);
   await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, 'utf8'));

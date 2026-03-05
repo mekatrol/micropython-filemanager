@@ -62,6 +62,7 @@ const deviceCreateConfirmPollIntervalMs = 150;
 const hostMirrorRootFolder = '.pyboard-mirror';
 const hasHostMirrorChildFoldersContextKey = 'mekatrol.pyboarddev.hasHostMirrorChildFolders';
 const hasLinkedHostMappingsContextKey = 'mekatrol.pyboarddev.hasLinkedHostMappings';
+const aliasHistoryStateKey = 'mekatrol.pyboarddev.aliasHistoryByLower';
 
 const obfuscatedPlaceholder = '# pyboarddev: obfuscated on pull\n';
 const obfuscatedPlaceholderSha1 = createHash('sha1').update(Buffer.from(obfuscatedPlaceholder, 'utf8')).digest('hex');
@@ -141,13 +142,18 @@ class DeviceMirrorModel {
   private selectedNode: MirrorNode | undefined;
   private lastExplorerOpenUri: string | undefined;
   private lastExplorerOpenAtMs = 0;
+  private duplicateAliasWarningKey: string | undefined;
+  private openTabAliasSyncKey: string | undefined;
+  private aliasHistoryByLower: Record<string, string>;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly notifyDeviceFilesChanged?: (relativePaths: string[]) => Promise<void>,
     private readonly notifyDevicePathDeleted?: (relativePath: string, includeDescendants: boolean) => Promise<void>,
     private readonly revealPathNode?: (target: { side: NodeSide; relativePath: string; deviceId?: string }) => Promise<void>
-  ) {}
+  ) {
+    this.aliasHistoryByLower = this.context.globalState.get<Record<string, string>>(aliasHistoryStateKey, {});
+  }
 
   private async revealNode(target: { side: NodeSide; relativePath: string; deviceId?: string }): Promise<void> {
     if (!this.revealPathNode) {
@@ -204,6 +210,13 @@ class DeviceMirrorModel {
     this.obfuscationSet = normaliseObfuscationSet(config.obfuscateOnPull ?? []);
     this.deviceHostFolderMappings = getDeviceHostFolderMappings(config);
     this.deviceAliases = getDeviceAliases(config);
+    await this.syncAliasHistory();
+    this.validateAliasConfigurationAndWarn();
+    const aliasSyncKey = this.computeAliasSyncKey();
+    if (this.openTabAliasSyncKey !== aliasSyncKey) {
+      await this.normalizeOpenDeviceTabsToCurrentAliasSegments();
+      this.openTabAliasSyncKey = aliasSyncKey;
+    }
     this.deviceSyncExcludedPaths = Object.fromEntries(
       Object.entries(getDeviceSyncExcludedPaths(config)).map(([deviceId, relativePaths]) => [deviceId, new Set(relativePaths)])
     );
@@ -947,8 +960,8 @@ class DeviceMirrorModel {
     }
 
     const relativePath = toRelativePath(node.data.relativePath);
-    const deviceSegment = encodeURIComponent(deviceId);
-    const deviceUri = vscode.Uri.parse(`${deviceDocumentScheme}:/${deviceSegment}/${relativePath}`);
+    const deviceSegment = encodeURIComponent(this.getDeviceUriSegment(deviceId));
+    const deviceUri = vscode.Uri.parse(`${deviceDocumentScheme}:/${deviceSegment}/${relativePath}?deviceId=${encodeURIComponent(deviceId)}`);
     const document = await vscode.workspace.openTextDocument(deviceUri);
     await this.showTextDocumentWithExplorerBehavior(document, options);
   }
@@ -2280,6 +2293,326 @@ class DeviceMirrorModel {
     return alias ? `${alias} (${deviceId})` : deviceId;
   }
 
+  getDeviceUriSegment(deviceId: string): string {
+    return this.getDeviceAlias(deviceId) ?? deviceId;
+  }
+
+  private async syncAliasHistory(): Promise<void> {
+    const nextHistory: Record<string, string> = { ...this.aliasHistoryByLower };
+    let changed = false;
+    for (const [deviceId, aliasRaw] of Object.entries(this.deviceAliases)) {
+      const alias = aliasRaw.trim();
+      if (!alias) {
+        continue;
+      }
+      const key = alias.toLocaleLowerCase();
+      if (nextHistory[key] === deviceId) {
+        continue;
+      }
+      nextHistory[key] = deviceId;
+      changed = true;
+    }
+
+    if (!changed) {
+      return;
+    }
+
+    this.aliasHistoryByLower = nextHistory;
+    await this.context.globalState.update(aliasHistoryStateKey, nextHistory);
+  }
+
+  resolveDeviceIdFromUriSegment(segment: string): string | undefined {
+    const decoded = segment.trim();
+    if (!decoded) {
+      return undefined;
+    }
+
+    if (this.knownDeviceIds.has(decoded) || getConnectedBoards().some((item) => item.deviceId === decoded)) {
+      return decoded;
+    }
+
+    const needle = decoded.toLocaleLowerCase();
+    for (const [deviceId, alias] of Object.entries(this.deviceAliases)) {
+      if (alias.trim().toLocaleLowerCase() === needle) {
+        return deviceId;
+      }
+    }
+
+    const historicalDeviceId = this.aliasHistoryByLower[needle];
+    if (historicalDeviceId) {
+      return historicalDeviceId;
+    }
+
+    return undefined;
+  }
+
+  private validateAliasConfigurationAndWarn(): void {
+    const aliasBuckets = new Map<string, { alias: string; deviceIds: string[] }>();
+    for (const [deviceId, aliasRaw] of Object.entries(this.deviceAliases)) {
+      const alias = aliasRaw.trim();
+      if (!alias) {
+        continue;
+      }
+      const key = alias.toLocaleLowerCase();
+      const existing = aliasBuckets.get(key);
+      if (existing) {
+        existing.deviceIds.push(deviceId);
+      } else {
+        aliasBuckets.set(key, { alias, deviceIds: [deviceId] });
+      }
+    }
+
+    const duplicates = [...aliasBuckets.values()]
+      .filter((item) => item.deviceIds.length > 1)
+      .sort((a, b) => a.alias.localeCompare(b.alias));
+    if (duplicates.length === 0) {
+      this.duplicateAliasWarningKey = undefined;
+      return;
+    }
+
+    const warningKey = duplicates
+      .map((item) => `${item.alias}:${[...item.deviceIds].sort((a, b) => a.localeCompare(b)).join(',')}`)
+      .join('|');
+    if (this.duplicateAliasWarningKey === warningKey) {
+      return;
+    }
+    this.duplicateAliasWarningKey = warningKey;
+
+    const details = duplicates
+      .map((item) => `${item.alias} (${item.deviceIds.join(', ')})`)
+      .join('; ');
+    const message = `Duplicate device aliases found in configuration: ${details}. Aliases must be unique.`;
+    vscode.window.showErrorMessage(message);
+    logChannelOutput(message, true);
+  }
+
+  private computeAliasSyncKey(): string {
+    return Object.entries(this.deviceAliases)
+      .map(([deviceId, alias]) => `${deviceId}:${alias.trim().toLocaleLowerCase()}`)
+      .sort((a, b) => a.localeCompare(b))
+      .join('|');
+  }
+
+  private decodeUriSegment(segment: string): string {
+    try {
+      return decodeURIComponent(segment);
+    } catch {
+      return segment;
+    }
+  }
+
+  private remapDeviceUriSegment(
+    uri: vscode.Uri,
+    acceptedSegments: ReadonlySet<string>,
+    nextSegment: string,
+    resolvedDeviceId?: string
+  ): vscode.Uri | undefined {
+    if (uri.scheme !== deviceDocumentScheme) {
+      return undefined;
+    }
+
+    const rawPath = uri.path.replace(/^\/+/, '');
+    const segments = rawPath.split('/').filter((item) => item.length > 0);
+    if (segments.length < 2) {
+      return undefined;
+    }
+
+    const currentSegment = this.decodeUriSegment(segments[0]);
+    if (!acceptedSegments.has(currentSegment)) {
+      return undefined;
+    }
+
+    segments[0] = nextSegment;
+    const queryParams = new URLSearchParams(uri.query);
+    if (resolvedDeviceId && resolvedDeviceId.trim().length > 0) {
+      queryParams.set('deviceId', resolvedDeviceId);
+    }
+    return uri.with({ path: `/${segments.join('/')}`, query: queryParams.toString() });
+  }
+
+  private async remapOpenDeviceTabsForAliasChange(
+    deviceId: string,
+    previousSegment: string,
+    nextSegment: string
+  ): Promise<void> {
+    if (previousSegment === nextSegment) {
+      return;
+    }
+
+    const acceptedSegments = new Set<string>([deviceId, previousSegment]);
+    const matchingTabs: Array<{
+      oldUri: vscode.Uri;
+      newUri: vscode.Uri;
+      viewColumn: vscode.ViewColumn;
+      isPreview: boolean;
+    }> = [];
+
+    for (const group of vscode.window.tabGroups.all) {
+      for (const tab of group.tabs) {
+        if (!(tab.input instanceof vscode.TabInputText)) {
+          continue;
+        }
+        const newUri = this.remapDeviceUriSegment(tab.input.uri, acceptedSegments, nextSegment, deviceId);
+        if (!newUri) {
+          continue;
+        }
+        matchingTabs.push({
+          oldUri: tab.input.uri,
+          newUri,
+          viewColumn: group.viewColumn,
+          isPreview: (tab as vscode.Tab & { isPreview?: boolean }).isPreview ?? false
+        });
+      }
+    }
+
+    if (matchingTabs.length === 0) {
+      return;
+    }
+
+    const oldUriKeysToClose = new Set<string>();
+    let skippedDirtyCount = 0;
+
+    for (const entry of matchingTabs) {
+      const isDirty = vscode.workspace.textDocuments.some(
+        (document) => document.uri.toString() === entry.oldUri.toString() && document.isDirty
+      );
+      if (isDirty) {
+        skippedDirtyCount += 1;
+        continue;
+      }
+
+      const document = await vscode.workspace.openTextDocument(entry.newUri);
+      await vscode.window.showTextDocument(document, {
+        viewColumn: entry.viewColumn,
+        preserveFocus: true,
+        preview: entry.isPreview
+      });
+      oldUriKeysToClose.add(entry.oldUri.toString());
+    }
+
+    if (oldUriKeysToClose.size > 0) {
+      const tabsToClose: vscode.Tab[] = [];
+      for (const group of vscode.window.tabGroups.all) {
+        for (const tab of group.tabs) {
+          if (!(tab.input instanceof vscode.TabInputText)) {
+            continue;
+          }
+          if (oldUriKeysToClose.has(tab.input.uri.toString())) {
+            tabsToClose.push(tab);
+          }
+        }
+      }
+      if (tabsToClose.length > 0) {
+        await vscode.window.tabGroups.close(tabsToClose, true);
+      }
+    }
+
+    if (skippedDirtyCount > 0) {
+      vscode.window.showWarningMessage(
+        `Alias updated, but ${skippedDirtyCount} dirty tab(s) were not retitled to avoid losing unsaved changes. Save/reopen those tabs to apply the new alias title.`
+      );
+    }
+  }
+
+  private async normalizeOpenDeviceTabsToCurrentAliasSegments(): Promise<void> {
+    const matchingTabs: Array<{
+      oldUri: vscode.Uri;
+      newUri: vscode.Uri;
+      viewColumn: vscode.ViewColumn;
+      isPreview: boolean;
+    }> = [];
+
+    for (const group of vscode.window.tabGroups.all) {
+      for (const tab of group.tabs) {
+        if (!(tab.input instanceof vscode.TabInputText)) {
+          continue;
+        }
+
+        const uri = tab.input.uri;
+        if (uri.scheme !== deviceDocumentScheme) {
+          continue;
+        }
+
+        const rawPath = uri.path.replace(/^\/+/, '');
+        const segments = rawPath.split('/').filter((item) => item.length > 0);
+        if (segments.length < 2) {
+          continue;
+        }
+
+        const currentSegment = this.decodeUriSegment(segments[0]);
+        const resolvedDeviceId = this.resolveDeviceIdFromUriSegment(currentSegment);
+        const canonicalSegment = resolvedDeviceId ? this.getDeviceUriSegment(resolvedDeviceId) : currentSegment;
+        const queryParams = new URLSearchParams(uri.query);
+        const queryDeviceId = queryParams.get('deviceId')?.trim();
+        const needsPathUpdate = canonicalSegment !== currentSegment;
+        const needsQueryUpdate = !!resolvedDeviceId && queryDeviceId !== resolvedDeviceId;
+        if (!needsPathUpdate && !needsQueryUpdate) {
+          continue;
+        }
+
+        segments[0] = canonicalSegment;
+        if (resolvedDeviceId) {
+          queryParams.set('deviceId', resolvedDeviceId);
+        }
+        const newUri = uri.with({ path: `/${segments.join('/')}`, query: queryParams.toString() });
+        matchingTabs.push({
+          oldUri: uri,
+          newUri,
+          viewColumn: group.viewColumn,
+          isPreview: (tab as vscode.Tab & { isPreview?: boolean }).isPreview ?? false
+        });
+      }
+    }
+
+    if (matchingTabs.length === 0) {
+      return;
+    }
+
+    const oldUriKeysToClose = new Set<string>();
+    let skippedDirtyCount = 0;
+
+    for (const entry of matchingTabs) {
+      const isDirty = vscode.workspace.textDocuments.some(
+        (document) => document.uri.toString() === entry.oldUri.toString() && document.isDirty
+      );
+      if (isDirty) {
+        skippedDirtyCount += 1;
+        continue;
+      }
+
+      const document = await vscode.workspace.openTextDocument(entry.newUri);
+      await vscode.window.showTextDocument(document, {
+        viewColumn: entry.viewColumn,
+        preserveFocus: true,
+        preview: entry.isPreview
+      });
+      oldUriKeysToClose.add(entry.oldUri.toString());
+    }
+
+    if (oldUriKeysToClose.size > 0) {
+      const tabsToClose: vscode.Tab[] = [];
+      for (const group of vscode.window.tabGroups.all) {
+        for (const tab of group.tabs) {
+          if (!(tab.input instanceof vscode.TabInputText)) {
+            continue;
+          }
+          if (oldUriKeysToClose.has(tab.input.uri.toString())) {
+            tabsToClose.push(tab);
+          }
+        }
+      }
+      if (tabsToClose.length > 0) {
+        await vscode.window.tabGroups.close(tabsToClose, true);
+      }
+    }
+
+    if (skippedDirtyCount > 0) {
+      vscode.window.showWarningMessage(
+        `Alias configuration changed, but ${skippedDirtyCount} dirty tab(s) were not retitled to avoid losing unsaved changes. Save/reopen those tabs to apply alias titles.`
+      );
+    }
+  }
+
   async linkDeviceToHostFolder(node?: MirrorNode): Promise<void> {
     let deviceId = await this.ensureActiveDevice(node);
     if (!deviceId) {
@@ -2389,6 +2722,18 @@ class DeviceMirrorModel {
         if (trimmed.length > 64) {
           return 'Alias must be 64 characters or fewer.';
         }
+        if (trimmed.length > 0) {
+          const needle = trimmed.toLocaleLowerCase();
+          const duplicate = Object.entries(this.deviceAliases).find(([existingDeviceId, existingDeviceAlias]) => {
+            if (existingDeviceId === deviceId) {
+              return false;
+            }
+            return existingDeviceAlias.trim().toLocaleLowerCase() === needle;
+          });
+          if (duplicate) {
+            return `Alias "${trimmed}" is already used by ${duplicate[0]}. Aliases must be unique.`;
+          }
+        }
         return undefined;
       }
     });
@@ -2397,8 +2742,31 @@ class DeviceMirrorModel {
     }
 
     const alias = input.trim();
-    const updated = await updateDeviceAlias(deviceId, alias.length > 0 ? alias : undefined);
+    const previousUriSegment = existingAlias.length > 0 ? existingAlias : deviceId;
+    if (alias.length > 0) {
+      const needle = alias.toLocaleLowerCase();
+      const duplicate = Object.entries(this.deviceAliases).find(([existingDeviceId, existingDeviceAlias]) => {
+        if (existingDeviceId === deviceId) {
+          return false;
+        }
+        return existingDeviceAlias.trim().toLocaleLowerCase() === needle;
+      });
+      if (duplicate) {
+        vscode.window.showErrorMessage(`Alias "${alias}" is already used by ${duplicate[0]}.`);
+        return;
+      }
+    }
+    let updated;
+    try {
+      updated = await updateDeviceAlias(deviceId, alias.length > 0 ? alias : undefined);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      vscode.window.showErrorMessage(message);
+      return;
+    }
     this.deviceAliases = getDeviceAliases(updated);
+    this.validateAliasConfigurationAndWarn();
+    await this.remapOpenDeviceTabsForAliasChange(deviceId, previousUriSegment, this.getDeviceUriSegment(deviceId));
 
     const msg = alias.length > 0
       ? `Set alias for ${deviceId}: ${alias}`
@@ -2567,8 +2935,8 @@ class DeviceMirrorModel {
     }
 
     const computerUri = vscode.Uri.file(computerPath);
-    const deviceSegment = encodeURIComponent(deviceId);
-    const deviceUri = vscode.Uri.parse(`${deviceDocumentScheme}:/${deviceSegment}/${relativePath}`);
+    const deviceSegment = encodeURIComponent(this.getDeviceUriSegment(deviceId));
+    const deviceUri = vscode.Uri.parse(`${deviceDocumentScheme}:/${deviceSegment}/${relativePath}?deviceId=${encodeURIComponent(deviceId)}`);
     const title = `${relativePath} (Computer <-> Device)`;
     await vscode.commands.executeCommand('vscode.diff', computerUri, deviceUri, title, { preview: false });
   }
@@ -2581,9 +2949,22 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
   private static readonly defaultWaitForConnectionMs = 120000;
   private readonly statCache = new Map<string, vscode.FileStat>();
   private readonly backupRootPath: string;
+  private deviceUriSegmentForId: (deviceId: string) => string = (deviceId) => deviceId;
+  private deviceIdFromUriSegment: (segment: string) => string | undefined = (segment) => {
+    const decoded = segment.trim();
+    return decoded.length > 0 ? decoded : undefined;
+  };
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.backupRootPath = path.join(this.context.globalStorageUri.fsPath, 'device-working-copy');
+  }
+
+  setDeviceUriResolvers(
+    getDeviceUriSegment: (deviceId: string) => string,
+    resolveDeviceIdFromUriSegment: (segment: string) => string | undefined
+  ): void {
+    this.deviceUriSegmentForId = getDeviceUriSegment;
+    this.deviceIdFromUriSegment = resolveDeviceIdFromUriSegment;
   }
 
   watch(): vscode.Disposable {
@@ -2614,7 +2995,7 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
   async readDirectory(uri: vscode.Uri): Promise<[string, vscode.FileType][]> {
     const { deviceId, relativePath } = this.toDeviceAndRelativeDevicePathOrRoot(uri);
     if (!deviceId) {
-      const roots = getConnectedBoards().map((item) => [encodeURIComponent(item.deviceId), vscode.FileType.Directory] as [string, vscode.FileType]);
+      const roots = getConnectedBoards().map((item) => [encodeURIComponent(this.deviceUriSegmentForId(item.deviceId)), vscode.FileType.Directory] as [string, vscode.FileType]);
       return roots.sort((a, b) => a[0].localeCompare(b[0]));
     }
 
@@ -2871,10 +3252,15 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
       segments.shift();
     }
 
-    const connectedIds = new Set(getConnectedBoards().map((item) => item.deviceId));
-    const decodedFirst = this.decodeDeviceDeviceSegment(segments[0]);
-    if (decodedFirst && connectedIds.has(decodedFirst) && segments.length > 1) {
+    const queryDeviceId = new URLSearchParams(uri.query).get('deviceId')?.trim();
+    if (queryDeviceId && segments.length > 1) {
       segments.shift();
+    } else {
+      const decodedFirst = this.decodeDeviceDeviceSegment(segments[0]);
+      const resolvedDeviceId = decodedFirst ? this.deviceIdFromUriSegment(decodedFirst) : undefined;
+      if (resolvedDeviceId && segments.length > 1) {
+        segments.shift();
+      }
     }
 
     const deviceName = (path.basename(board.device) || board.device).replace(/[^\w.-]/g, '_');
@@ -2908,10 +3294,15 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
       segments.shift();
     }
 
-    const connectedIds = new Set(getConnectedBoards().map((item) => item.deviceId));
-    const decodedFirst = this.decodeDeviceDeviceSegment(segments[0]);
-    if (decodedFirst && connectedIds.has(decodedFirst) && segments.length > 1) {
+    const queryDeviceId = new URLSearchParams(uri.query).get('deviceId')?.trim();
+    if (queryDeviceId && segments.length > 1) {
       segments.shift();
+    } else {
+      const decodedFirst = this.decodeDeviceDeviceSegment(segments[0]);
+      const resolvedDeviceId = decodedFirst ? this.deviceIdFromUriSegment(decodedFirst) : undefined;
+      if (resolvedDeviceId && segments.length > 1) {
+        segments.shift();
+      }
     }
 
     const deviceName = (path.basename(board.device) || board.device).replace(/[^\w.-]/g, '_');
@@ -2923,9 +3314,9 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
   }
 
   private toDeviceUri(deviceId: string, relativePath: string): vscode.Uri {
-    const deviceSegment = encodeURIComponent(deviceId);
+    const deviceSegment = encodeURIComponent(this.deviceUriSegmentForId(deviceId));
     const normalised = toRelativePath(relativePath).replace(/^\/+/, '');
-    return vscode.Uri.parse(`${deviceDocumentScheme}:/${deviceSegment}/${normalised}`);
+    return vscode.Uri.parse(`${deviceDocumentScheme}:/${deviceSegment}/${normalised}?deviceId=${encodeURIComponent(deviceId)}`);
   }
 
   private matchesDeletedPath(candidatePath: string, deletedPath: string, includeDescendants: boolean): boolean {
@@ -3102,14 +3493,19 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
       return { deviceId: undefined, relativePath: '' };
     }
 
+    const queryDeviceId = new URLSearchParams(uri.query).get('deviceId')?.trim();
     const decodedDeviceId = this.decodeDeviceDeviceSegment(segments[0]);
-    const hasDevicePrefix = getConnectedBoards().some((item) => item.deviceId === decodedDeviceId) || segments.length > 1;
+    const resolvedDeviceId = this.deviceIdFromUriSegment(decodedDeviceId);
+    const effectiveDeviceId = queryDeviceId && queryDeviceId.length > 0
+      ? queryDeviceId
+      : (resolvedDeviceId ?? decodedDeviceId);
+    const hasDevicePrefix = !!effectiveDeviceId || segments.length > 1;
     if (!hasDevicePrefix) {
       return { deviceId: undefined, relativePath: rawPath };
     }
 
     return {
-      deviceId: decodedDeviceId,
+      deviceId: effectiveDeviceId,
       relativePath: toRelativePath(segments.slice(1).join('/'))
     };
   }
@@ -3528,6 +3924,10 @@ export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext)
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
   });
+  deviceFsProvider.setDeviceUriResolvers(
+    (deviceId: string) => model.getDeviceUriSegment(deviceId),
+    (segment: string) => model.resolveDeviceIdFromUriSegment(segment)
+  );
 
   const provider = new MirrorTreeProvider(model);
 
