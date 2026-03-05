@@ -1,10 +1,20 @@
 import * as vscode from 'vscode';
-import { createDefaultConfiguration, PyboardDevConfigurationResult } from '../utils/configuration';
+import { configurationFileName, getConfigurationFullFileName, PyboardDevConfigurationResult, resetDefaultConfiguration } from '../utils/configuration';
 import { logChannelOutput } from '../output-channel';
 
 export const initCreateConfigCommand = (context: vscode.ExtensionContext) => {
   const command = vscode.commands.registerCommand('mekatrol.pyboarddev.initconfig', async () => {
-    const [result, fileNameOrError] = await createDefaultConfiguration();
+    const configurationPath = getConfigurationFullFileName() ?? configurationFileName;
+    const action = await vscode.window.showWarningMessage(
+      `Reset ${configurationPath} to default values? This will overwrite any existing configuration.`,
+      { modal: true },
+      'Reset'
+    );
+    if (action !== 'Reset') {
+      return;
+    }
+
+    const [result, fileNameOrError] = await resetDefaultConfiguration();
 
     switch (result) {
       case PyboardDevConfigurationResult.AlreadyExists:
@@ -17,7 +27,7 @@ export const initCreateConfigCommand = (context: vscode.ExtensionContext) => {
 
       case PyboardDevConfigurationResult.Created:
         {
-          const msg = `Pyboard Dev configuration file created: '${fileNameOrError}'.`;
+          const msg = `Pyboard Dev configuration file reset: '${fileNameOrError}'.`;
           vscode.window.showInformationMessage(msg);
           logChannelOutput(msg, true);
         }
@@ -25,7 +35,7 @@ export const initCreateConfigCommand = (context: vscode.ExtensionContext) => {
 
       case PyboardDevConfigurationResult.NoWorkspace:
         {
-          const msg = 'Open a workspace to add a Pyboard Dev configuration file.';
+          const msg = 'Open a workspace to reset the Pyboard Dev configuration file.';
           vscode.window.showInformationMessage(msg);
           logChannelOutput(msg, true);
         }
@@ -33,7 +43,7 @@ export const initCreateConfigCommand = (context: vscode.ExtensionContext) => {
 
       case PyboardDevConfigurationResult.Error:
         {
-          const msg = `Error creating Pyboard Dev configuration file: ${fileNameOrError}.`;
+          const msg = `Error resetting Pyboard Dev configuration file: ${fileNameOrError}.`;
           vscode.window.showErrorMessage(msg);
           logChannelOutput(msg, true);
         }

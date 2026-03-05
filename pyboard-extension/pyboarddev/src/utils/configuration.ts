@@ -539,6 +539,39 @@ export const createDefaultConfiguration = async (): Promise<[PyboardDevConfigura
   }
 };
 
+export const resetDefaultConfiguration = async (): Promise<[PyboardDevConfigurationResult, string?]> => {
+  const configuration: PyboardDevConfigurationWithMeta = Object.assign(
+    {
+      meta: {
+        version: 1,
+        help: 'See: https://github.com/mekatrol/micropython-filemanager/blob/main/pyboard-extension/pyboarddev/README.md for description of configuration values.'
+      }
+    },
+    defaultConfiguration
+  );
+
+  if (!vscode.workspace.workspaceFolders) {
+    return [PyboardDevConfigurationResult.NoWorkspace, undefined];
+  }
+
+  try {
+    const workspaceFolder = vscode.workspace.workspaceFolders[0];
+    const folderUri = workspaceFolder.uri;
+    const fileUri = folderUri.with({
+      path: posix.join(folderUri.path, configurationFileName)
+    });
+
+    const filePath = process.platform === 'win32' ? fileUri.path.substring(1).replace(/\//g, '\\') : fileUri.path;
+    const content = JSON.stringify(configuration, null, 2);
+    const writeData = Buffer.from(content, 'utf8');
+    await vscode.workspace.fs.writeFile(fileUri, writeData);
+
+    return [PyboardDevConfigurationResult.Created, filePath];
+  } catch (e) {
+    return [PyboardDevConfigurationResult.Error, e?.toString()];
+  }
+};
+
 const clampNumberUndefinable = (value: number | undefined, min: number, max: number | undefined = undefined): number | undefined => {
   if (!value) {
     return undefined;

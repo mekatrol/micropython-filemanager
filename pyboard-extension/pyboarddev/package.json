@@ -20,7 +20,7 @@
     "commands": [
       {
         "command": "mekatrol.pyboarddev.initconfig",
-        "title": "Pyboard Dev: Create configuration file"
+        "title": "Pyboard Dev: Reset config"
       },
       {
         "command": "mekatrol.pyboarddev.selectdevice",
@@ -226,7 +226,7 @@
       "commandPalette": [
         {
           "command": "mekatrol.pyboarddev.initconfig",
-          "when": "false"
+          "when": "true"
         },
         {
           "command": "mekatrol.pyboarddev.selectdevice",
