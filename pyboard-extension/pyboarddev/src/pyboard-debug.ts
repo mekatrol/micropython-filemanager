@@ -6,6 +6,7 @@ import { logChannelOutput } from './output-channel';
 const debugType = 'pyboarddev';
 const remoteDocumentScheme = 'pyboarddev-remote';
 const defaultTimeoutMs = 60000;
+let activePyboardLaunches = 0;
 
 interface DapRequest {
   seq: number;
@@ -40,6 +41,7 @@ class PyboardDebugAdapter implements vscode.DebugAdapter {
   private readonly messageEmitter = new vscode.EventEmitter<vscode.DebugProtocolMessage>();
   readonly onDidSendMessage = this.messageEmitter.event;
   private sequence = 1;
+  private terminateRequested = false;
 
   dispose(): void {
     this.messageEmitter.dispose();
@@ -85,6 +87,7 @@ class PyboardDebugAdapter implements vscode.DebugAdapter {
       case 'terminate':
         this.sendResponse(request);
         if (request.command === 'disconnect' || request.command === 'terminate') {
+          this.terminateRequested = true;
           this.sendEvent('terminated');
         }
         return;
@@ -95,6 +98,8 @@ class PyboardDebugAdapter implements vscode.DebugAdapter {
 
   private async handleLaunch(args: Record<string, unknown>): Promise<void> {
     let exitCode = 0;
+    this.terminateRequested = false;
+    activePyboardLaunches += 1;
     try {
       const board = getConnectedBoard();
       if (!board) {
@@ -143,6 +148,10 @@ class PyboardDebugAdapter implements vscode.DebugAdapter {
       });
       logChannelOutput(`Run on device failed: ${message}`, true);
     } finally {
+      activePyboardLaunches = Math.max(0, activePyboardLaunches - 1);
+      if (this.terminateRequested) {
+        await softRebootConnectedBoard('Device soft rebooted after debug session stop.', 'Failed to soft reboot device after debug session stop');
+      }
       this.sendEvent('exited', { exitCode });
       this.sendEvent('terminated');
     }
@@ -242,6 +251,21 @@ class PyboardDebugAdapter implements vscode.DebugAdapter {
   }
 }
 
+const softRebootConnectedBoard = async (successMessage: string, failurePrefix: string): Promise<void> => {
+  const board = getConnectedBoard();
+  if (!board) {
+    return;
+  }
+
+  try {
+    await board.softReboot();
+    logChannelOutput(successMessage, true);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logChannelOutput(`${failurePrefix}: ${message}`, true);
+  }
+};
+
 class PyboardDebugAdapterDescriptorFactory implements vscode.DebugAdapterDescriptorFactory {
   createDebugAdapterDescriptor(): vscode.ProviderResult<vscode.DebugAdapterDescriptor> {
     return new vscode.DebugAdapterInlineImplementation(new PyboardDebugAdapter());
@@ -316,18 +340,10 @@ export const initPyboardDebug = (context: vscode.ExtensionContext): void => {
         return;
       }
 
-      const board = getConnectedBoard();
-      if (!board) {
+      if (activePyboardLaunches > 0) {
         return;
       }
-
-      try {
-        await board.softReboot();
-        logChannelOutput('Device soft rebooted after debug session stop.', true);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        logChannelOutput(`Failed to soft reboot device after debug session stop: ${message}`, true);
-      }
+      await softRebootConnectedBoard('Device soft rebooted after debug session stop.', 'Failed to soft reboot device after debug session stop');
     })
   );
 };
