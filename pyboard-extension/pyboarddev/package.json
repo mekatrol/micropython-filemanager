@@ -138,6 +138,10 @@
       {
         "command": "mekatrol.pyboarddev.unlinkdevicehostfolder",
         "title": "Pyboard Dev: Unlink device from host folder"
+      },
+      {
+        "command": "mekatrol.pyboarddev.setdevicealias",
+        "title": "Pyboard Dev: Set device alias"
       }
     ],
     "viewsContainers": {
@@ -203,6 +207,10 @@
           "command": "mekatrol.pyboarddev.unlinkdevicehostfolder"
           ,
           "when": "mekatrol.pyboarddev.hasLinkedHostMappings"
+        },
+        {
+          "command": "mekatrol.pyboarddev.setdevicealias",
+          "when": "mekatrol.pyboarddev.boardConnected"
         }
       ],
       "view/title": [
@@ -287,6 +295,11 @@
           "command": "mekatrol.pyboarddev.unlinkdevicehostfolder",
           "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceIdNodeLinked || viewItem == pyboarddev.hostDeviceMappingNode)",
           "group": "navigation@11"
+        },
+        {
+          "command": "mekatrol.pyboarddev.setdevicealias",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceIdNode || viewItem == pyboarddev.deviceIdNodeLinked || viewItem == pyboarddev.hostDeviceMappingNode)",
+          "group": "navigation@12"
         }
       ]
     },

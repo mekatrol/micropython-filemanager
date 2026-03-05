@@ -1,5 +1,7 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConnectedBoard, getConnectedBoards, onBoardConnectionsChanged } from './commands/connect-board-command';
+import { configurationFileName, loadConfiguration, onPyboardDevConfigurationUpdated } from './utils/configuration';
 
 const openReplCommandId = 'mekatrol.pyboarddev.openrepl';
 const clearReplCommandId = 'mekatrol.pyboarddev.clearrepl';
@@ -23,6 +25,7 @@ interface DeviceReplState {
 
 interface ReplWebviewDeviceState {
   deviceId: string;
+  displayName: string;
   devicePath: string;
   lines: string[];
   history: string[];
@@ -44,7 +47,10 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
   private readonly devicesById = new Map<string, DeviceReplState>();
   private activeDeviceId: string | undefined;
   private readonly boardConnectionsDisposable: vscode.Disposable;
+  private readonly configurationUpdatedDisposable: vscode.Disposable;
+  private readonly configurationSavedDisposable: vscode.Disposable;
   private readonly persistedHistoryByDevice = new Map<string, string[]>();
+  private deviceAliases: Record<string, string> = {};
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.loadPersistedHistory();
@@ -52,7 +58,18 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       this.reconcileConnectedDevices(snapshots);
       this.postState();
     });
+    this.configurationUpdatedDisposable = onPyboardDevConfigurationUpdated((configuration) => {
+      this.deviceAliases = Object.assign({}, configuration.deviceAliases ?? {});
+      this.postState();
+    });
+    this.configurationSavedDisposable = vscode.workspace.onDidSaveTextDocument((document) => {
+      if (path.basename(document.uri.fsPath) !== configurationFileName) {
+        return;
+      }
+      void this.reloadDeviceAliases();
+    });
     this.reconcileConnectedDevices(getConnectedBoards());
+    void this.reloadDeviceAliases();
   }
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -74,10 +91,23 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
 
   dispose(): void {
     this.boardConnectionsDisposable.dispose();
+    this.configurationUpdatedDisposable.dispose();
+    this.configurationSavedDisposable.dispose();
     for (const state of this.devicesById.values()) {
       this.clearPromptFallbackTimer(state);
     }
     this.devicesById.clear();
+  }
+
+  private async reloadDeviceAliases(): Promise<void> {
+    const configuration = await loadConfiguration();
+    this.deviceAliases = Object.assign({}, configuration.deviceAliases ?? {});
+    this.postState();
+  }
+
+  private getDeviceDisplayName(deviceId: string): string {
+    const alias = this.deviceAliases[deviceId]?.trim();
+    return alias && alias.length > 0 ? alias : deviceId;
   }
 
   reveal(): void {
@@ -379,6 +409,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     const state: ReplWebviewState = {
       devices: snapshots.map((snapshot) => ({
         deviceId: snapshot.deviceId,
+        displayName: this.getDeviceDisplayName(snapshot.deviceId),
         devicePath: snapshot.devicePath,
         lines: this.devicesById.get(snapshot.deviceId)?.lines ?? [],
         history: this.devicesById.get(snapshot.deviceId)?.history ?? []
@@ -516,8 +547,8 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
 
         const title = document.createElement('span');
         title.className = 'tab-title';
-        title.textContent = device.deviceId;
-        title.title = device.deviceId + ' (' + device.devicePath + ')';
+        title.textContent = device.displayName || device.deviceId;
+        title.title = (device.displayName || device.deviceId) + ' (' + device.devicePath + ')';
         tab.appendChild(title);
 
         tabsEl.appendChild(tab);

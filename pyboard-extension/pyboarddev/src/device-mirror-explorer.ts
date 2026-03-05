@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConnectedBoard, getConnectedBoards, onBoardConnectionStateChanged, onBoardConnectionsChanged } from './commands/connect-board-command';
 import { logChannelOutput } from './output-channel';
-import { loadConfiguration, updateDeviceHostFolderMapping } from './utils/configuration';
+import { loadConfiguration, updateDeviceAlias, updateDeviceHostFolderMapping } from './utils/configuration';
 import {
   createDeviceDirectory,
   deleteDevicePath,
@@ -36,6 +36,7 @@ const commandRenameMirrorPathId = 'mekatrol.pyboarddev.renamemirrorpath';
 const commandDeleteMirrorPathId = 'mekatrol.pyboarddev.deletemirrorpath';
 const commandLinkDeviceHostFolderId = 'mekatrol.pyboarddev.linkdevicehostfolder';
 const commandUnlinkDeviceHostFolderId = 'mekatrol.pyboarddev.unlinkdevicehostfolder';
+const commandSetDeviceAliasId = 'mekatrol.pyboarddev.setdevicealias';
 const remoteDocumentScheme = 'pyboarddev-remote';
 const selectedSerialPortStateKey = 'selectedSerialPort';
 const selectedBaudRateStateKey = 'selectedBaudRate';
@@ -76,6 +77,7 @@ class DeviceMirrorModel {
   private mirrorRootPath: string | undefined;
   private obfuscationSet: Set<string> = new Set();
   private deviceHostFolderMappings: Record<string, string> = {};
+  private deviceAliases: Record<string, string> = {};
   private knownDeviceIds: Set<string> = new Set();
   private activeDeviceId: string | undefined;
   private mirrorRootByDeviceId = new Map<string, string>();
@@ -112,6 +114,7 @@ class DeviceMirrorModel {
     const config = await loadConfiguration();
     this.obfuscationSet = normaliseObfuscationSet(config.obfuscateOnPull ?? []);
     this.deviceHostFolderMappings = Object.assign({}, config.deviceHostFolderMappings ?? {});
+    this.deviceAliases = Object.assign({}, config.deviceAliases ?? {});
     this.linkableHostFolders = await this.getLinkableHostFolders();
     await vscode.commands.executeCommand('setContext', hasHostMirrorChildFoldersContextKey, this.linkableHostFolders.length > 0);
     await vscode.commands.executeCommand('setContext', hasLinkedHostMappingsContextKey, Object.keys(this.deviceHostFolderMappings).length > 0);
@@ -252,17 +255,22 @@ class DeviceMirrorModel {
     }
 
     const selected = await vscode.window.showQuickPick(
-      candidates.map((deviceId) => ({
-        label: deviceId,
-        description: this.getMappedHostFolder(deviceId) ?? 'not linked'
-      })),
+      candidates.map((deviceId) => {
+        const alias = this.getDeviceAlias(deviceId);
+        const mapping = this.getMappedHostFolder(deviceId) ?? 'not linked';
+        return {
+          deviceId,
+          label: alias ?? deviceId,
+          description: alias ? `${deviceId} | ${mapping}` : mapping
+        };
+      }),
       {
         placeHolder,
         canPickMany: false,
         ignoreFocusOut: true
       }
     );
-    return selected?.label;
+    return selected?.deviceId;
   }
 
   async syncFromDevice(): Promise<void> {
@@ -1194,6 +1202,24 @@ class DeviceMirrorModel {
     return this.deviceHostFolderMappings[deviceId];
   }
 
+  getDeviceAlias(deviceId: string): string | undefined {
+    const alias = this.deviceAliases[deviceId];
+    if (!alias) {
+      return undefined;
+    }
+    const trimmed = alias.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  getDeviceDisplayName(deviceId: string): string {
+    return this.getDeviceAlias(deviceId) ?? deviceId;
+  }
+
+  getDeviceDisplayNameWithId(deviceId: string): string {
+    const alias = this.getDeviceAlias(deviceId);
+    return alias ? `${alias} (${deviceId})` : deviceId;
+  }
+
   async linkDeviceToHostFolder(node?: MirrorNode): Promise<void> {
     let deviceId = await this.ensureActiveDevice(node);
     if (!deviceId) {
@@ -1274,6 +1300,49 @@ class DeviceMirrorModel {
     this.deviceHostFolderMappings = Object.assign({}, updated.deviceHostFolderMappings ?? {});
 
     const msg = `Unlinked ${deviceId} from host folder: ${current}`;
+    logChannelOutput(msg, true);
+    vscode.window.showInformationMessage(msg);
+    await this.refresh(true);
+  }
+
+  async setDeviceAlias(node?: MirrorNode): Promise<void> {
+    let deviceId = await this.ensureActiveDevice(node);
+    if (!deviceId) {
+      deviceId = await this.pickKnownDeviceId('Select device to set alias');
+      if (deviceId) {
+        this.activateDevice(deviceId);
+      }
+    }
+    if (!deviceId) {
+      vscode.window.showWarningMessage('Select a device to set an alias.');
+      return;
+    }
+
+    const existingAlias = this.getDeviceAlias(deviceId) ?? '';
+    const input = await vscode.window.showInputBox({
+      title: 'Set Device Alias',
+      prompt: `Set a friendly alias for ${this.getDeviceDisplayNameWithId(deviceId)}. Leave empty to clear.`,
+      value: existingAlias,
+      ignoreFocusOut: true,
+      validateInput: (value) => {
+        const trimmed = value.trim();
+        if (trimmed.length > 64) {
+          return 'Alias must be 64 characters or fewer.';
+        }
+        return undefined;
+      }
+    });
+    if (input === undefined) {
+      return;
+    }
+
+    const alias = input.trim();
+    const updated = await updateDeviceAlias(deviceId, alias.length > 0 ? alias : undefined);
+    this.deviceAliases = Object.assign({}, updated.deviceAliases ?? {});
+
+    const msg = alias.length > 0
+      ? `Set alias for ${deviceId}: ${alias}`
+      : `Cleared alias for ${deviceId}`;
     logChannelOutput(msg, true);
     vscode.window.showInformationMessage(msg);
     await this.refresh(true);
@@ -2048,6 +2117,10 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
       }
       element.iconPath = new vscode.ThemeIcon('device-mobile');
       if (data.deviceId) {
+        const alias = this.model.getDeviceAlias(data.deviceId);
+        if (alias) {
+          element.tooltip = `${alias}\n${data.deviceId}`;
+        }
         if (data.side === 'device') {
           const connected = this.model.getConnectedDevice(data.deviceId);
           const state = connected ? 'connected' : 'disconnected';
@@ -2125,7 +2198,7 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
             .sort((a, b) => a[0].localeCompare(b[0]))
             .map(([folderKey, deviceId]) => {
               const label = folderKey.startsWith('__device__/')
-                ? deviceId
+                ? this.model.getDeviceDisplayName(deviceId)
                 : path.posix.basename(folderKey);
               return new MirrorNode(
               {
@@ -2189,7 +2262,8 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
 
       return deviceIds.map((deviceId) => {
         const connected = this.model.getConnectedDevice(deviceId);
-        const label = connected ? this.toDeviceLeafLabel(connected) : deviceId;
+        const alias = this.model.getDeviceAlias(deviceId);
+        const label = alias ?? (connected ? this.toDeviceLeafLabel(connected) : deviceId);
         return new MirrorNode(
           {
             side: 'device',
@@ -2215,7 +2289,9 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
     return path.basename(devicePath) || devicePath;
   }
 
-  private toDeviceLeafLabel(device: ReturnType<DeviceMirrorModel['getConnectedDevice']> extends infer T ? T : never): string {
+  private toDeviceLeafLabel(
+    device: ReturnType<DeviceMirrorModel['getConnectedDevice']> extends infer T ? T : never
+  ): string {
     const machine = device?.runtimeInfo?.machine?.trim() || 'Unknown device';
     const port = this.toSerialPortName(device?.devicePath ?? '');
     const deviceId = device?.deviceId ?? 'unknown';
@@ -2337,6 +2413,7 @@ export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext)
   context.subscriptions.push(vscode.commands.registerCommand(commandDeleteMirrorPathId, async (node?: MirrorNode) => model.deleteMirrorPath(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandLinkDeviceHostFolderId, async (node?: MirrorNode) => model.linkDeviceToHostFolder(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandUnlinkDeviceHostFolderId, async (node?: MirrorNode) => model.unlinkDeviceFromHostFolder(node)));
+  context.subscriptions.push(vscode.commands.registerCommand(commandSetDeviceAliasId, async (node?: MirrorNode) => model.setDeviceAlias(node)));
 
   await model.refresh();
   await ensureNativeExplorerRoots(model);

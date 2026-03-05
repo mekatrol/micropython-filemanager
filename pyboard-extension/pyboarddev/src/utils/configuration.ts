@@ -14,6 +14,7 @@ export interface PyboardDevConfiguration {
   mirrorFolder: string;
   obfuscateOnPull: string[];
   deviceHostFolderMappings: Record<string, string>;
+  deviceAliases: Record<string, string>;
 }
 
 export interface MetaPyboardDevConfiguration {
@@ -28,8 +29,12 @@ export interface PyboardDevConfigurationWithMeta extends PyboardDevConfiguration
 export const defaultConfiguration: PyboardDevConfiguration = {
   mirrorFolder: '',
   obfuscateOnPull: [],
-  deviceHostFolderMappings: {}
+  deviceHostFolderMappings: {},
+  deviceAliases: {}
 };
+
+const configurationUpdatedEmitter = new vscode.EventEmitter<PyboardDevConfiguration>();
+export const onPyboardDevConfigurationUpdated = configurationUpdatedEmitter.event;
 
 export const getConfigurationFullFileName = (): string | undefined => {
   if (!vscode.workspace.workspaceFolders) {
@@ -116,11 +121,13 @@ export const saveConfiguration = async (configuration: PyboardDevConfiguration):
   const merged: PyboardDevConfigurationWithMeta = {
     ...existing,
     ...configuration,
-    deviceHostFolderMappings: Object.assign({}, configuration.deviceHostFolderMappings ?? {})
+    deviceHostFolderMappings: Object.assign({}, configuration.deviceHostFolderMappings ?? {}),
+    deviceAliases: Object.assign({}, configuration.deviceAliases ?? {})
   };
 
   const content = JSON.stringify(merged, null, 2);
   await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, 'utf8'));
+  configurationUpdatedEmitter.fire(merged);
 };
 
 export const updateDeviceHostFolderMapping = async (
@@ -139,6 +146,28 @@ export const updateDeviceHostFolderMapping = async (
   const updated: PyboardDevConfiguration = {
     ...configuration,
     deviceHostFolderMappings: nextMappings
+  };
+  await saveConfiguration(updated);
+  return updated;
+};
+
+export const updateDeviceAlias = async (
+  deviceId: string,
+  alias: string | undefined
+): Promise<PyboardDevConfiguration> => {
+  const configuration = await loadConfiguration();
+  const nextAliases = Object.assign({}, configuration.deviceAliases ?? {});
+  const trimmedAlias = alias?.trim();
+
+  if (!trimmedAlias) {
+    delete nextAliases[deviceId];
+  } else {
+    nextAliases[deviceId] = trimmedAlias;
+  }
+
+  const updated: PyboardDevConfiguration = {
+    ...configuration,
+    deviceAliases: nextAliases
   };
   await saveConfiguration(updated);
   return updated;
