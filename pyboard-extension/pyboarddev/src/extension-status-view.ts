@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { getConnectedBoardRuntimeInfo, isBoardConnected, onBoardConnectionStateChanged, onConnectedBoardRuntimeInfoChanged } from './commands/connect-board-command';
-import { getActiveBaudRate, getActiveDevice, getActivePythonType, getStatusDisplayMode, onStatusDataChanged } from './status-bar';
+import { getActiveBaudRate, getActiveDevice, getStatusDisplayMode, onStatusDataChanged } from './status-bar';
 
 const statusViewId = 'mekatrol.pyboarddev.statusView';
 const selectDeviceCommandId = 'mekatrol.pyboarddev.selectdevice';
@@ -41,17 +41,17 @@ class ExtensionStatusViewProvider implements vscode.TreeDataProvider<ExtensionSt
     const connected = isBoardConnected();
     const selectedDevice = getActiveDevice() ?? '<select device>';
     const selectedBaudRate = getActiveBaudRate();
-    const selectedPythonType = getActivePythonType();
 
     const items: ExtensionStatusNode[] = [];
     items.push(new ExtensionStatusNode(`Device: ${selectedDevice} [${selectedBaudRate}]`, 'circuit-board'));
-    items.push(new ExtensionStatusNode(`Python: ${selectedPythonType}`, 'symbol-class'));
     if (connected) {
       const runtimeInfo = getConnectedBoardRuntimeInfo();
       if (runtimeInfo) {
-        items.push(new ExtensionStatusNode(`Runtime: ${runtimeInfo.banner}`, 'info', runtimeInfo.banner));
+        items.push(new ExtensionStatusNode(`Runtime: ${runtimeInfo.runtimeName} ${runtimeInfo.version}`, 'info'));
+        items.push(new ExtensionStatusNode(`Device: ${runtimeInfo.machine}`, 'circuit-board'));
       } else {
         items.push(new ExtensionStatusNode('Runtime: Reading board runtime info...', 'sync~spin'));
+        items.push(new ExtensionStatusNode('Device: Reading board details...', 'sync~spin'));
       }
     }
 
