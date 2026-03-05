@@ -1,5 +1,4 @@
 import { Buffer } from 'buffer';
-import { createHash } from 'crypto';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -22,7 +21,6 @@ import {
   SyncState,
   buildSyncStateMap,
   listDeviceEntries,
-  normaliseObfuscationSet,
   readDeviceFile,
   renameDevicePath,
   scanComputerMirrorEntries,
@@ -63,9 +61,6 @@ const hostMirrorRootFolder = '.pyboard-mirror';
 const hasHostMirrorChildFoldersContextKey = 'mekatrol.pyboarddev.hasHostMirrorChildFolders';
 const hasLinkedHostMappingsContextKey = 'mekatrol.pyboarddev.hasLinkedHostMappings';
 const nameHistoryStateKey = 'mekatrol.pyboarddev.nameHistoryByLower';
-
-const obfuscatedPlaceholder = '# pyboarddev: obfuscated on pull\n';
-const obfuscatedPlaceholderSha1 = createHash('sha1').update(Buffer.from(obfuscatedPlaceholder, 'utf8')).digest('hex');
 
 type NodeSide = 'device' | 'computer';
 
@@ -123,7 +118,6 @@ class DeviceMirrorModel {
 
   private workspaceFolder: vscode.WorkspaceFolder | undefined;
   private mirrorRootPath: string | undefined;
-  private obfuscationSet: Set<string> = new Set();
   private deviceHostFolderMappings: Record<string, string> = {};
   private deviceNames: Record<string, string> = {};
   private deviceSyncExcludedPaths: Record<string, Set<string>> = {};
@@ -207,7 +201,6 @@ class DeviceMirrorModel {
     }
 
     const config = await loadConfiguration();
-    this.obfuscationSet = normaliseObfuscationSet(config.obfuscateOnPull ?? []);
     this.deviceHostFolderMappings = getDeviceHostFolderMappings(config);
     this.deviceNames = getDeviceNames(config);
     await this.syncNameHistory();
@@ -256,7 +249,7 @@ class DeviceMirrorModel {
       }
 
       this.deviceEntriesByDeviceId.set(deviceId, deviceEntries);
-      this.syncStatesByDeviceId.set(deviceId, buildSyncStateMap(computerEntries, deviceEntries, this.obfuscationSet));
+      this.syncStatesByDeviceId.set(deviceId, buildSyncStateMap(computerEntries, deviceEntries));
     }
 
     if (!this.activeDeviceId || !this.knownDeviceIds.has(this.activeDeviceId)) {
@@ -439,9 +432,7 @@ class DeviceMirrorModel {
         continue;
       }
 
-      const needsWrite = this.obfuscationSet.has(relativePath)
-        ? computerEntry.sha1 !== obfuscatedPlaceholderSha1
-        : (!entry.sha1 || !computerEntry.sha1 || entry.sha1 !== computerEntry.sha1);
+      const needsWrite = !entry.sha1 || !computerEntry.sha1 || entry.sha1 !== computerEntry.sha1;
       if (needsWrite) {
         const operation: Omit<SyncOperation, 'id'> = {
           action: 'modify',
@@ -556,11 +547,6 @@ class DeviceMirrorModel {
           // Path does not exist; create parent below.
         }
         await fs.mkdir(path.dirname(computerPath), { recursive: true });
-        if (this.obfuscationSet.has(operation.relativePath)) {
-          await fs.writeFile(computerPath, obfuscatedPlaceholder, 'utf8');
-          syncDialog.setStatus(operation.id, 'success');
-          continue;
-        }
         const content = await readDeviceFile(board, operation.relativePath);
         await fs.writeFile(computerPath, content);
         updatedDeviceFiles.push(operation.relativePath);
@@ -573,7 +559,7 @@ class DeviceMirrorModel {
 
     this.deviceEntries = deviceEntries;
     this.computerEntries = await scanComputerMirrorEntries(this.mirrorRootPath);
-    this.syncStates = buildSyncStateMap(this.computerEntries, this.deviceEntries, this.obfuscationSet);
+    this.syncStates = buildSyncStateMap(this.computerEntries, this.deviceEntries);
     this.onDidChangeDataEmitter.fire();
     if (this.notifyDeviceFilesChanged) {
       await this.notifyDeviceFilesChanged(updatedDeviceFiles);
@@ -621,10 +607,6 @@ class DeviceMirrorModel {
         continue;
       }
       const isExcluded = this.isPathExcludedFromSync(relativePath, this.activeDeviceId);
-      if (!entry.isDirectory && this.obfuscationSet.has(relativePath) && !isExcluded) {
-        continue;
-      }
-
       const deviceEntry = deviceEntryMap.get(relativePath);
       if (!deviceEntry) {
         const operation: Omit<SyncOperation, 'id'> = {
@@ -766,7 +748,7 @@ class DeviceMirrorModel {
 
     this.computerEntries = computerEntries;
     this.deviceEntries = await listDeviceEntries(board);
-    this.syncStates = buildSyncStateMap(this.computerEntries, this.deviceEntries, this.obfuscationSet);
+    this.syncStates = buildSyncStateMap(this.computerEntries, this.deviceEntries);
     this.onDidChangeDataEmitter.fire();
     if (this.notifyDeviceFilesChanged) {
       await this.notifyDeviceFilesChanged(writtenDeviceFiles);
@@ -1900,18 +1882,13 @@ class DeviceMirrorModel {
       }
 
       await fs.mkdir(path.dirname(computerPath), { recursive: true });
-      if (this.obfuscationSet.has(entry.relativePath)) {
-        await fs.writeFile(computerPath, obfuscatedPlaceholder, 'utf8');
-        continue;
-      }
-
       const content = await readDeviceFile(board, entry.relativePath);
       await fs.writeFile(computerPath, content);
     }
 
     this.deviceEntries = deviceEntries;
     this.computerEntries = await scanComputerMirrorEntries(this.mirrorRootPath);
-    this.syncStates = buildSyncStateMap(this.computerEntries, this.deviceEntries, this.obfuscationSet);
+    this.syncStates = buildSyncStateMap(this.computerEntries, this.deviceEntries);
     this.onDidChangeDataEmitter.fire();
 
     const targetLabel = normalisedTarget ? `/${normalisedTarget}` : '/';
@@ -1985,11 +1962,6 @@ class DeviceMirrorModel {
         continue;
       }
 
-      if (this.obfuscationSet.has(entry.relativePath)) {
-        logChannelOutput(`Skipping obfuscated file during sync to device: ${entry.relativePath}`, false);
-        continue;
-      }
-
       const computerPath = path.join(this.mirrorRootPath, entry.relativePath);
       const content = await fs.readFile(computerPath);
       await writeDeviceFile(board, entry.relativePath, Buffer.from(content));
@@ -1998,7 +1970,7 @@ class DeviceMirrorModel {
 
     this.computerEntries = computerEntries;
     this.deviceEntries = await listDeviceEntries(board);
-    this.syncStates = buildSyncStateMap(this.computerEntries, this.deviceEntries, this.obfuscationSet);
+    this.syncStates = buildSyncStateMap(this.computerEntries, this.deviceEntries);
     this.onDidChangeDataEmitter.fire();
     if (this.notifyDeviceFilesChanged) {
       await this.notifyDeviceFilesChanged(writtenDeviceFiles);

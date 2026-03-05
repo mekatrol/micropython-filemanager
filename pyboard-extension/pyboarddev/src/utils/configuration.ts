@@ -138,7 +138,6 @@ export class DeviceConfiguration {
 
 export interface PyboardDevConfiguration {
   mirrorFolder: string;
-  obfuscateOnPull: string[];
   devices: Record<string, DeviceConfiguration>;
 }
 
@@ -153,7 +152,6 @@ export interface PyboardDevConfigurationWithMeta extends PyboardDevConfiguration
 
 export const defaultConfiguration: PyboardDevConfiguration = {
   mirrorFolder: '',
-  obfuscateOnPull: [],
   devices: {}
 };
 
@@ -241,15 +239,6 @@ const findDuplicateNames = (devices: Record<string, DeviceConfiguration>): Array
     .sort((a, b) => a.name.localeCompare(b.name));
 };
 
-const stripLegacyDeviceFields = <T extends object>(value: T): Omit<T, 'deviceHostFolderMappings' | 'deviceNames'> => {
-  const {
-    deviceHostFolderMappings: _legacyMappings,
-    deviceNames: _legacyNames,
-    ...rest
-  } = value as T & LegacyPyboardDevConfiguration;
-  return rest;
-};
-
 export const getDeviceHostFolderMappings = (configuration: PyboardDevConfiguration): Record<string, string> => {
   const mappings: Record<string, string> = {};
   for (const [deviceId, device] of Object.entries(configuration.devices ?? {})) {
@@ -321,10 +310,13 @@ export const loadConfiguration = async (): Promise<PyboardDevConfiguration> => {
     const fileContent = await vscode.workspace.fs.readFile(fileUri);
     const json = Buffer.from(fileContent).toString('utf8');
     const newConfiguration = JSON.parse(json) as Partial<PyboardDevConfiguration> & LegacyPyboardDevConfiguration;
+    const mirrorFolder = typeof newConfiguration.mirrorFolder === 'string'
+      ? newConfiguration.mirrorFolder
+      : configuration.mirrorFolder;
 
     configuration = {
       ...configuration,
-      ...newConfiguration,
+      mirrorFolder,
       devices: parseDevices(newConfiguration)
     };
 
@@ -368,18 +360,21 @@ export const saveConfiguration = async (configuration: PyboardDevConfiguration):
     const fileContent = await vscode.workspace.fs.readFile(fileUri);
     const json = Buffer.from(fileContent).toString('utf8');
     const parsed = JSON.parse(json) as Partial<PyboardDevConfigurationWithMeta> & LegacyPyboardDevConfiguration;
+    const meta = parsed.meta ?? existing.meta;
+    const mirrorFolder = typeof parsed.mirrorFolder === 'string'
+      ? parsed.mirrorFolder
+      : existing.mirrorFolder;
     existing = {
-      ...existing,
-      ...parsed,
+      meta,
+      mirrorFolder,
       devices: parseDevices(parsed)
     };
   } catch {
     // Missing config is expected; file will be created below.
   }
 
-  const existingWithoutLegacy = stripLegacyDeviceFields(existing);
   const merged: PyboardDevConfigurationWithMeta = {
-    ...existingWithoutLegacy,
+    meta: existing.meta,
     ...configuration,
     devices: pruneEmptyDevices(cloneDevices(configuration.devices ?? {}))
   };

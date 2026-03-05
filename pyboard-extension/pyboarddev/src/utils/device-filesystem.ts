@@ -13,10 +13,9 @@ export interface FileEntry {
   isDirectory: boolean;
   size?: number;
   sha1?: string;
-  obfuscated?: boolean;
 }
 
-export type SyncState = 'synced' | 'out_of_sync' | 'device_only' | 'computer_only' | 'obfuscated';
+export type SyncState = 'synced' | 'out_of_sync' | 'device_only' | 'computer_only';
 
 const toPosixRelative = (input: string): string => {
   return input.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
@@ -351,16 +350,11 @@ export const resolveMirrorRootPath = async (workspaceFolder: vscode.WorkspaceFol
   return mirrorRoot;
 };
 
-export const normaliseObfuscationSet = (obfuscateOnPull: string[]): Set<string> => {
-  return new Set(obfuscateOnPull.map((item) => toPosixRelative(item)).filter((item) => item.length > 0));
-};
-
 export const toRelativePath = toPosixRelative;
 
 export const buildSyncStateMap = (
   computerEntries: FileEntry[],
-  deviceEntries: FileEntry[],
-  obfuscationSet: Set<string>
+  deviceEntries: FileEntry[]
 ): Map<string, SyncState> => {
   const computerFiles = new Map(computerEntries.filter((item) => !item.isDirectory).map((item) => [item.relativePath, item]));
   const deviceFiles = new Map(deviceEntries.filter((item) => !item.isDirectory).map((item) => [item.relativePath, item]));
@@ -368,11 +362,6 @@ export const buildSyncStateMap = (
 
   const status = new Map<string, SyncState>();
   for (const relativePath of allPaths) {
-    if (obfuscationSet.has(relativePath)) {
-      status.set(relativePath, 'obfuscated');
-      continue;
-    }
-
     const computer = computerFiles.get(relativePath);
     const device = deviceFiles.get(relativePath);
 
