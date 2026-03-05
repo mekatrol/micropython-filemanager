@@ -135,7 +135,7 @@
       "mekatrol-pyboarddev-sidebar": [
         {
           "id": "mekatrol.pyboarddev.statusView",
-          "name": "Pyboard Status",
+          "name": "PYBOARD",
           "when": "mekatrol.pyboarddev.showExtensionStatusView"
         },
         {

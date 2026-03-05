@@ -45,33 +45,9 @@ class ExtensionStatusViewProvider implements vscode.TreeDataProvider<ExtensionSt
     const selectedPythonType = await getActivePythonType();
 
     const items: ExtensionStatusNode[] = [];
-    items.push(
-      new ExtensionStatusNode(
-        `Device: ${selectedDevice} [${selectedBaudRate}]`,
-        'circuit-board',
-        connected
-          ? 'Serial port selection is disabled while connected. Disconnect to change the device.'
-          : 'Select serial port',
-        connected ? undefined : { command: selectDeviceCommandId, title: 'Select serial port' }
-      )
-    );
-    items.push(
-      new ExtensionStatusNode(
-        `Python: ${selectedPythonType}`,
-        'symbol-class',
-        'Select Python type',
-        { command: selectPythonTypeCommandId, title: 'Select Python type' }
-      )
-    );
-    items.push(
-      new ExtensionStatusNode(
-        connected ? 'Board: Connected' : 'Board: Disconnected',
-        connected ? 'debug-disconnect' : 'plug',
-        connected ? 'Disconnect from board' : 'Connect to board',
-        { command: toggleBoardConnectionCommandId, title: 'Toggle board connection' }
-      )
-    );
-
+    items.push(new ExtensionStatusNode(`Status: ${connected ? 'Connected' : 'Disconnected'}`, connected ? 'debug-disconnect' : 'plug'));
+    items.push(new ExtensionStatusNode(`Device: ${selectedDevice} [${selectedBaudRate}]`, 'circuit-board'));
+    items.push(new ExtensionStatusNode(`Python: ${selectedPythonType}`, 'symbol-class'));
     if (connected) {
       const runtimeInfo = getConnectedBoardRuntimeInfo();
       if (runtimeInfo) {
@@ -79,11 +55,39 @@ class ExtensionStatusViewProvider implements vscode.TreeDataProvider<ExtensionSt
       } else {
         items.push(new ExtensionStatusNode('Runtime: Reading board runtime info...', 'sync~spin'));
       }
+    }
+
+    items.push(
+      new ExtensionStatusNode(
+        '[ Change Device ]',
+        'circuit-board',
+        connected ? 'Disconnect board first, then select serial port' : 'Click to select serial port',
+        connected ? undefined : { command: selectDeviceCommandId, title: 'Select serial port' }
+      )
+    );
+    items.push(
+      new ExtensionStatusNode(
+        '[ Change Python Type ]',
+        'symbol-class',
+        'Click to select Python type',
+        { command: selectPythonTypeCommandId, title: 'Select Python type' }
+      )
+    );
+    items.push(
+      new ExtensionStatusNode(
+        connected ? '[ Disconnect Board ]' : '[ Connect Board ]',
+        connected ? 'debug-disconnect' : 'plug',
+        connected ? 'Click to disconnect from board' : 'Click to connect to board',
+        { command: toggleBoardConnectionCommandId, title: 'Toggle board connection' }
+      )
+    );
+
+    if (connected) {
       items.push(
         new ExtensionStatusNode(
-          'Soft Reboot Device',
+          '[ Soft Reboot Device ]',
           'debug-restart',
-          'Terminate debug (if active) and soft reboot the device',
+          'Click to terminate debug (if active) and soft reboot the device',
           { command: softRebootCommandId, title: 'Soft reboot device' }
         )
       );
