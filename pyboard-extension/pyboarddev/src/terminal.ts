@@ -10,8 +10,18 @@ import { Pyboard } from './utils/pyboard';
 const openReplCommandId = 'mekatrol.pyboarddev.openrepl';
 const replPrompt = '>>> ';
 const promptFallbackDelayMs = 1200;
+const statusDisplayModeSettingKey = 'statusDisplayMode';
 const formatForTerminal = (text: string): string => text.replace(/\n/g, '\r\n');
 const formatInputForEcho = (text: string): string => text.replace(/\r/g, '\r\n');
+
+const getDisconnectedHint = (): string => {
+  const statusDisplayMode = vscode.workspace.getConfiguration('mekatrol.pyboarddev').get<string>(statusDisplayModeSettingKey, 'statusBar');
+  if (statusDisplayMode === 'extensionView') {
+    return '\r\n[device not connected; scan from status view in side panel]\r\n';
+  }
+
+  return '\r\n[device not connected; connect from status bar]\r\n';
+};
 
 class ReplTerminalManager implements vscode.Disposable {
   private readonly writeEmitter = new vscode.EventEmitter<string>();
@@ -145,7 +155,7 @@ class ReplTerminalManager implements vscode.Disposable {
         this.ensurePromptFallbackTimer();
       }
     } else {
-      this.writeEmitter.fire('\r\n[device not connected; connect from status bar]\r\n');
+      this.writeEmitter.fire(getDisconnectedHint());
     }
   }
 
