@@ -128,8 +128,16 @@ class DeviceMirrorModel {
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly notifyRemoteFilesChanged?: (relativePaths: string[]) => Promise<void>,
-    private readonly notifyRemotePathDeleted?: (relativePath: string, includeDescendants: boolean) => Promise<void>
+    private readonly notifyRemotePathDeleted?: (relativePath: string, includeDescendants: boolean) => Promise<void>,
+    private readonly revealPathNode?: (target: { side: NodeSide; relativePath: string; deviceId?: string }) => Promise<void>
   ) {}
+
+  private async revealNode(target: { side: NodeSide; relativePath: string; deviceId?: string }): Promise<void> {
+    if (!this.revealPathNode) {
+      return;
+    }
+    await this.revealPathNode(target);
+  }
 
   async refresh(fetchDevice: boolean = true): Promise<void> {
     this.workspaceFolder = vscode.workspace.workspaceFolders?.[0];
@@ -963,7 +971,9 @@ class DeviceMirrorModel {
 
     const relativePath = this.joinRemotePath(parentPath, fileName);
     await writeDeviceFile(board, relativePath, Buffer.alloc(0));
+    await this.revealNode({ side: 'device', relativePath: parentPath, deviceId: this.activeDeviceId });
     await this.refresh(true);
+    await this.revealNode({ side: 'device', relativePath: parentPath, deviceId: this.activeDeviceId });
     if (this.notifyRemoteFilesChanged) {
       await this.notifyRemoteFilesChanged([relativePath]);
     }
@@ -1007,7 +1017,9 @@ class DeviceMirrorModel {
 
     const relativePath = this.joinRemotePath(parentPath, folderName);
     await createDeviceDirectory(board, relativePath);
+    await this.revealNode({ side: 'device', relativePath: parentPath, deviceId: this.activeDeviceId });
     await this.refresh(true);
+    await this.revealNode({ side: 'device', relativePath: parentPath, deviceId: this.activeDeviceId });
 
     const msg = `Created remote folder: /${relativePath}`;
     vscode.window.showInformationMessage(msg);
@@ -3292,6 +3304,48 @@ export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext)
     await remoteFsProvider.notifyRemoteFilesChanged(relativePaths, model.getActiveDeviceId());
   }, async (relativePath: string, includeDescendants: boolean) => {
     await remoteFsProvider.notifyRemotePathDeleted(relativePath, includeDescendants);
+  }, async (target) => {
+    const findNodeByData = (
+      side: NodeSide,
+      relativePath: string,
+      deviceId?: string
+    ): MirrorNode | undefined => {
+      const targetPath = toRelativePath(relativePath);
+      const stack: MirrorNode[] = [...provider.getChildren()];
+      while (stack.length > 0) {
+        const current = stack.shift()!;
+        const currentPath = toRelativePath(current.data.relativePath);
+        if (
+          current.data.side === side &&
+          currentPath === targetPath &&
+          current.data.deviceId === deviceId &&
+          current.data.isDirectory
+        ) {
+          return current;
+        }
+
+        if (!current.data.isDirectory || current.data.isIndicator) {
+          continue;
+        }
+
+        stack.push(...provider.getChildren(current));
+      }
+
+      return undefined;
+    };
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const node = findNodeByData(target.side, target.relativePath, target.deviceId);
+      if (node) {
+        try {
+          await treeView.reveal(node, { expand: true, focus: false, select: false });
+          return;
+        } catch {
+          // Retry below.
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
   });
 
   const provider = new MirrorTreeProvider(model);
