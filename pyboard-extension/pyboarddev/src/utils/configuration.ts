@@ -12,7 +12,7 @@ export enum PyboardDevConfigurationResult {
 
 interface DeviceConfigurationJson {
   hostFolder?: string;
-  alias?: string;
+  name?: string;
   syncExcludedPaths?: string[];
 }
 
@@ -51,12 +51,12 @@ const normaliseRelativePathArray = (values: readonly string[] | undefined): stri
 
 export class DeviceConfiguration {
   private hostFolder: string | undefined;
-  private alias: string | undefined;
+  private name: string | undefined;
   private syncExcludedPaths: string[] = [];
 
   constructor(initial?: DeviceConfigurationJson) {
     this.hostFolder = normaliseOptionalString(initial?.hostFolder);
-    this.alias = normaliseOptionalString(initial?.alias);
+    this.name = normaliseOptionalString(initial?.name);
     this.syncExcludedPaths = normaliseRelativePathArray(initial?.syncExcludedPaths);
   }
 
@@ -70,11 +70,11 @@ export class DeviceConfiguration {
     }
 
     const hostFolder = typeof value.hostFolder === 'string' ? value.hostFolder : undefined;
-    const alias = typeof value.alias === 'string' ? value.alias : undefined;
+    const name = typeof value.name === 'string' ? value.name : undefined;
     const syncExcludedPaths = Array.isArray(value.syncExcludedPaths)
       ? value.syncExcludedPaths.filter((item): item is string => typeof item === 'string')
       : undefined;
-    return new DeviceConfiguration({ hostFolder, alias, syncExcludedPaths });
+    return new DeviceConfiguration({ hostFolder, name, syncExcludedPaths });
   }
 
   getHostFolder(): string | undefined {
@@ -85,12 +85,12 @@ export class DeviceConfiguration {
     this.hostFolder = normaliseOptionalString(value);
   }
 
-  getAlias(): string | undefined {
-    return this.alias;
+  getName(): string | undefined {
+    return this.name;
   }
 
-  setAlias(value: string | undefined): void {
-    this.alias = normaliseOptionalString(value);
+  setName(value: string | undefined): void {
+    this.name = normaliseOptionalString(value);
   }
 
   getSyncExcludedPaths(): string[] {
@@ -118,7 +118,7 @@ export class DeviceConfiguration {
   }
 
   isEmpty(): boolean {
-    return !this.hostFolder && !this.alias && this.syncExcludedPaths.length === 0;
+    return !this.hostFolder && !this.name && this.syncExcludedPaths.length === 0;
   }
 
   toJSON(): DeviceConfigurationJson {
@@ -126,8 +126,8 @@ export class DeviceConfiguration {
     if (this.hostFolder) {
       json.hostFolder = this.hostFolder;
     }
-    if (this.alias) {
-      json.alias = this.alias;
+    if (this.name) {
+      json.name = this.name;
     }
     if (this.syncExcludedPaths.length > 0) {
       json.syncExcludedPaths = [...this.syncExcludedPaths];
@@ -162,7 +162,7 @@ export const onPyboardDevConfigurationUpdated = configurationUpdatedEmitter.even
 
 interface LegacyPyboardDevConfiguration {
   deviceHostFolderMappings?: Record<string, unknown>;
-  deviceAliases?: Record<string, unknown>;
+  deviceNames?: Record<string, unknown>;
 }
 
 const cloneDevices = (devices: Record<string, DeviceConfiguration>): Record<string, DeviceConfiguration> => {
@@ -195,13 +195,13 @@ const parseDevices = (source: Partial<PyboardDevConfiguration> & LegacyPyboardDe
     devices[deviceId] = device;
   }
 
-  const legacyAliases = isObjectRecord(source.deviceAliases) ? source.deviceAliases : {};
-  for (const [deviceId, alias] of Object.entries(legacyAliases)) {
-    if (typeof alias !== 'string') {
+  const legacyNames = isObjectRecord(source.deviceNames) ? source.deviceNames : {};
+  for (const [deviceId, name] of Object.entries(legacyNames)) {
+    if (typeof name !== 'string') {
       continue;
     }
     const device = devices[deviceId] ?? new DeviceConfiguration();
-    device.setAlias(alias);
+    device.setName(name);
     devices[deviceId] = device;
   }
 
@@ -210,7 +210,7 @@ const parseDevices = (source: Partial<PyboardDevConfiguration> & LegacyPyboardDe
     const parsed = DeviceConfiguration.fromUnknown(rawDevice);
     const device = devices[deviceId] ?? new DeviceConfiguration();
     device.setHostFolder(parsed.getHostFolder() ?? device.getHostFolder());
-    device.setAlias(parsed.getAlias() ?? device.getAlias());
+    device.setName(parsed.getName() ?? device.getName());
     device.setSyncExcludedPaths(parsed.getSyncExcludedPaths());
     devices[deviceId] = device;
   }
@@ -218,33 +218,33 @@ const parseDevices = (source: Partial<PyboardDevConfiguration> & LegacyPyboardDe
   return pruneEmptyDevices(devices);
 };
 
-const findDuplicateAliases = (devices: Record<string, DeviceConfiguration>): Array<{ alias: string; deviceIds: string[] }> => {
-  const aliasBuckets = new Map<string, { alias: string; deviceIds: string[] }>();
+const findDuplicateNames = (devices: Record<string, DeviceConfiguration>): Array<{ name: string; deviceIds: string[] }> => {
+  const nameBuckets = new Map<string, { name: string; deviceIds: string[] }>();
   for (const [deviceId, device] of Object.entries(devices)) {
-    const alias = device.getAlias()?.trim();
-    if (!alias) {
+    const name = device.getName()?.trim();
+    if (!name) {
       continue;
     }
 
-    const key = alias.toLocaleLowerCase();
-    const existing = aliasBuckets.get(key);
+    const key = name.toLocaleLowerCase();
+    const existing = nameBuckets.get(key);
     if (existing) {
       existing.deviceIds.push(deviceId);
     } else {
-      aliasBuckets.set(key, { alias, deviceIds: [deviceId] });
+      nameBuckets.set(key, { name, deviceIds: [deviceId] });
     }
   }
 
-  return [...aliasBuckets.values()]
+  return [...nameBuckets.values()]
     .filter((item) => item.deviceIds.length > 1)
-    .map((item) => ({ alias: item.alias, deviceIds: [...item.deviceIds].sort((a, b) => a.localeCompare(b)) }))
-    .sort((a, b) => a.alias.localeCompare(b.alias));
+    .map((item) => ({ name: item.name, deviceIds: [...item.deviceIds].sort((a, b) => a.localeCompare(b)) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 };
 
-const stripLegacyDeviceFields = <T extends object>(value: T): Omit<T, 'deviceHostFolderMappings' | 'deviceAliases'> => {
+const stripLegacyDeviceFields = <T extends object>(value: T): Omit<T, 'deviceHostFolderMappings' | 'deviceNames'> => {
   const {
     deviceHostFolderMappings: _legacyMappings,
-    deviceAliases: _legacyAliases,
+    deviceNames: _legacyNames,
     ...rest
   } = value as T & LegacyPyboardDevConfiguration;
   return rest;
@@ -261,15 +261,15 @@ export const getDeviceHostFolderMappings = (configuration: PyboardDevConfigurati
   return mappings;
 };
 
-export const getDeviceAliases = (configuration: PyboardDevConfiguration): Record<string, string> => {
-  const aliases: Record<string, string> = {};
+export const getDeviceNames = (configuration: PyboardDevConfiguration): Record<string, string> => {
+  const names: Record<string, string> = {};
   for (const [deviceId, device] of Object.entries(configuration.devices ?? {})) {
-    const alias = device.getAlias();
-    if (alias) {
-      aliases[deviceId] = alias;
+    const name = device.getName();
+    if (name) {
+      names[deviceId] = name;
     }
   }
-  return aliases;
+  return names;
 };
 
 export const getDeviceSyncExcludedPaths = (configuration: PyboardDevConfiguration): Record<string, string[]> => {
@@ -383,10 +383,10 @@ export const saveConfiguration = async (configuration: PyboardDevConfiguration):
     ...configuration,
     devices: pruneEmptyDevices(cloneDevices(configuration.devices ?? {}))
   };
-  const duplicateAliases = findDuplicateAliases(merged.devices);
-  if (duplicateAliases.length > 0) {
-    const details = duplicateAliases.map((item) => `${item.alias} (${item.deviceIds.join(', ')})`).join('; ');
-    throw new Error(`Duplicate device aliases are not allowed: ${details}`);
+  const duplicateNames = findDuplicateNames(merged.devices);
+  if (duplicateNames.length > 0) {
+    const details = duplicateNames.map((item) => `${item.name} (${item.deviceIds.join(', ')})`).join('; ');
+    throw new Error(`Duplicate device names are not allowed: ${details}`);
   }
 
   const content = JSON.stringify(merged, null, 2);
@@ -416,14 +416,14 @@ export const updateDeviceHostFolderMapping = async (
   return updated;
 };
 
-export const updateDeviceAlias = async (
+export const updateDeviceName = async (
   deviceId: string,
-  alias: string | undefined
+  name: string | undefined
 ): Promise<PyboardDevConfiguration> => {
   const configuration = await loadConfiguration();
   const nextDevices = cloneDevices(configuration.devices ?? {});
   const nextDeviceConfig = nextDevices[deviceId] ?? new DeviceConfiguration();
-  nextDeviceConfig.setAlias(alias);
+  nextDeviceConfig.setName(name);
   if (nextDeviceConfig.isEmpty()) {
     delete nextDevices[deviceId];
   } else {

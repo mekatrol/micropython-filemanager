@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConnectedBoard, getConnectedBoards, onBoardConnectionsChanged } from './commands/connect-board-command';
-import { configurationFileName, getDeviceAliases, loadConfiguration, onPyboardDevConfigurationUpdated } from './utils/configuration';
+import { configurationFileName, getDeviceNames, loadConfiguration, onPyboardDevConfigurationUpdated } from './utils/configuration';
 import { getWorkspaceCacheValue, setWorkspaceCacheValue } from './utils/workspace-cache';
 
 const openReplCommandId = 'mekatrol.pyboarddev.openrepl';
@@ -51,7 +51,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
   private readonly configurationUpdatedDisposable: vscode.Disposable;
   private readonly configurationSavedDisposable: vscode.Disposable;
   private readonly persistedHistoryByDevice = new Map<string, string[]>();
-  private deviceAliases: Record<string, string> = {};
+  private deviceNames: Record<string, string> = {};
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.loadPersistedHistory();
@@ -60,17 +60,17 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       this.postState();
     });
     this.configurationUpdatedDisposable = onPyboardDevConfigurationUpdated((configuration) => {
-      this.deviceAliases = getDeviceAliases(configuration);
+      this.deviceNames = getDeviceNames(configuration);
       this.postState();
     });
     this.configurationSavedDisposable = vscode.workspace.onDidSaveTextDocument((document) => {
       if (path.basename(document.uri.fsPath) !== configurationFileName) {
         return;
       }
-      void this.reloadDeviceAliases();
+      void this.reloadDeviceNames();
     });
     this.reconcileConnectedDevices(getConnectedBoards());
-    void this.reloadDeviceAliases();
+    void this.reloadDeviceNames();
   }
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -100,15 +100,15 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     this.devicesById.clear();
   }
 
-  private async reloadDeviceAliases(): Promise<void> {
+  private async reloadDeviceNames(): Promise<void> {
     const configuration = await loadConfiguration();
-    this.deviceAliases = getDeviceAliases(configuration);
+    this.deviceNames = getDeviceNames(configuration);
     this.postState();
   }
 
   private getDeviceDisplayName(deviceId: string): string {
-    const alias = this.deviceAliases[deviceId]?.trim();
-    return alias && alias.length > 0 ? alias : deviceId;
+    const name = this.deviceNames[deviceId]?.trim();
+    return name && name.length > 0 ? name : deviceId;
   }
 
   reveal(): void {

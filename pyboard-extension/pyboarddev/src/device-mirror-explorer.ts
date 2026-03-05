@@ -6,11 +6,11 @@ import * as vscode from 'vscode';
 import { closeAllConnectedBoards, getConnectedBoard, getConnectedBoards, onBoardConnectionStateChanged, onBoardConnectionsChanged } from './commands/connect-board-command';
 import { logChannelOutput } from './output-channel';
 import {
-  getDeviceAliases,
+  getDeviceNames,
   getDeviceHostFolderMappings,
   getDeviceSyncExcludedPaths,
   loadConfiguration,
-  updateDeviceAlias,
+  updateDeviceName,
   updateDeviceSyncExcludedPaths,
   updateDeviceHostFolderMapping,
   updateDeviceSyncExclusion
@@ -48,7 +48,7 @@ const commandRenameMirrorPathId = 'mekatrol.pyboarddev.renamemirrorpath';
 const commandDeleteMirrorPathId = 'mekatrol.pyboarddev.deletemirrorpath';
 const commandLinkDeviceHostFolderId = 'mekatrol.pyboarddev.linkdevicehostfolder';
 const commandUnlinkDeviceHostFolderId = 'mekatrol.pyboarddev.unlinkdevicehostfolder';
-const commandSetDeviceAliasId = 'mekatrol.pyboarddev.setdevicealias';
+const commandSetDeviceNameId = 'mekatrol.pyboarddev.setdevicename';
 const commandExcludeDeviceFileFromSyncId = 'mekatrol.pyboarddev.excludedevicefilefromsync';
 const commandRemoveDeviceFileFromSyncExclusionId = 'mekatrol.pyboarddev.removedevicefilefromsyncexclusion';
 const commandCloseDeviceConnectionId = 'mekatrol.pyboarddev.closedeviceconnection';
@@ -62,7 +62,7 @@ const deviceCreateConfirmPollIntervalMs = 150;
 const hostMirrorRootFolder = '.pyboard-mirror';
 const hasHostMirrorChildFoldersContextKey = 'mekatrol.pyboarddev.hasHostMirrorChildFolders';
 const hasLinkedHostMappingsContextKey = 'mekatrol.pyboarddev.hasLinkedHostMappings';
-const aliasHistoryStateKey = 'mekatrol.pyboarddev.aliasHistoryByLower';
+const nameHistoryStateKey = 'mekatrol.pyboarddev.nameHistoryByLower';
 
 const obfuscatedPlaceholder = '# pyboarddev: obfuscated on pull\n';
 const obfuscatedPlaceholderSha1 = createHash('sha1').update(Buffer.from(obfuscatedPlaceholder, 'utf8')).digest('hex');
@@ -125,7 +125,7 @@ class DeviceMirrorModel {
   private mirrorRootPath: string | undefined;
   private obfuscationSet: Set<string> = new Set();
   private deviceHostFolderMappings: Record<string, string> = {};
-  private deviceAliases: Record<string, string> = {};
+  private deviceNames: Record<string, string> = {};
   private deviceSyncExcludedPaths: Record<string, Set<string>> = {};
   private knownDeviceIds: Set<string> = new Set();
   private activeDeviceId: string | undefined;
@@ -142,9 +142,9 @@ class DeviceMirrorModel {
   private selectedNode: MirrorNode | undefined;
   private lastExplorerOpenUri: string | undefined;
   private lastExplorerOpenAtMs = 0;
-  private duplicateAliasWarningKey: string | undefined;
-  private openTabAliasSyncKey: string | undefined;
-  private aliasHistoryByLower: Record<string, string>;
+  private duplicateNameWarningKey: string | undefined;
+  private openTabNameSyncKey: string | undefined;
+  private nameHistoryByLower: Record<string, string>;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -152,7 +152,7 @@ class DeviceMirrorModel {
     private readonly notifyDevicePathDeleted?: (relativePath: string, includeDescendants: boolean) => Promise<void>,
     private readonly revealPathNode?: (target: { side: NodeSide; relativePath: string; deviceId?: string }) => Promise<void>
   ) {
-    this.aliasHistoryByLower = this.context.globalState.get<Record<string, string>>(aliasHistoryStateKey, {});
+    this.nameHistoryByLower = this.context.globalState.get<Record<string, string>>(nameHistoryStateKey, {});
   }
 
   private async revealNode(target: { side: NodeSide; relativePath: string; deviceId?: string }): Promise<void> {
@@ -209,13 +209,13 @@ class DeviceMirrorModel {
     const config = await loadConfiguration();
     this.obfuscationSet = normaliseObfuscationSet(config.obfuscateOnPull ?? []);
     this.deviceHostFolderMappings = getDeviceHostFolderMappings(config);
-    this.deviceAliases = getDeviceAliases(config);
-    await this.syncAliasHistory();
-    this.validateAliasConfigurationAndWarn();
-    const aliasSyncKey = this.computeAliasSyncKey();
-    if (this.openTabAliasSyncKey !== aliasSyncKey) {
-      await this.normalizeOpenDeviceTabsToCurrentAliasSegments();
-      this.openTabAliasSyncKey = aliasSyncKey;
+    this.deviceNames = getDeviceNames(config);
+    await this.syncNameHistory();
+    this.validateNameConfigurationAndWarn();
+    const nameSyncKey = this.computeNameSyncKey();
+    if (this.openTabNameSyncKey !== nameSyncKey) {
+      await this.normalizeOpenDeviceTabsToCurrentNameSegments();
+      this.openTabNameSyncKey = nameSyncKey;
     }
     this.deviceSyncExcludedPaths = Object.fromEntries(
       Object.entries(getDeviceSyncExcludedPaths(config)).map(([deviceId, relativePaths]) => [deviceId, new Set(relativePaths)])
@@ -223,7 +223,7 @@ class DeviceMirrorModel {
     this.linkableHostFolders = await this.getLinkableHostFolders();
     await vscode.commands.executeCommand('setContext', hasHostMirrorChildFoldersContextKey, this.linkableHostFolders.length > 0);
     await vscode.commands.executeCommand('setContext', hasLinkedHostMappingsContextKey, Object.keys(this.deviceHostFolderMappings).length > 0);
-    this.knownDeviceIds = new Set([...Object.keys(this.deviceHostFolderMappings), ...Object.keys(this.deviceAliases)]);
+    this.knownDeviceIds = new Set([...Object.keys(this.deviceHostFolderMappings), ...Object.keys(this.deviceNames)]);
 
     const connected = getConnectedBoards();
     connected.forEach((item) => this.knownDeviceIds.add(item.deviceId));
@@ -360,12 +360,12 @@ class DeviceMirrorModel {
 
     const selected = await vscode.window.showQuickPick(
       candidates.map((deviceId) => {
-        const alias = this.getDeviceAlias(deviceId);
+        const name = this.getDeviceName(deviceId);
         const mapping = this.getMappedHostFolder(deviceId) ?? 'not linked';
         return {
           deviceId,
-          label: alias ?? deviceId,
-          description: alias ? `${deviceId} | ${mapping}` : mapping
+          label: name ?? deviceId,
+          description: name ? `${deviceId} | ${mapping}` : mapping
         };
       }),
       {
@@ -2275,37 +2275,37 @@ class DeviceMirrorModel {
     return this.deviceHostFolderMappings[deviceId];
   }
 
-  getDeviceAlias(deviceId: string): string | undefined {
-    const alias = this.deviceAliases[deviceId];
-    if (!alias) {
+  getDeviceName(deviceId: string): string | undefined {
+    const name = this.deviceNames[deviceId];
+    if (!name) {
       return undefined;
     }
-    const trimmed = alias.trim();
+    const trimmed = name.trim();
     return trimmed.length > 0 ? trimmed : undefined;
   }
 
   getDeviceDisplayName(deviceId: string): string {
-    return this.getDeviceAlias(deviceId) ?? deviceId;
+    return this.getDeviceName(deviceId) ?? deviceId;
   }
 
   getDeviceDisplayNameWithId(deviceId: string): string {
-    const alias = this.getDeviceAlias(deviceId);
-    return alias ? `${alias} (${deviceId})` : deviceId;
+    const name = this.getDeviceName(deviceId);
+    return name ? `${name} (${deviceId})` : deviceId;
   }
 
   getDeviceUriSegment(deviceId: string): string {
-    return this.getDeviceAlias(deviceId) ?? deviceId;
+    return this.getDeviceName(deviceId) ?? deviceId;
   }
 
-  private async syncAliasHistory(): Promise<void> {
-    const nextHistory: Record<string, string> = { ...this.aliasHistoryByLower };
+  private async syncNameHistory(): Promise<void> {
+    const nextHistory: Record<string, string> = { ...this.nameHistoryByLower };
     let changed = false;
-    for (const [deviceId, aliasRaw] of Object.entries(this.deviceAliases)) {
-      const alias = aliasRaw.trim();
-      if (!alias) {
+    for (const [deviceId, nameRaw] of Object.entries(this.deviceNames)) {
+      const name = nameRaw.trim();
+      if (!name) {
         continue;
       }
-      const key = alias.toLocaleLowerCase();
+      const key = name.toLocaleLowerCase();
       if (nextHistory[key] === deviceId) {
         continue;
       }
@@ -2317,8 +2317,8 @@ class DeviceMirrorModel {
       return;
     }
 
-    this.aliasHistoryByLower = nextHistory;
-    await this.context.globalState.update(aliasHistoryStateKey, nextHistory);
+    this.nameHistoryByLower = nextHistory;
+    await this.context.globalState.update(nameHistoryStateKey, nextHistory);
   }
 
   resolveDeviceIdFromUriSegment(segment: string): string | undefined {
@@ -2332,13 +2332,13 @@ class DeviceMirrorModel {
     }
 
     const needle = decoded.toLocaleLowerCase();
-    for (const [deviceId, alias] of Object.entries(this.deviceAliases)) {
-      if (alias.trim().toLocaleLowerCase() === needle) {
+    for (const [deviceId, name] of Object.entries(this.deviceNames)) {
+      if (name.trim().toLocaleLowerCase() === needle) {
         return deviceId;
       }
     }
 
-    const historicalDeviceId = this.aliasHistoryByLower[needle];
+    const historicalDeviceId = this.nameHistoryByLower[needle];
     if (historicalDeviceId) {
       return historicalDeviceId;
     }
@@ -2346,49 +2346,49 @@ class DeviceMirrorModel {
     return undefined;
   }
 
-  private validateAliasConfigurationAndWarn(): void {
-    const aliasBuckets = new Map<string, { alias: string; deviceIds: string[] }>();
-    for (const [deviceId, aliasRaw] of Object.entries(this.deviceAliases)) {
-      const alias = aliasRaw.trim();
-      if (!alias) {
+  private validateNameConfigurationAndWarn(): void {
+    const nameBuckets = new Map<string, { name: string; deviceIds: string[] }>();
+    for (const [deviceId, nameRaw] of Object.entries(this.deviceNames)) {
+      const name = nameRaw.trim();
+      if (!name) {
         continue;
       }
-      const key = alias.toLocaleLowerCase();
-      const existing = aliasBuckets.get(key);
+      const key = name.toLocaleLowerCase();
+      const existing = nameBuckets.get(key);
       if (existing) {
         existing.deviceIds.push(deviceId);
       } else {
-        aliasBuckets.set(key, { alias, deviceIds: [deviceId] });
+        nameBuckets.set(key, { name, deviceIds: [deviceId] });
       }
     }
 
-    const duplicates = [...aliasBuckets.values()]
+    const duplicates = [...nameBuckets.values()]
       .filter((item) => item.deviceIds.length > 1)
-      .sort((a, b) => a.alias.localeCompare(b.alias));
+      .sort((a, b) => a.name.localeCompare(b.name));
     if (duplicates.length === 0) {
-      this.duplicateAliasWarningKey = undefined;
+      this.duplicateNameWarningKey = undefined;
       return;
     }
 
     const warningKey = duplicates
-      .map((item) => `${item.alias}:${[...item.deviceIds].sort((a, b) => a.localeCompare(b)).join(',')}`)
+      .map((item) => `${item.name}:${[...item.deviceIds].sort((a, b) => a.localeCompare(b)).join(',')}`)
       .join('|');
-    if (this.duplicateAliasWarningKey === warningKey) {
+    if (this.duplicateNameWarningKey === warningKey) {
       return;
     }
-    this.duplicateAliasWarningKey = warningKey;
+    this.duplicateNameWarningKey = warningKey;
 
     const details = duplicates
-      .map((item) => `${item.alias} (${item.deviceIds.join(', ')})`)
+      .map((item) => `${item.name} (${item.deviceIds.join(', ')})`)
       .join('; ');
-    const message = `Duplicate device aliases found in configuration: ${details}. Aliases must be unique.`;
+    const message = `Duplicate device names found in configuration: ${details}. Names must be unique.`;
     vscode.window.showErrorMessage(message);
     logChannelOutput(message, true);
   }
 
-  private computeAliasSyncKey(): string {
-    return Object.entries(this.deviceAliases)
-      .map(([deviceId, alias]) => `${deviceId}:${alias.trim().toLocaleLowerCase()}`)
+  private computeNameSyncKey(): string {
+    return Object.entries(this.deviceNames)
+      .map(([deviceId, name]) => `${deviceId}:${name.trim().toLocaleLowerCase()}`)
       .sort((a, b) => a.localeCompare(b))
       .join('|');
   }
@@ -2430,7 +2430,7 @@ class DeviceMirrorModel {
     return uri.with({ path: `/${segments.join('/')}`, query: queryParams.toString() });
   }
 
-  private async remapOpenDeviceTabsForAliasChange(
+  private async remapOpenDeviceTabsForNameChange(
     deviceId: string,
     previousSegment: string,
     nextSegment: string
@@ -2509,12 +2509,12 @@ class DeviceMirrorModel {
 
     if (skippedDirtyCount > 0) {
       vscode.window.showWarningMessage(
-        `Alias updated, but ${skippedDirtyCount} dirty tab(s) were not retitled to avoid losing unsaved changes. Save/reopen those tabs to apply the new alias title.`
+        `Name updated, but ${skippedDirtyCount} dirty tab(s) were not retitled to avoid losing unsaved changes. Save/reopen those tabs to apply the new name title.`
       );
     }
   }
 
-  private async normalizeOpenDeviceTabsToCurrentAliasSegments(): Promise<void> {
+  private async normalizeOpenDeviceTabsToCurrentNameSegments(): Promise<void> {
     const matchingTabs: Array<{
       oldUri: vscode.Uri;
       newUri: vscode.Uri;
@@ -2608,7 +2608,7 @@ class DeviceMirrorModel {
 
     if (skippedDirtyCount > 0) {
       vscode.window.showWarningMessage(
-        `Alias configuration changed, but ${skippedDirtyCount} dirty tab(s) were not retitled to avoid losing unsaved changes. Save/reopen those tabs to apply alias titles.`
+        `Name configuration changed, but ${skippedDirtyCount} dirty tab(s) were not retitled to avoid losing unsaved changes. Save/reopen those tabs to apply name titles.`
       );
     }
   }
@@ -2698,40 +2698,40 @@ class DeviceMirrorModel {
     await this.refresh(true);
   }
 
-  async setDeviceAlias(node?: MirrorNode): Promise<void> {
+  async setDeviceName(node?: MirrorNode): Promise<void> {
     let deviceId = await this.ensureActiveDevice(node);
     if (!deviceId) {
-      deviceId = await this.pickKnownDeviceId('Select device to set alias');
+      deviceId = await this.pickKnownDeviceId('Select device to set name');
       if (deviceId) {
         this.activateDevice(deviceId);
       }
     }
     if (!deviceId) {
-      vscode.window.showWarningMessage('Select a device to set an alias.');
+      vscode.window.showWarningMessage('Select a device to set a name.');
       return;
     }
 
-    const existingAlias = this.getDeviceAlias(deviceId) ?? '';
+    const existingName = this.getDeviceName(deviceId) ?? '';
     const input = await vscode.window.showInputBox({
-      title: 'Set Device Alias',
-      prompt: `Set a friendly alias for ${this.getDeviceDisplayNameWithId(deviceId)}. Leave empty to clear.`,
-      value: existingAlias,
+      title: 'Set Device Name',
+      prompt: `Set a friendly name for ${this.getDeviceDisplayNameWithId(deviceId)}. Leave empty to clear.`,
+      value: existingName,
       ignoreFocusOut: true,
       validateInput: (value) => {
         const trimmed = value.trim();
         if (trimmed.length > 64) {
-          return 'Alias must be 64 characters or fewer.';
+          return 'Name must be 64 characters or fewer.';
         }
         if (trimmed.length > 0) {
           const needle = trimmed.toLocaleLowerCase();
-          const duplicate = Object.entries(this.deviceAliases).find(([existingDeviceId, existingDeviceAlias]) => {
+          const duplicate = Object.entries(this.deviceNames).find(([existingDeviceId, existingDeviceName]) => {
             if (existingDeviceId === deviceId) {
               return false;
             }
-            return existingDeviceAlias.trim().toLocaleLowerCase() === needle;
+            return existingDeviceName.trim().toLocaleLowerCase() === needle;
           });
           if (duplicate) {
-            return `Alias "${trimmed}" is already used by ${duplicate[0]}. Aliases must be unique.`;
+            return `Name "${trimmed}" is already used by ${duplicate[0]}. Names must be unique.`;
           }
         }
         return undefined;
@@ -2741,36 +2741,36 @@ class DeviceMirrorModel {
       return;
     }
 
-    const alias = input.trim();
-    const previousUriSegment = existingAlias.length > 0 ? existingAlias : deviceId;
-    if (alias.length > 0) {
-      const needle = alias.toLocaleLowerCase();
-      const duplicate = Object.entries(this.deviceAliases).find(([existingDeviceId, existingDeviceAlias]) => {
+    const name = input.trim();
+    const previousUriSegment = existingName.length > 0 ? existingName : deviceId;
+    if (name.length > 0) {
+      const needle = name.toLocaleLowerCase();
+      const duplicate = Object.entries(this.deviceNames).find(([existingDeviceId, existingDeviceName]) => {
         if (existingDeviceId === deviceId) {
           return false;
         }
-        return existingDeviceAlias.trim().toLocaleLowerCase() === needle;
+        return existingDeviceName.trim().toLocaleLowerCase() === needle;
       });
       if (duplicate) {
-        vscode.window.showErrorMessage(`Alias "${alias}" is already used by ${duplicate[0]}.`);
+        vscode.window.showErrorMessage(`Name "${name}" is already used by ${duplicate[0]}.`);
         return;
       }
     }
     let updated;
     try {
-      updated = await updateDeviceAlias(deviceId, alias.length > 0 ? alias : undefined);
+      updated = await updateDeviceName(deviceId, name.length > 0 ? name : undefined);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       vscode.window.showErrorMessage(message);
       return;
     }
-    this.deviceAliases = getDeviceAliases(updated);
-    this.validateAliasConfigurationAndWarn();
-    await this.remapOpenDeviceTabsForAliasChange(deviceId, previousUriSegment, this.getDeviceUriSegment(deviceId));
+    this.deviceNames = getDeviceNames(updated);
+    this.validateNameConfigurationAndWarn();
+    await this.remapOpenDeviceTabsForNameChange(deviceId, previousUriSegment, this.getDeviceUriSegment(deviceId));
 
-    const msg = alias.length > 0
-      ? `Set alias for ${deviceId}: ${alias}`
-      : `Cleared alias for ${deviceId}`;
+    const msg = name.length > 0
+      ? `Set name for ${deviceId}: ${name}`
+      : `Cleared name for ${deviceId}`;
     logChannelOutput(msg, true);
     vscode.window.showInformationMessage(msg);
     await this.refresh(true);
@@ -3622,9 +3622,9 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
       }
       element.iconPath = new vscode.ThemeIcon('device-mobile');
       if (data.deviceId) {
-        const alias = this.model.getDeviceAlias(data.deviceId);
-        if (alias) {
-          element.tooltip = `${alias}\n${data.deviceId}`;
+        const name = this.model.getDeviceName(data.deviceId);
+        if (name) {
+          element.tooltip = `${name}\n${data.deviceId}`;
         }
         if (data.side === 'device') {
           const connected = this.model.getConnectedDevice(data.deviceId);
@@ -3791,8 +3791,8 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
 
       return deviceIds.map((deviceId) => {
         const connected = this.model.getConnectedDevice(deviceId);
-        const alias = this.model.getDeviceAlias(deviceId);
-        const label = alias ?? (connected ? this.toDeviceLeafLabel(connected) : deviceId);
+        const name = this.model.getDeviceName(deviceId);
+        const label = name ?? (connected ? this.toDeviceLeafLabel(connected) : deviceId);
         return new MirrorNode(
           {
             side: 'device',
@@ -3994,7 +3994,7 @@ export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext)
   context.subscriptions.push(vscode.commands.registerCommand(commandDeleteMirrorPathId, async (node?: MirrorNode) => model.deleteMirrorPath(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandLinkDeviceHostFolderId, async (node?: MirrorNode) => model.linkDeviceToHostFolder(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandUnlinkDeviceHostFolderId, async (node?: MirrorNode) => model.unlinkDeviceFromHostFolder(node)));
-  context.subscriptions.push(vscode.commands.registerCommand(commandSetDeviceAliasId, async (node?: MirrorNode) => model.setDeviceAlias(node)));
+  context.subscriptions.push(vscode.commands.registerCommand(commandSetDeviceNameId, async (node?: MirrorNode) => model.setDeviceName(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandExcludeDeviceFileFromSyncId, async (node?: MirrorNode) => model.excludeDeviceFileFromSync(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandRemoveDeviceFileFromSyncExclusionId, async (node?: MirrorNode) => model.removeDeviceFileFromSyncExclusion(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandCloseDeviceConnectionId, async (node?: MirrorNode) => model.closeDeviceConnection(node)));

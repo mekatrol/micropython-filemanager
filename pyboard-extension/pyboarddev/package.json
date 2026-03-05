@@ -152,8 +152,8 @@
         "title": "Pyboard Dev: Unlink device from computer folder"
       },
       {
-        "command": "mekatrol.pyboarddev.setdevicealias",
-        "title": "Pyboard Dev: Set device alias"
+        "command": "mekatrol.pyboarddev.setdevicename",
+        "title": "Pyboard Dev: Set device name"
       },
       {
         "command": "mekatrol.pyboarddev.excludedevicefilefromsync",
@@ -242,7 +242,7 @@
           "when": "mekatrol.pyboarddev.hasLinkedHostMappings"
         },
         {
-          "command": "mekatrol.pyboarddev.setdevicealias",
+          "command": "mekatrol.pyboarddev.setdevicename",
           "when": "mekatrol.pyboarddev.boardConnected"
         }
       ],
@@ -360,7 +360,7 @@
           "group": "navigation@11"
         },
         {
-          "command": "mekatrol.pyboarddev.setdevicealias",
+          "command": "mekatrol.pyboarddev.setdevicename",
           "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceIdNode || viewItem == pyboarddev.deviceIdNodeLinked)",
           "group": "navigation@12"
         },
