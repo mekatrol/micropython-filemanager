@@ -1,12 +1,18 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { getConnectedBoard } from './commands/connect-board-command';
+import {
+  beginBoardExecution,
+  endBoardExecution,
+  getConnectedBoard,
+  getConnectedBoards
+} from './commands/connect-board-command';
 import { logChannelOutput } from './output-channel';
+import { loadConfiguration } from './utils/configuration';
+import { resolveMirrorRootPath, toRelativePath } from './utils/device-filesystem';
 
 const debugType = 'pyboarddev';
 const remoteDocumentScheme = 'pyboarddev-remote';
 const defaultTimeoutMs = 60000;
-let activePyboardLaunches = 0;
 
 interface DapRequest {
   seq: number;
@@ -42,6 +48,7 @@ class PyboardDebugAdapter implements vscode.DebugAdapter {
   readonly onDidSendMessage = this.messageEmitter.event;
   private sequence = 1;
   private terminateRequested = false;
+  private launchDeviceId: string | undefined;
 
   dispose(): void {
     this.messageEmitter.dispose();
@@ -99,18 +106,23 @@ class PyboardDebugAdapter implements vscode.DebugAdapter {
   private async handleLaunch(args: Record<string, unknown>): Promise<void> {
     let exitCode = 0;
     this.terminateRequested = false;
-    activePyboardLaunches += 1;
-    try {
-      const board = getConnectedBoard();
-      if (!board) {
-        throw new Error('No connected board. Connect to a board before running.');
-      }
+    this.launchDeviceId = undefined;
 
+    try {
       const programValue = typeof args.program === 'string' ? args.program : undefined;
       const targetUri = this.resolveProgramUri(programValue);
       if (!targetUri) {
         throw new Error('No runnable file selected. Open a Python file and run again.');
       }
+
+      const targetDeviceId = await this.resolveTargetDeviceId(targetUri);
+      const board = getConnectedBoard(targetDeviceId);
+      if (!board || !targetDeviceId) {
+        throw new Error('No matching connected board for the active file. Connect the owning device and run again.');
+      }
+
+      this.launchDeviceId = targetDeviceId;
+      beginBoardExecution(targetDeviceId);
 
       const content = await vscode.workspace.fs.readFile(targetUri);
       const script = Buffer.from(content).toString('utf8');
@@ -138,7 +150,7 @@ class PyboardDebugAdapter implements vscode.DebugAdapter {
         });
       }
 
-      logChannelOutput(`Run on device completed: ${this.displayPath(targetUri)}`, true);
+      logChannelOutput(`Run on device ${targetDeviceId} completed: ${this.displayPath(targetUri)}`, true);
     } catch (error) {
       exitCode = 1;
       const message = error instanceof Error ? error.message : String(error);
@@ -148,12 +160,21 @@ class PyboardDebugAdapter implements vscode.DebugAdapter {
       });
       logChannelOutput(`Run on device failed: ${message}`, true);
     } finally {
-      activePyboardLaunches = Math.max(0, activePyboardLaunches - 1);
-      if (this.terminateRequested) {
-        await softRebootConnectedBoard('Device soft rebooted after debug session stop.', 'Failed to soft reboot device after debug session stop');
+      if (this.launchDeviceId) {
+        endBoardExecution(this.launchDeviceId);
       }
+
+      if (this.terminateRequested && this.launchDeviceId) {
+        await softRebootConnectedBoard(
+          this.launchDeviceId,
+          `Device ${this.launchDeviceId} soft rebooted after debug session stop.`,
+          `Failed to soft reboot device ${this.launchDeviceId} after debug session stop`
+        );
+      }
+
       this.sendEvent('exited', { exitCode });
       this.sendEvent('terminated');
+      this.launchDeviceId = undefined;
     }
   }
 
@@ -225,6 +246,42 @@ class PyboardDebugAdapter implements vscode.DebugAdapter {
     return vscode.Uri.file(path.join(folder.uri.fsPath, program));
   }
 
+  private async resolveTargetDeviceId(targetUri: vscode.Uri): Promise<string | undefined> {
+    if (targetUri.scheme === remoteDocumentScheme) {
+      const segments = toRelativePath(targetUri.path.replace(/^\/+/, '')).split('/').filter(Boolean);
+      if (segments.length > 1) {
+        try {
+          return decodeURIComponent(segments[0]);
+        } catch {
+          return segments[0];
+        }
+      }
+
+      return getConnectedBoards()[0]?.deviceId;
+    }
+
+    if (targetUri.scheme === 'file') {
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (workspaceFolder) {
+        const config = await loadConfiguration();
+        const mirrorRoot = await resolveMirrorRootPath(workspaceFolder, config.mirrorFolder);
+        const relative = toRelativePath(path.relative(mirrorRoot, targetUri.fsPath));
+        if (relative && !relative.startsWith('..')) {
+          const [folder] = relative.split('/').filter(Boolean);
+          if (folder) {
+            try {
+              return decodeURIComponent(folder);
+            } catch {
+              return folder;
+            }
+          }
+        }
+      }
+    }
+
+    return getConnectedBoards()[0]?.deviceId;
+  }
+
   private displayPath(uri: vscode.Uri): string {
     if (uri.scheme === 'file') {
       return uri.fsPath;
@@ -251,8 +308,8 @@ class PyboardDebugAdapter implements vscode.DebugAdapter {
   }
 }
 
-const softRebootConnectedBoard = async (successMessage: string, failurePrefix: string): Promise<void> => {
-  const board = getConnectedBoard();
+const softRebootConnectedBoard = async (deviceId: string, successMessage: string, failurePrefix: string): Promise<void> => {
+  const board = getConnectedBoard(deviceId);
   if (!board) {
     return;
   }
@@ -334,16 +391,4 @@ export const initPyboardDebug = (context: vscode.ExtensionContext): void => {
 
   context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider(debugType, configProvider));
   context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory(debugType, adapterFactory));
-  context.subscriptions.push(
-    vscode.debug.onDidTerminateDebugSession(async (session) => {
-      if (session.type !== debugType) {
-        return;
-      }
-
-      if (activePyboardLaunches > 0) {
-        return;
-      }
-      await softRebootConnectedBoard('Device soft rebooted after debug session stop.', 'Failed to soft reboot device after debug session stop');
-    })
-  );
 };

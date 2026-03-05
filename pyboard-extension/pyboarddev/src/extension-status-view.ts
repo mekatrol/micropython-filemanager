@@ -1,5 +1,10 @@
 import * as vscode from 'vscode';
-import { getConnectedBoardRuntimeInfo, isBoardConnected, onBoardConnectionStateChanged, onConnectedBoardRuntimeInfoChanged } from './commands/connect-board-command';
+import {
+  getConnectedBoards,
+  isBoardConnected,
+  onBoardConnectionStateChanged,
+  onBoardConnectionsChanged
+} from './commands/connect-board-command';
 import { getActiveBaudRate, getActiveDevice, getStatusDisplayMode, onStatusDataChanged } from './status-bar';
 
 const statusViewId = 'mekatrol.pyboarddev.statusView';
@@ -42,44 +47,41 @@ class ExtensionStatusViewProvider implements vscode.TreeDataProvider<ExtensionSt
     const connected = isBoardConnected();
     const selectedDevice = getActiveDevice() ?? '<select device>';
     const selectedBaudRate = getActiveBaudRate();
+    const connections = getConnectedBoards();
 
     const items: ExtensionStatusNode[] = [];
-    if (connected) {
-      const runtimeInfo = getConnectedBoardRuntimeInfo();
-      if (runtimeInfo) {
-        items.push(new ExtensionStatusNode(`Runtime: ${runtimeInfo.runtimeName} ${runtimeInfo.version}`, 'info'));
-        items.push(new ExtensionStatusNode(`Device: ${runtimeInfo.machine}`, 'info'));
-        items.push(new ExtensionStatusNode(`Unique ID: ${runtimeInfo.uniqueId ?? '<not available>'}`, 'info'));
-      } else {
-        items.push(new ExtensionStatusNode('Runtime: Reading board runtime info...', 'sync~spin'));
-        items.push(new ExtensionStatusNode('Device: Reading board details...', 'sync~spin'));
-        items.push(new ExtensionStatusNode('Unique ID: Reading board details...', 'sync~spin'));
+    if (connections.length > 0) {
+      items.push(new ExtensionStatusNode(`Connected Devices: ${connections.length}`, 'circuit-board'));
+      for (const board of connections) {
+        const runtimeSummary = board.runtimeInfo
+          ? `${board.runtimeInfo.runtimeName} ${board.runtimeInfo.version}`
+          : 'Reading runtime info...';
+        const executing = board.executionCount > 0 ? ` | executing:${board.executionCount}` : '';
+        items.push(new ExtensionStatusNode(`${board.deviceId} | ${board.devicePath} @ ${board.baudRate} | ${runtimeSummary}${executing}`, 'device-mobile'));
       }
     }
 
     items.push(
       new ExtensionStatusNode(
-        connected
-          ? `Serial Port: ${selectedDevice} @ ${selectedBaudRate}`
-          : `Serial Port: ${selectedDevice} @ ${selectedBaudRate} | [ Change ]`,
+        `Serial Port: ${selectedDevice} @ ${selectedBaudRate} | [ Change ]`,
         'circuit-board',
-        connected ? 'Disconnect board first, then change serial port' : 'Click to change serial port',
-        connected ? undefined : { command: selectDeviceCommandId, title: 'Select serial port' }
+        'Click to change selected serial port',
+        { command: selectDeviceCommandId, title: 'Select serial port' }
       )
     );
     items.push(
       new ExtensionStatusNode(
-        connected ? 'Disconnect to scan devices...' : '[ Scan Devices ]',
+        '[ Scan Devices ]',
         'search',
-        connected ? 'Disconnect board first, then enumerate serial ports' : 'Click to enumerate serial ports',
-        connected ? undefined : { command: autoDetectDevicesCommandId, title: 'Auto detect serial devices' }
+        'Click to enumerate serial ports (skips currently connected ports)',
+        { command: autoDetectDevicesCommandId, title: 'Auto detect serial devices' }
       )
     );
     items.push(
       new ExtensionStatusNode(
         connected ? 'Board: Connected | [Disconnect ]' : 'Board: Disconnected | [ Connect ]',
         connected ? 'debug-disconnect' : 'plug',
-        connected ? 'Click to disconnect from board' : 'Click to connect to board',
+        connected ? 'Click to disconnect one connected board' : 'Click to connect selected board',
         { command: toggleBoardConnectionCommandId, title: 'Toggle board connection' }
       )
     );
@@ -89,7 +91,7 @@ class ExtensionStatusViewProvider implements vscode.TreeDataProvider<ExtensionSt
         new ExtensionStatusNode(
           '[ Soft Reboot Device ]',
           'debug-restart',
-          'Click to terminate debug (if active) and soft reboot the device',
+          'Click to soft reboot one connected device',
           { command: softRebootCommandId, title: 'Soft reboot device' }
         )
       );
@@ -108,7 +110,7 @@ export const initExtensionStatusView = (context: vscode.ExtensionContext): void 
 
   context.subscriptions.push(view);
   context.subscriptions.push(onBoardConnectionStateChanged(() => provider.refresh()));
-  context.subscriptions.push(onConnectedBoardRuntimeInfoChanged(() => provider.refresh()));
+  context.subscriptions.push(onBoardConnectionsChanged(() => provider.refresh()));
   context.subscriptions.push(onStatusDataChanged(() => provider.refresh()));
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((event) => {

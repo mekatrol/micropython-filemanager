@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 import {
-  getConnectedBoardRuntimeInfo,
+  getConnectedBoards,
   isBoardConnected,
   onBoardConnectionStateChanged,
-  onConnectedBoardRuntimeInfoChanged
+  onBoardConnectionsChanged
 } from './commands/connect-board-command';
 import { configurationFileName } from './utils/configuration';
 import { listSerialDevices } from './utils/serial-port';
@@ -43,13 +43,11 @@ const readPersistentState = <T>(context: vscode.ExtensionContext | undefined, ke
 export const initStatusBar = async (context: vscode.ExtensionContext): Promise<void> => {
   extensionContext = context;
 
-  // Create device name status bar item
   createDeviceNameStatusBarItem(context);
   createBoardConnectionStatusBarItem(context);
   createBoardRuntimeStatusBarItem(context);
   createSoftRebootStatusBarItem(context);
 
-  // Update status bar item once at start
   await updateStatusBarItem();
 
   const watcher = vscode.workspace.createFileSystemWatcher(`**/${configurationFileName}`);
@@ -65,7 +63,7 @@ export const initStatusBar = async (context: vscode.ExtensionContext): Promise<v
     })
   );
   context.subscriptions.push(onBoardConnectionStateChanged(() => updateStatusBarItem()));
-  context.subscriptions.push(onConnectedBoardRuntimeInfoChanged(() => updateStatusBarItem()));
+  context.subscriptions.push(onBoardConnectionsChanged(() => updateStatusBarItem()));
 };
 
 export const updateStatusBarItem = async (): Promise<void> => {
@@ -83,6 +81,7 @@ export const updateStatusBarItem = async (): Promise<void> => {
   const connected = isBoardConnected();
   const statusDisplayMode = getStatusDisplayMode();
   const showStatusBarItems = statusDisplayMode === 'statusBar';
+  const connectedBoards = getConnectedBoards();
 
   void vscode.commands.executeCommand('setContext', extensionStatusViewContextKey, statusDisplayMode === 'extensionView');
 
@@ -96,38 +95,40 @@ export const updateStatusBarItem = async (): Promise<void> => {
   }
 
   deviceStatusBarItem.text = `$(circuit-board) ${selectedDevice ?? '<select device>'} [${selectedBaudRate}]`;
-  deviceStatusBarItem.command = connected ? undefined : statusBarSelectCommunicationId;
-  deviceStatusBarItem.tooltip = connected
-    ? 'Serial port selection is disabled while connected. Disconnect to change the device.'
-    : 'Select serial port';
+  deviceStatusBarItem.command = statusBarSelectCommunicationId;
+  deviceStatusBarItem.tooltip = 'Select serial port';
   deviceStatusBarItem.backgroundColor = selectedDevice ? undefined : new vscode.ThemeColor('statusBarItem.errorBackground');
   deviceStatusBarItem.show();
 
-  boardConnectionStatusBarItem.text = connected ? '$(debug-disconnect) Board: Connected' : '$(plug) Board: Disconnected';
-  boardConnectionStatusBarItem.tooltip = connected ? 'Disconnect from board' : 'Connect to board';
+  boardConnectionStatusBarItem.text = connected
+    ? `$(debug-disconnect) Boards: ${connectedBoards.length} Connected`
+    : '$(plug) Board: Disconnected';
+  boardConnectionStatusBarItem.tooltip = connected
+    ? 'Disconnect one connected board'
+    : 'Connect selected board';
   boardConnectionStatusBarItem.backgroundColor = !connected && !selectedDevice
     ? new vscode.ThemeColor('statusBarItem.warningBackground')
     : undefined;
   boardConnectionStatusBarItem.show();
 
-  const runtimeInfo = getConnectedBoardRuntimeInfo();
-  if (connected && runtimeInfo) {
-    const uniqueIdSuffix = runtimeInfo.uniqueId ? ` | UID:${runtimeInfo.uniqueId}` : '';
-    const runtimeSummary = `${runtimeInfo.banner}${uniqueIdSuffix}`;
-    const shortText = runtimeSummary.length > 48 ? `${runtimeSummary.slice(0, 45)}...` : runtimeSummary;
+  if (connectedBoards.length > 0) {
+    const summary = connectedBoards
+      .map((board) => {
+        const runtime = board.runtimeInfo ? `${board.runtimeInfo.runtimeName} ${board.runtimeInfo.version}` : 'probing';
+        const executing = board.executionCount > 0 ? ` exec:${board.executionCount}` : '';
+        return `${board.deviceId} (${runtime}${executing})`;
+      })
+      .join(' | ');
+    const shortText = summary.length > 60 ? `${summary.slice(0, 57)}...` : summary;
     boardRuntimeStatusBarItem.text = `$(info) ${shortText}`;
-    boardRuntimeStatusBarItem.tooltip = runtimeSummary;
-    boardRuntimeStatusBarItem.show();
-  } else if (connected) {
-    boardRuntimeStatusBarItem.text = '$(sync~spin) Reading board runtime info...';
-    boardRuntimeStatusBarItem.tooltip = 'Fetching MicroPython runtime details from device';
+    boardRuntimeStatusBarItem.tooltip = summary;
     boardRuntimeStatusBarItem.show();
   } else {
     boardRuntimeStatusBarItem.hide();
   }
 
   softRebootStatusBarItem.text = '$(circuit-board) $(debug-restart)';
-  softRebootStatusBarItem.tooltip = 'Soft reboot device';
+  softRebootStatusBarItem.tooltip = 'Soft reboot one connected device';
   if (connected) {
     softRebootStatusBarItem.show();
   } else {
@@ -138,19 +139,16 @@ export const updateStatusBarItem = async (): Promise<void> => {
 };
 
 const createDeviceNameStatusBarItem = (context: vscode.ExtensionContext) => {
-  // Register select device command handler
   context.subscriptions.push(
     vscode.commands.registerCommand(statusBarSelectCommunicationId, async () => {
       await selectSerialDevice();
     })
   );
 
-  // Create select device status bar item
   deviceStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   deviceStatusBarItem.command = statusBarSelectCommunicationId;
   context.subscriptions.push(deviceStatusBarItem);
 
-  // Register listeners for file updates
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(updateStatusBarItem));
   context.subscriptions.push(vscode.window.onDidChangeTextEditorSelection(updateStatusBarItem));
 };
@@ -186,11 +184,11 @@ export const getActiveBaudRate = (): number => {
 };
 
 export const getActivePythonType = (): 'MicroPython' | 'CircuitPython' | 'Unknown' => {
-  const runtimeInfo = getConnectedBoardRuntimeInfo();
-  if (!runtimeInfo) {
+  const active = getConnectedBoards()[0];
+  if (!active?.runtimeInfo) {
     return 'Unknown';
   }
-  return runtimeInfo.runtimeName;
+  return active.runtimeInfo.runtimeName;
 };
 
 export const getStatusDisplayMode = (): StatusDisplayMode => {
@@ -199,13 +197,6 @@ export const getStatusDisplayMode = (): StatusDisplayMode => {
 };
 
 const selectSerialDevice = async (): Promise<void> => {
-  if (isBoardConnected()) {
-    const msg = 'Disconnect from the board before selecting a different serial port.';
-    vscode.window.showWarningMessage(msg);
-    logChannelOutput(msg, true);
-    return;
-  }
-
   let ports: Awaited<ReturnType<typeof listSerialDevices>>;
   try {
     ports = await listSerialDevices();
@@ -248,13 +239,6 @@ const selectSerialDevice = async (): Promise<void> => {
     return;
   }
 
-  if (isBoardConnected()) {
-    const msg = 'Board connected while selecting serial port. Disconnect before changing the selected device.';
-    vscode.window.showWarningMessage(msg);
-    logChannelOutput(msg, true);
-    return;
-  }
-
   if (!extensionContext) {
     const msg = 'Extension context not initialised. Unable to persist selected serial device.';
     vscode.window.showErrorMessage(msg);
@@ -268,7 +252,6 @@ const selectSerialDevice = async (): Promise<void> => {
   await extensionContext.workspaceState.update(selectedBaudRateStateKey, getActiveBaudRate());
 
   const msg = `Selected serial device: ${selected.label}`;
-  vscode.window.showInformationMessage(msg);
   logChannelOutput(msg, true);
 
   await updateStatusBarItem();

@@ -24,13 +24,11 @@
       },
       {
         "command": "mekatrol.pyboarddev.selectdevice",
-        "title": "Pyboard Dev: Select serial port",
-        "enablement": "!mekatrol.pyboarddev.boardConnected"
+        "title": "Pyboard Dev: Select serial port"
       },
       {
         "command": "mekatrol.pyboarddev.autodetectdevices",
-        "title": "Pyboard Dev: Auto detect serial devices",
-        "enablement": "!mekatrol.pyboarddev.boardConnected"
+        "title": "Pyboard Dev: Auto detect serial devices"
       },
       {
         "command": "mekatrol.pyboarddev.connectboard",
@@ -143,16 +141,13 @@
     "menus": {
       "commandPalette": [
         {
-          "command": "mekatrol.pyboarddev.selectdevice",
-          "when": "!mekatrol.pyboarddev.boardConnected"
+          "command": "mekatrol.pyboarddev.selectdevice"
         },
         {
-          "command": "mekatrol.pyboarddev.autodetectdevices",
-          "when": "!mekatrol.pyboarddev.boardConnected"
+          "command": "mekatrol.pyboarddev.autodetectdevices"
         },
         {
-          "command": "mekatrol.pyboarddev.connectboard",
-          "when": "!mekatrol.pyboarddev.boardConnected"
+          "command": "mekatrol.pyboarddev.connectboard"
         },
         {
           "command": "mekatrol.pyboarddev.disconnectboard",

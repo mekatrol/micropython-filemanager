@@ -10,28 +10,39 @@ const autoReconnectSettingKey = 'autoReconnectLastDevice';
 const remoteDocumentScheme = 'pyboarddev-remote';
 const pyboardDebugType = 'pyboarddev';
 
-let connectedBoard: Pyboard | undefined;
-let connectedBoardRuntimeInfo: BoardRuntimeInfo | undefined;
+interface ConnectedBoardState {
+  deviceId: string;
+  board: Pyboard;
+  runtimeInfo: BoardRuntimeInfo | undefined;
+  executionCount: number;
+}
+
+export interface ConnectedBoardSnapshot {
+  deviceId: string;
+  devicePath: string;
+  baudRate: number;
+  runtimeInfo: BoardRuntimeInfo | undefined;
+  executionCount: number;
+}
+
 let extensionContext: vscode.ExtensionContext | undefined;
+const connectedBoards = new Map<string, ConnectedBoardState>();
+const deviceIdByPortPath = new Map<string, string>();
 const boardConnectionStateEmitter = new vscode.EventEmitter<boolean>();
+const boardConnectionsChangedEmitter = new vscode.EventEmitter<ConnectedBoardSnapshot[]>();
 const boardRuntimeInfoChangedEmitter = new vscode.EventEmitter<BoardRuntimeInfo | undefined>();
+const boardExecutionStateChangedEmitter = new vscode.EventEmitter<ConnectedBoardSnapshot[]>();
 
 export const onBoardConnectionStateChanged = boardConnectionStateEmitter.event;
+export const onBoardConnectionsChanged = boardConnectionsChangedEmitter.event;
 export const onConnectedBoardRuntimeInfoChanged = boardRuntimeInfoChangedEmitter.event;
-export const isBoardConnected = (): boolean => connectedBoard !== undefined;
-export const getConnectedBoard = (): Pyboard | undefined => connectedBoard;
-export const getConnectedBoardRuntimeInfo = (): BoardRuntimeInfo | undefined => connectedBoardRuntimeInfo;
+export const onBoardExecutionStateChanged = boardExecutionStateChangedEmitter.event;
 
-const notifyBoardConnectionStateChanged = (): void => {
-  void vscode.commands.executeCommand('setContext', 'mekatrol.pyboarddev.boardConnected', isBoardConnected());
-  boardConnectionStateEmitter.fire(isBoardConnected());
-};
+const readPersistentState = <T>(context: vscode.ExtensionContext | undefined, key: string): T | undefined => {
+  if (!context) {
+    return undefined;
+  }
 
-const notifyBoardRuntimeInfoChanged = (): void => {
-  boardRuntimeInfoChangedEmitter.fire(connectedBoardRuntimeInfo);
-};
-
-const readPersistentState = <T>(context: vscode.ExtensionContext, key: string): T | undefined => {
   const fromGlobal = context.globalState.get<T>(key);
   if (fromGlobal !== undefined) {
     return fromGlobal;
@@ -45,6 +56,60 @@ const writePersistentState = async <T>(context: vscode.ExtensionContext, key: st
   await context.workspaceState.update(key, value);
 };
 
+const normaliseDeviceId = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return 'unknown-device';
+  }
+
+  return trimmed.replace(/\s+/g, '-').replace(/[^\w.-]/g, '_');
+};
+
+const toDeviceId = (devicePath: string, runtimeInfo?: BoardRuntimeInfo): string => {
+  if (runtimeInfo?.uniqueId && runtimeInfo.uniqueId.trim().length > 0) {
+    return normaliseDeviceId(runtimeInfo.uniqueId);
+  }
+
+  return `port_${normaliseDeviceId(devicePath)}`;
+};
+
+const getConnectedBoardStateByPortPath = (devicePath: string): ConnectedBoardState | undefined => {
+  const existingDeviceId = deviceIdByPortPath.get(devicePath);
+  if (!existingDeviceId) {
+    return undefined;
+  }
+
+  return connectedBoards.get(existingDeviceId);
+};
+
+const toSnapshot = (state: ConnectedBoardState): ConnectedBoardSnapshot => ({
+  deviceId: state.deviceId,
+  devicePath: state.board.device,
+  baudRate: state.board.baudrate,
+  runtimeInfo: state.runtimeInfo,
+  executionCount: state.executionCount
+});
+
+const getSnapshots = (): ConnectedBoardSnapshot[] => {
+  return [...connectedBoards.values()].map(toSnapshot).sort((a, b) => a.deviceId.localeCompare(b.deviceId));
+};
+
+const getPreferredDevicePath = (): string | undefined => {
+  return readPersistentState<string>(extensionContext, selectedSerialPortStateKey);
+};
+
+const getActiveBoardState = (): ConnectedBoardState | undefined => {
+  const preferredPath = getPreferredDevicePath();
+  if (preferredPath) {
+    const byPreferredPath = getConnectedBoardStateByPortPath(preferredPath);
+    if (byPreferredPath) {
+      return byPreferredPath;
+    }
+  }
+
+  return connectedBoards.values().next().value as ConnectedBoardState | undefined;
+};
+
 const updateReconnectState = async (shouldReconnectOnStartup: boolean): Promise<void> => {
   if (!extensionContext) {
     return;
@@ -53,11 +118,44 @@ const updateReconnectState = async (shouldReconnectOnStartup: boolean): Promise<
   await writePersistentState(extensionContext, reconnectLastSessionStateKey, shouldReconnectOnStartup);
 };
 
-const getDirtyRemoteDocuments = (): vscode.TextDocument[] =>
-  vscode.workspace.textDocuments.filter((document) => document.uri.scheme === remoteDocumentScheme && document.isDirty);
+const parseDeviceIdFromRemoteUri = (uri: vscode.Uri): string | undefined => {
+  if (uri.scheme !== remoteDocumentScheme) {
+    return undefined;
+  }
 
-const saveDirtyRemoteDocumentsBeforeDisconnect = async (): Promise<boolean> => {
-  const dirtyDocuments = getDirtyRemoteDocuments();
+  const path = uri.path.replace(/^\/+/, '');
+  if (!path) {
+    return undefined;
+  }
+
+  const [deviceFolder] = path.split('/').filter((segment) => segment.length > 0);
+  if (!deviceFolder) {
+    return undefined;
+  }
+
+  try {
+    return decodeURIComponent(deviceFolder);
+  } catch {
+    return deviceFolder;
+  }
+};
+
+const getDirtyRemoteDocuments = (deviceId?: string): vscode.TextDocument[] => {
+  return vscode.workspace.textDocuments.filter((document) => {
+    if (document.uri.scheme !== remoteDocumentScheme || !document.isDirty) {
+      return false;
+    }
+
+    if (!deviceId) {
+      return true;
+    }
+
+    return parseDeviceIdFromRemoteUri(document.uri) === deviceId;
+  });
+};
+
+const saveDirtyRemoteDocumentsBeforeDisconnect = async (deviceId?: string): Promise<boolean> => {
+  const dirtyDocuments = getDirtyRemoteDocuments(deviceId);
   if (dirtyDocuments.length === 0) {
     return true;
   }
@@ -86,7 +184,7 @@ const saveDirtyRemoteDocumentsBeforeDisconnect = async (): Promise<boolean> => {
   return true;
 };
 
-const getOpenRemoteTabs = (): vscode.Tab[] => {
+const getOpenRemoteTabs = (deviceId?: string): vscode.Tab[] => {
   const tabs: vscode.Tab[] = [];
   for (const group of vscode.window.tabGroups.all) {
     for (const tab of group.tabs) {
@@ -98,6 +196,13 @@ const getOpenRemoteTabs = (): vscode.Tab[] => {
         continue;
       }
 
+      if (deviceId) {
+        const tabDeviceId = parseDeviceIdFromRemoteUri(tab.input.uri);
+        if (tabDeviceId !== deviceId) {
+          continue;
+        }
+      }
+
       tabs.push(tab);
     }
   }
@@ -105,8 +210,8 @@ const getOpenRemoteTabs = (): vscode.Tab[] => {
   return tabs;
 };
 
-const closeOpenRemoteTabsAfterDisconnect = async (): Promise<void> => {
-  const remoteTabs = getOpenRemoteTabs();
+const closeOpenRemoteTabsAfterDisconnect = async (deviceId?: string): Promise<void> => {
+  const remoteTabs = getOpenRemoteTabs(deviceId);
   if (remoteTabs.length === 0) {
     return;
   }
@@ -117,13 +222,188 @@ const closeOpenRemoteTabsAfterDisconnect = async (): Promise<void> => {
   }
 };
 
+const notifyStateChanged = (): void => {
+  const snapshots = getSnapshots();
+  const connected = snapshots.length > 0;
+  void vscode.commands.executeCommand('setContext', 'mekatrol.pyboarddev.boardConnected', connected);
+  void vscode.commands.executeCommand('setContext', 'mekatrol.pyboarddev.connectedBoardCount', snapshots.length);
+  boardConnectionStateEmitter.fire(connected);
+  boardConnectionsChangedEmitter.fire(snapshots);
+  boardRuntimeInfoChangedEmitter.fire(getConnectedBoardRuntimeInfo());
+  boardExecutionStateChangedEmitter.fire(snapshots);
+};
+
+export const isBoardConnected = (): boolean => connectedBoards.size > 0;
+
+export const getConnectedBoard = (deviceId?: string): Pyboard | undefined => {
+  if (deviceId) {
+    return connectedBoards.get(deviceId)?.board;
+  }
+
+  return getActiveBoardState()?.board;
+};
+
+export const getConnectedBoardByPortPath = (devicePath: string): Pyboard | undefined => {
+  return getConnectedBoardStateByPortPath(devicePath)?.board;
+};
+
+export const getConnectedBoardRuntimeInfo = (deviceId?: string): BoardRuntimeInfo | undefined => {
+  if (deviceId) {
+    return connectedBoards.get(deviceId)?.runtimeInfo;
+  }
+
+  return getActiveBoardState()?.runtimeInfo;
+};
+
+export const getConnectedBoards = (): ConnectedBoardSnapshot[] => getSnapshots();
+
+export const getConnectedDeviceIds = (): string[] => getSnapshots().map((item) => item.deviceId);
+
+export const getDeviceIdForPortPath = (devicePath: string): string | undefined => {
+  return getConnectedBoardStateByPortPath(devicePath)?.deviceId;
+};
+
+export const beginBoardExecution = (deviceId: string): void => {
+  const state = connectedBoards.get(deviceId);
+  if (!state) {
+    return;
+  }
+
+  state.executionCount += 1;
+  notifyStateChanged();
+};
+
+export const endBoardExecution = (deviceId: string): void => {
+  const state = connectedBoards.get(deviceId);
+  if (!state) {
+    return;
+  }
+
+  state.executionCount = Math.max(0, state.executionCount - 1);
+  notifyStateChanged();
+};
+
+export const isBoardExecuting = (deviceId: string): boolean => {
+  return (connectedBoards.get(deviceId)?.executionCount ?? 0) > 0;
+};
+
+const connectBoardForPath = async (
+  devicePath: string,
+  baudRate: number,
+  showMessages: boolean
+): Promise<ConnectedBoardState | undefined> => {
+  const existingForPath = getConnectedBoardStateByPortPath(devicePath);
+  if (existingForPath) {
+    if (showMessages) {
+      const msg = `Device already connected: ${existingForPath.deviceId} on ${devicePath}.`;
+      vscode.window.showInformationMessage(msg);
+      logChannelOutput(msg, true);
+    }
+    return existingForPath;
+  }
+
+  const board = new Pyboard(devicePath, baudRate);
+  await board.open();
+
+  let runtimeInfo: BoardRuntimeInfo | undefined;
+  try {
+    runtimeInfo = await board.getBoardRuntimeInfo();
+  } catch (infoError) {
+    const reason = infoError instanceof Error ? infoError.message : String(infoError);
+    logChannelOutput(`Connected, but failed to read board runtime info: ${reason}`, false);
+  }
+
+  const deviceId = toDeviceId(devicePath, runtimeInfo);
+  if (connectedBoards.has(deviceId)) {
+    await board.close();
+    throw new Error(`A board with device ID ${deviceId} is already connected.`);
+  }
+
+  const state: ConnectedBoardState = {
+    deviceId,
+    board,
+    runtimeInfo,
+    executionCount: 0
+  };
+
+  connectedBoards.set(deviceId, state);
+  deviceIdByPortPath.set(board.device, deviceId);
+  await updateReconnectState(true);
+  notifyStateChanged();
+
+  if (showMessages) {
+    const msg = `Connected to board ${deviceId} on ${devicePath} @ ${baudRate}.`;
+    vscode.window.showInformationMessage(msg);
+    logChannelOutput(msg, true);
+  }
+
+  return state;
+};
+
+export const closeConnectedBoardByDeviceId = async (
+  deviceId: string,
+  showSuccessMessage = true,
+  preserveReconnectState = false,
+  promptToSaveDirtyDeviceFiles = true,
+  closeRemoteTabsAfterDisconnect = true
+): Promise<boolean> => {
+  const state = connectedBoards.get(deviceId);
+  if (!state) {
+    if (showSuccessMessage) {
+      const msg = `No active board connection found for ${deviceId}.`;
+      vscode.window.showInformationMessage(msg);
+      logChannelOutput(msg, true);
+    }
+    return true;
+  }
+
+  if (promptToSaveDirtyDeviceFiles) {
+    const canClose = await saveDirtyRemoteDocumentsBeforeDisconnect(deviceId);
+    if (!canClose) {
+      return false;
+    }
+  }
+
+  try {
+    await state.board.close();
+    connectedBoards.delete(deviceId);
+    deviceIdByPortPath.delete(state.board.device);
+
+    if (!preserveReconnectState && connectedBoards.size === 0) {
+      await updateReconnectState(false);
+    }
+
+    notifyStateChanged();
+
+    if (closeRemoteTabsAfterDisconnect) {
+      await closeOpenRemoteTabsAfterDisconnect(deviceId);
+    }
+
+    if (showSuccessMessage) {
+      const msg = `Board connection closed for ${deviceId}.`;
+      vscode.window.showInformationMessage(msg);
+      logChannelOutput(msg, true);
+    } else {
+      logChannelOutput(`Board connection closed for ${deviceId} during extension shutdown.`, false);
+    }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    const msg = `Failed to close board connection for ${deviceId}. ${reason}`;
+    logChannelOutput(msg, true);
+    return false;
+  }
+
+  return true;
+};
+
 export const closeConnectedBoard = async (
   showSuccessMessage = true,
   preserveReconnectState = false,
   promptToSaveDirtyDeviceFiles = true,
   closeRemoteTabsAfterDisconnect = true
 ): Promise<boolean> => {
-  if (!connectedBoard) {
+  const active = getActiveBoardState();
+  if (!active) {
     if (showSuccessMessage) {
       const msg = 'No active board connection to close.';
       vscode.window.showInformationMessage(msg);
@@ -132,51 +412,75 @@ export const closeConnectedBoard = async (
     return true;
   }
 
-  if (promptToSaveDirtyDeviceFiles) {
-    const canClose = await saveDirtyRemoteDocumentsBeforeDisconnect();
-    if (!canClose) {
+  return closeConnectedBoardByDeviceId(
+    active.deviceId,
+    showSuccessMessage,
+    preserveReconnectState,
+    promptToSaveDirtyDeviceFiles,
+    closeRemoteTabsAfterDisconnect
+  );
+};
+
+export const closeAllConnectedBoards = async (
+  showSuccessMessage = false,
+  preserveReconnectState = false,
+  promptToSaveDirtyDeviceFiles = false,
+  closeRemoteTabsAfterDisconnect = false
+): Promise<boolean> => {
+  const deviceIds = getConnectedDeviceIds();
+  for (const deviceId of deviceIds) {
+    const closed = await closeConnectedBoardByDeviceId(
+      deviceId,
+      showSuccessMessage,
+      preserveReconnectState,
+      promptToSaveDirtyDeviceFiles,
+      closeRemoteTabsAfterDisconnect
+    );
+    if (!closed) {
       return false;
     }
   }
 
-  try {
-    await connectedBoard.close();
-    connectedBoard = undefined;
-    connectedBoardRuntimeInfo = undefined;
-    if (!preserveReconnectState) {
-      await updateReconnectState(false);
-    }
-    notifyBoardConnectionStateChanged();
-    notifyBoardRuntimeInfoChanged();
-    if (closeRemoteTabsAfterDisconnect) {
-      await closeOpenRemoteTabsAfterDisconnect();
-    }
-
-    if (showSuccessMessage) {
-      const msg = 'Board connection closed.';
-      vscode.window.showInformationMessage(msg);
-      logChannelOutput(msg, true);
-    } else {
-      logChannelOutput('Board connection closed during extension shutdown.', false);
-    }
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    const msg = `Failed to close board connection. ${reason}`;
-    logChannelOutput(msg, true);
-    return false;
+  if (!preserveReconnectState) {
+    await updateReconnectState(false);
   }
 
   return true;
+};
+
+const pickConnectedDeviceId = async (placeHolder: string): Promise<string | undefined> => {
+  const snapshots = getSnapshots();
+  if (snapshots.length === 0) {
+    return undefined;
+  }
+
+  if (snapshots.length === 1) {
+    return snapshots[0].deviceId;
+  }
+
+  const selected = await vscode.window.showQuickPick(
+    snapshots.map((item) => ({
+      label: item.deviceId,
+      description: `${item.devicePath} @ ${item.baudRate}`
+    })),
+    {
+      placeHolder,
+      canPickMany: false,
+      ignoreFocusOut: true
+    }
+  );
+
+  return selected?.label;
 };
 
 export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
   extensionContext = context;
 
   const command = vscode.commands.registerCommand('mekatrol.pyboarddev.connectboard', async () => {
-    const device = readPersistentState<string>(context, selectedSerialPortStateKey);
+    const devicePath = readPersistentState<string>(context, selectedSerialPortStateKey);
     const baudRate = readPersistentState<number>(context, selectedBaudRateStateKey) ?? defaultBaudRate;
 
-    if (!device) {
+    if (!devicePath) {
       const msg = 'No serial device selected. Select a serial port first.';
       vscode.window.showWarningMessage(msg);
       logChannelOutput(msg, true);
@@ -184,49 +488,34 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
     }
 
     try {
-      if (connectedBoard) {
-        const closed = await closeConnectedBoard(false);
-        if (!closed) {
-          return;
-        }
-      }
-
-      const board = new Pyboard(device, baudRate);
-      await board.open();
-      connectedBoard = board;
-      await updateReconnectState(true);
-      notifyBoardConnectionStateChanged();
-      connectedBoardRuntimeInfo = undefined;
-      notifyBoardRuntimeInfoChanged();
-
-      try {
-        connectedBoardRuntimeInfo = await board.getBoardRuntimeInfo();
-        notifyBoardRuntimeInfoChanged();
-      } catch (infoError) {
-        const reason = infoError instanceof Error ? infoError.message : String(infoError);
-        logChannelOutput(`Connected, but failed to read board runtime info: ${reason}`, false);
-      }
-
-      const msg = `Connected to board on ${device} @ ${baudRate}.`;
-      vscode.window.showInformationMessage(msg);
-      logChannelOutput(msg, true);
+      await connectBoardForPath(devicePath, baudRate, true);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      const msg = `Failed to connect to board on ${device} @ ${baudRate}. ${reason}`;
+      const msg = `Failed to connect to board on ${devicePath} @ ${baudRate}. ${reason}`;
       vscode.window.showErrorMessage(msg);
       logChannelOutput(msg, true);
     }
   });
 
   context.subscriptions.push(command);
-  notifyBoardConnectionStateChanged();
+  notifyStateChanged();
 };
 
 export const initDisconnectBoardCommand = (context: vscode.ExtensionContext) => {
   extensionContext = context;
 
-  const command = vscode.commands.registerCommand('mekatrol.pyboarddev.disconnectboard', async () => {
-    await closeConnectedBoard(true);
+  const command = vscode.commands.registerCommand('mekatrol.pyboarddev.disconnectboard', async (arg?: unknown) => {
+    const targetDeviceId = typeof arg === 'string'
+      ? arg
+      : typeof arg === 'object' && arg && 'deviceId' in arg && typeof (arg as { deviceId?: unknown }).deviceId === 'string'
+        ? (arg as { deviceId: string }).deviceId
+        : await pickConnectedDeviceId('Select a connected device to disconnect');
+
+    if (!targetDeviceId) {
+      return;
+    }
+
+    await closeConnectedBoardByDeviceId(targetDeviceId, true);
   });
 
   context.subscriptions.push(command);
@@ -237,7 +526,12 @@ export const initToggleBoardConnectionCommand = (context: vscode.ExtensionContex
 
   const command = vscode.commands.registerCommand('mekatrol.pyboarddev.toggleboardconnection', async () => {
     if (isBoardConnected()) {
-      await closeConnectedBoard(true);
+      const targetDeviceId = await pickConnectedDeviceId('Select a connected device to disconnect');
+      if (!targetDeviceId) {
+        return;
+      }
+
+      await closeConnectedBoardByDeviceId(targetDeviceId, true);
       return;
     }
 
@@ -277,7 +571,7 @@ export const initSetAutoReconnectCommand = (context: vscode.ExtensionContext) =>
       [
         {
           label: 'Enable',
-          description: 'Reconnect to last device on startup when last session was connected',
+          description: 'Reconnect to last selected device on startup when last session had an active connection',
           picked: currentValue
         },
         {
@@ -309,9 +603,30 @@ export const initSetAutoReconnectCommand = (context: vscode.ExtensionContext) =>
 export const initSoftRebootBoardCommand = (context: vscode.ExtensionContext) => {
   extensionContext = context;
 
-  const command = vscode.commands.registerCommand('mekatrol.pyboarddev.softreboot', async () => {
-    if (!connectedBoard) {
+  const command = vscode.commands.registerCommand('mekatrol.pyboarddev.softreboot', async (arg?: unknown) => {
+    const targetDeviceId = typeof arg === 'string'
+      ? arg
+      : typeof arg === 'object' && arg && 'deviceId' in arg && typeof (arg as { deviceId?: unknown }).deviceId === 'string'
+        ? (arg as { deviceId: string }).deviceId
+        : await pickConnectedDeviceId('Select a connected device to soft reboot');
+
+    if (!targetDeviceId) {
       const msg = 'Connect to a board before soft rebooting.';
+      vscode.window.showWarningMessage(msg);
+      logChannelOutput(msg, true);
+      return;
+    }
+
+    const state = connectedBoards.get(targetDeviceId);
+    if (!state) {
+      const msg = `Device ${targetDeviceId} is not connected.`;
+      vscode.window.showWarningMessage(msg);
+      logChannelOutput(msg, true);
+      return;
+    }
+
+    if (state.executionCount > 0) {
+      const msg = `Device ${targetDeviceId} is currently executing. Stop execution before soft rebooting.`;
       vscode.window.showWarningMessage(msg);
       logChannelOutput(msg, true);
       return;
@@ -327,13 +642,13 @@ export const initSoftRebootBoardCommand = (context: vscode.ExtensionContext) => 
     }
 
     try {
-      await connectedBoard.softReboot();
-      const msg = 'Device soft reboot complete.';
+      await state.board.softReboot();
+      const msg = `Device soft reboot complete for ${targetDeviceId}.`;
       vscode.window.showInformationMessage(msg);
       logChannelOutput(msg, true);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      const msg = `Device soft reboot failed. ${reason}`;
+      const msg = `Device soft reboot failed for ${targetDeviceId}. ${reason}`;
       vscode.window.showErrorMessage(msg);
       logChannelOutput(msg, true);
     }

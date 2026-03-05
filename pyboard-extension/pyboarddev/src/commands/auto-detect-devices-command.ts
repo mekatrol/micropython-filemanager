@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { logChannelOutput } from '../output-channel';
 import { listAllSerialPorts, PortInfo } from '../utils/serial-port';
 import { BoardRuntimeInfo, Pyboard } from '../utils/pyboard';
-import { isBoardConnected } from './connect-board-command';
+import { getConnectedBoardByPortPath } from './connect-board-command';
 
 const autoDetectDevicesCommandId = 'mekatrol.pyboarddev.autodetectdevices';
 const selectedSerialPortStateKey = 'selectedSerialPort';
@@ -61,13 +61,6 @@ const writePersistentState = async <T>(context: vscode.ExtensionContext, key: st
 
 export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): void => {
   const command = vscode.commands.registerCommand(autoDetectDevicesCommandId, async () => {
-    if (isBoardConnected()) {
-      const msg = 'Disconnect from the board before running auto detect.';
-      vscode.window.showWarningMessage(msg);
-      logChannelOutput(msg, true);
-      return;
-    }
-
     let detectedDevices: DetectedDevice[] = [];
     try {
       detectedDevices = await vscode.window.withProgress(
@@ -82,10 +75,15 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
             return [];
           }
 
-          const results: DetectedDevice[] = [];
-          const increment = 100 / ports.length;
+          const availablePorts = ports.filter((port) => !getConnectedBoardByPortPath(port.path));
+          if (availablePorts.length === 0) {
+            return [];
+          }
 
-          for (const port of ports) {
+          const results: DetectedDevice[] = [];
+          const increment = 100 / availablePorts.length;
+
+          for (const port of availablePorts) {
             progress.report({ increment, message: `Probing ${port.path}` });
             const detected = await detectDevice(port);
             if (detected) {
@@ -105,7 +103,7 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
     }
 
     if (detectedDevices.length === 0) {
-      const msg = 'No accessible serial devices detected.';
+      const msg = 'No accessible serial devices detected (connected ports are skipped).';
       vscode.window.showWarningMessage(msg);
       logChannelOutput(msg, true);
       return;
@@ -129,13 +127,6 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
     });
 
     if (!selected) {
-      return;
-    }
-
-    if (isBoardConnected()) {
-      const msg = 'Board connected while device list was open. Disconnect before connecting to another device.';
-      vscode.window.showWarningMessage(msg);
-      logChannelOutput(msg, true);
       return;
     }
 

@@ -4,7 +4,7 @@ import { initOutputChannel, logChannelOutput as logChannelOutput } from './outpu
 import { initCreateConfigCommand } from './commands/create-config-command';
 import { initAutoDetectDevicesCommand } from './commands/auto-detect-devices-command';
 import {
-  closeConnectedBoard,
+  closeAllConnectedBoards,
   initConnectBoardCommand,
   initDisconnectBoardCommand,
   initSoftRebootBoardCommand,
@@ -57,5 +57,5 @@ export async function deactivate() {
     return;
   }
 
-  await closeConnectedBoard(false, true, false, false);
+  await closeAllConnectedBoards(false, true, false, false);
 }
