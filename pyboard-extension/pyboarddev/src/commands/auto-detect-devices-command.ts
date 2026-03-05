@@ -114,8 +114,10 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
     const activeDevice = readPersistentState<string>(context, selectedSerialPortStateKey);
     const items: DetectedDevicePickItem[] = detectedDevices.map((device) => ({
       label: device.port.path,
-      description: device.runtimeInfo?.banner ?? 'MicroPython device',
-      detail: buildDeviceDetails(device),
+      description: device.runtimeInfo
+        ? `${device.runtimeInfo.banner}${device.runtimeInfo.uniqueId ? ` | UID:${device.runtimeInfo.uniqueId}` : ''}`
+        : 'MicroPython device',
+      detail: `${buildDeviceDetails(device)}${device.runtimeInfo?.uniqueId ? ` | Unique ID: ${device.runtimeInfo.uniqueId}` : ''}`,
       picked: device.port.path === activeDevice,
       device
     }));

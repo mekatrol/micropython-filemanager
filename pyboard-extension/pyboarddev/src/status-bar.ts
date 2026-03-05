@@ -112,9 +112,11 @@ export const updateStatusBarItem = async (): Promise<void> => {
 
   const runtimeInfo = getConnectedBoardRuntimeInfo();
   if (connected && runtimeInfo) {
-    const shortText = runtimeInfo.banner.length > 48 ? `${runtimeInfo.banner.slice(0, 45)}...` : runtimeInfo.banner;
+    const uniqueIdSuffix = runtimeInfo.uniqueId ? ` | UID:${runtimeInfo.uniqueId}` : '';
+    const runtimeSummary = `${runtimeInfo.banner}${uniqueIdSuffix}`;
+    const shortText = runtimeSummary.length > 48 ? `${runtimeSummary.slice(0, 45)}...` : runtimeSummary;
     boardRuntimeStatusBarItem.text = `$(info) ${shortText}`;
-    boardRuntimeStatusBarItem.tooltip = runtimeInfo.banner;
+    boardRuntimeStatusBarItem.tooltip = runtimeSummary;
     boardRuntimeStatusBarItem.show();
   } else if (connected) {
     boardRuntimeStatusBarItem.text = '$(sync~spin) Reading board runtime info...';
