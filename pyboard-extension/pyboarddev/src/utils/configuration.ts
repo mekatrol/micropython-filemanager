@@ -13,6 +13,7 @@ export enum PyboardDevConfigurationResult {
 interface DeviceConfigurationJson {
   hostFolder?: string;
   alias?: string;
+  syncExcludedPaths?: string[];
 }
 
 const isObjectRecord = (value: unknown): value is Record<string, unknown> => {
@@ -24,13 +25,39 @@ const normaliseOptionalString = (value: string | undefined): string | undefined 
   return trimmed && trimmed.length > 0 ? trimmed : undefined;
 };
 
+const normaliseRelativePath = (value: string | undefined): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalised = value
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '');
+  return normalised.length > 0 ? normalised : undefined;
+};
+
+const normaliseRelativePathArray = (values: readonly string[] | undefined): string[] => {
+  if (!values || values.length === 0) {
+    return [];
+  }
+
+  return [...new Set(values
+    .map((value) => normaliseRelativePath(value))
+    .filter((value): value is string => !!value))]
+    .sort((a, b) => a.localeCompare(b));
+};
+
 export class DeviceConfiguration {
   private hostFolder: string | undefined;
   private alias: string | undefined;
+  private syncExcludedPaths: string[] = [];
 
   constructor(initial?: DeviceConfigurationJson) {
     this.hostFolder = normaliseOptionalString(initial?.hostFolder);
     this.alias = normaliseOptionalString(initial?.alias);
+    this.syncExcludedPaths = normaliseRelativePathArray(initial?.syncExcludedPaths);
   }
 
   static fromUnknown(value: unknown): DeviceConfiguration {
@@ -44,7 +71,10 @@ export class DeviceConfiguration {
 
     const hostFolder = typeof value.hostFolder === 'string' ? value.hostFolder : undefined;
     const alias = typeof value.alias === 'string' ? value.alias : undefined;
-    return new DeviceConfiguration({ hostFolder, alias });
+    const syncExcludedPaths = Array.isArray(value.syncExcludedPaths)
+      ? value.syncExcludedPaths.filter((item): item is string => typeof item === 'string')
+      : undefined;
+    return new DeviceConfiguration({ hostFolder, alias, syncExcludedPaths });
   }
 
   getHostFolder(): string | undefined {
@@ -63,8 +93,32 @@ export class DeviceConfiguration {
     this.alias = normaliseOptionalString(value);
   }
 
+  getSyncExcludedPaths(): string[] {
+    return [...this.syncExcludedPaths];
+  }
+
+  setSyncExcludedPaths(values: readonly string[] | undefined): void {
+    this.syncExcludedPaths = normaliseRelativePathArray(values);
+  }
+
+  addSyncExcludedPath(relativePath: string): void {
+    const normalised = normaliseRelativePath(relativePath);
+    if (!normalised || this.syncExcludedPaths.includes(normalised)) {
+      return;
+    }
+    this.syncExcludedPaths = [...this.syncExcludedPaths, normalised].sort((a, b) => a.localeCompare(b));
+  }
+
+  removeSyncExcludedPath(relativePath: string): void {
+    const normalised = normaliseRelativePath(relativePath);
+    if (!normalised) {
+      return;
+    }
+    this.syncExcludedPaths = this.syncExcludedPaths.filter((item) => item !== normalised);
+  }
+
   isEmpty(): boolean {
-    return !this.hostFolder && !this.alias;
+    return !this.hostFolder && !this.alias && this.syncExcludedPaths.length === 0;
   }
 
   toJSON(): DeviceConfigurationJson {
@@ -74,6 +128,9 @@ export class DeviceConfiguration {
     }
     if (this.alias) {
       json.alias = this.alias;
+    }
+    if (this.syncExcludedPaths.length > 0) {
+      json.syncExcludedPaths = [...this.syncExcludedPaths];
     }
     return json;
   }
@@ -154,6 +211,7 @@ const parseDevices = (source: Partial<PyboardDevConfiguration> & LegacyPyboardDe
     const device = devices[deviceId] ?? new DeviceConfiguration();
     device.setHostFolder(parsed.getHostFolder() ?? device.getHostFolder());
     device.setAlias(parsed.getAlias() ?? device.getAlias());
+    device.setSyncExcludedPaths(parsed.getSyncExcludedPaths());
     devices[deviceId] = device;
   }
 
@@ -189,6 +247,17 @@ export const getDeviceAliases = (configuration: PyboardDevConfiguration): Record
     }
   }
   return aliases;
+};
+
+export const getDeviceSyncExcludedPaths = (configuration: PyboardDevConfiguration): Record<string, string[]> => {
+  const excludedPathsByDevice: Record<string, string[]> = {};
+  for (const [deviceId, device] of Object.entries(configuration.devices ?? {})) {
+    const excludedPaths = device.getSyncExcludedPaths();
+    if (excludedPaths.length > 0) {
+      excludedPathsByDevice[deviceId] = excludedPaths;
+    }
+  }
+  return excludedPathsByDevice;
 };
 
 export const getConfigurationFullFileName = (): string | undefined => {
@@ -327,6 +396,34 @@ export const updateDeviceAlias = async (
   const nextDevices = cloneDevices(configuration.devices ?? {});
   const nextDeviceConfig = nextDevices[deviceId] ?? new DeviceConfiguration();
   nextDeviceConfig.setAlias(alias);
+  if (nextDeviceConfig.isEmpty()) {
+    delete nextDevices[deviceId];
+  } else {
+    nextDevices[deviceId] = nextDeviceConfig;
+  }
+
+  const updated: PyboardDevConfiguration = {
+    ...configuration,
+    devices: pruneEmptyDevices(nextDevices)
+  };
+  await saveConfiguration(updated);
+  return updated;
+};
+
+export const updateDeviceSyncExclusion = async (
+  deviceId: string,
+  relativePath: string,
+  excluded: boolean
+): Promise<PyboardDevConfiguration> => {
+  const configuration = await loadConfiguration();
+  const nextDevices = cloneDevices(configuration.devices ?? {});
+  const nextDeviceConfig = nextDevices[deviceId] ?? new DeviceConfiguration();
+  if (excluded) {
+    nextDeviceConfig.addSyncExcludedPath(relativePath);
+  } else {
+    nextDeviceConfig.removeSyncExcludedPath(relativePath);
+  }
+
   if (nextDeviceConfig.isEmpty()) {
     delete nextDevices[deviceId];
   } else {

@@ -151,6 +151,14 @@
         "title": "Pyboard Dev: Set device alias"
       },
       {
+        "command": "mekatrol.pyboarddev.excludedevicefilefromsync",
+        "title": "Exclude From Sync"
+      },
+      {
+        "command": "mekatrol.pyboarddev.removedevicefilefromsyncexclusion",
+        "title": "Remove Sync Exclusion"
+      },
+      {
         "command": "mekatrol.pyboarddev.closedeviceconnection",
         "title": "Close Connection",
         "icon": "$(debug-disconnect)"
@@ -260,7 +268,7 @@
       "view/item/context": [
         {
           "command": "mekatrol.pyboarddev.openlocalmirroritem",
-          "when": "view == mekatrol.pyboarddev.mirrorExplorer && viewItem == pyboarddev.hostFile",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFileExcluded)",
           "group": "navigation@1"
         },
         {
@@ -280,12 +288,12 @@
         },
         {
           "command": "mekatrol.pyboarddev.openremotefile",
-          "when": "view == mekatrol.pyboarddev.mirrorExplorer && viewItem == pyboarddev.deviceFile",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFileExcluded)",
           "group": "navigation@2"
         },
         {
           "command": "mekatrol.pyboarddev.compareremotewithlocal",
-          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostFile || viewItem == pyboarddev.deviceFile)",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFileExcluded || viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFileExcluded)",
           "group": "navigation@3"
         },
         {
@@ -299,6 +307,16 @@
           "group": "navigation@5"
         },
         {
+          "command": "mekatrol.pyboarddev.excludedevicefilefromsync",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && viewItem == pyboarddev.deviceFile",
+          "group": "navigation@5.1"
+        },
+        {
+          "command": "mekatrol.pyboarddev.removedevicefilefromsyncexclusion",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceFileExcluded || viewItem == pyboarddev.hostFileExcluded)",
+          "group": "navigation@5.2"
+        },
+        {
           "command": "mekatrol.pyboarddev.createmirrorfile",
           "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostRoot || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.deviceFolder || viewItem == pyboarddev.deviceIdNode || viewItem == pyboarddev.deviceIdNodeLinked || viewItem == pyboarddev.hostDeviceMappingNode)",
           "group": "navigation@6"
@@ -310,12 +328,12 @@
         },
         {
           "command": "mekatrol.pyboarddev.renamemirrorpath",
-          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFolder)",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFileExcluded || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFileExcluded || viewItem == pyboarddev.deviceFolder)",
           "group": "navigation@8"
         },
         {
           "command": "mekatrol.pyboarddev.deletemirrorpath",
-          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFolder)",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFileExcluded || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFileExcluded || viewItem == pyboarddev.deviceFolder)",
           "group": "navigation@9"
         },
         {
