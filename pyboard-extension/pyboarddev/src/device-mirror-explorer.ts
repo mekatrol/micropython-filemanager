@@ -1120,6 +1120,10 @@ class DeviceMirrorModel {
     return getConnectedBoards().map((item) => item.deviceId).sort((a, b) => a.localeCompare(b));
   }
 
+  getConnectedDevice(deviceId: string): ReturnType<typeof getConnectedBoards>[number] | undefined {
+    return getConnectedBoards().find((item) => item.deviceId === deviceId);
+  }
+
   setSelectedRemoteNode(node: MirrorNode | undefined): void {
     this.selectedNode = node;
     void this.ensureActiveDevice(node);
@@ -1880,7 +1884,12 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
     if (data.isDeviceIdNode) {
       element.contextValue = data.side === 'device' ? 'pyboarddev.deviceFolder' : 'pyboarddev.hostFolder';
       element.iconPath = new vscode.ThemeIcon('device-mobile');
-      element.description = data.side === 'device' ? 'connected' : 'mirror';
+      if (data.side === 'device' && data.deviceId) {
+        const connected = this.model.getConnectedDevice(data.deviceId);
+        element.description = connected ? this.toSerialPortName(connected.devicePath) : 'disconnected';
+      } else {
+        element.description = 'mirror';
+      }
       element.command = undefined;
       return element;
     }
@@ -1948,17 +1957,23 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
         ];
       }
 
-      return deviceIds.map((deviceId) => new MirrorNode(
-        {
-          side: element.data.side,
-          relativePath: '',
-          isDirectory: true,
-          deviceId,
-          isDeviceIdNode: true
-        },
-        deviceId,
-        vscode.TreeItemCollapsibleState.Collapsed
-      ));
+      return deviceIds.map((deviceId) => {
+        const connected = this.model.getConnectedDevice(deviceId);
+        const label = element.data.side === 'device' && connected
+          ? `${deviceId} (${this.toSerialPortName(connected.devicePath)})`
+          : deviceId;
+        return new MirrorNode(
+          {
+            side: element.data.side,
+            relativePath: '',
+            isDirectory: true,
+            deviceId,
+            isDeviceIdNode: true
+          },
+          label,
+          vscode.TreeItemCollapsibleState.Collapsed
+        );
+      });
     }
 
     return this.model.getNodeChildren(
@@ -1966,6 +1981,10 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
       element.data.isDeviceIdNode ? '' : element.data.relativePath,
       element.data.deviceId
     );
+  }
+
+  private toSerialPortName(devicePath: string): string {
+    return path.basename(devicePath) || devicePath;
   }
 }
 

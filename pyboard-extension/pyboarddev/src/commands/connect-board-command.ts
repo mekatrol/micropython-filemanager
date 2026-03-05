@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { logChannelOutput } from '../output-channel';
 import { BoardRuntimeInfo, Pyboard } from '../utils/pyboard';
+import { listSerialDevices } from '../utils/serial-port';
 
 const selectedSerialPortStateKey = 'selectedSerialPort';
 const selectedBaudRateStateKey = 'selectedBaudRate';
@@ -473,17 +474,61 @@ const pickConnectedDeviceId = async (placeHolder: string): Promise<string | unde
   return selected?.label;
 };
 
+const pickSerialPortToConnect = async (context: vscode.ExtensionContext): Promise<string | undefined> => {
+  const ports = await listSerialDevices();
+  if (ports.length === 0) {
+    const msg = 'No serial devices found.';
+    vscode.window.showWarningMessage(msg);
+    logChannelOutput(msg, true);
+    return undefined;
+  }
+
+  const connectedPaths = new Set(getSnapshots().map((item) => item.devicePath));
+  const activePath = readPersistentState<string>(context, selectedSerialPortStateKey);
+  const items = ports.map((port) => {
+    const details = [port.manufacturer, `VID:${port.vendorId}`, `PID:${port.productId}`].filter(Boolean).join(' | ');
+    const alreadyConnected = connectedPaths.has(port.path);
+    return {
+      label: port.path,
+      description: alreadyConnected ? `already connected${details ? ` | ${details}` : ''}` : details,
+      picked: port.path === activePath
+    };
+  });
+
+  const selected = await vscode.window.showQuickPick(items, {
+    placeHolder: 'Select a serial port to connect',
+    canPickMany: false,
+    ignoreFocusOut: true
+  });
+
+  if (!selected) {
+    return undefined;
+  }
+
+  await writePersistentState(context, selectedSerialPortStateKey, selected.label);
+  return selected.label;
+};
+
 export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
   extensionContext = context;
 
   const command = vscode.commands.registerCommand('mekatrol.pyboarddev.connectboard', async () => {
-    const devicePath = readPersistentState<string>(context, selectedSerialPortStateKey);
+    let devicePath = readPersistentState<string>(context, selectedSerialPortStateKey);
     const baudRate = readPersistentState<number>(context, selectedBaudRateStateKey) ?? defaultBaudRate;
 
     if (!devicePath) {
-      const msg = 'No serial device selected. Select a serial port first.';
-      vscode.window.showWarningMessage(msg);
-      logChannelOutput(msg, true);
+      try {
+        devicePath = await pickSerialPortToConnect(context);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        const msg = `Unable to list serial ports. ${reason}`;
+        vscode.window.showErrorMessage(msg);
+        logChannelOutput(msg, true);
+        return;
+      }
+    }
+
+    if (!devicePath) {
       return;
     }
 
