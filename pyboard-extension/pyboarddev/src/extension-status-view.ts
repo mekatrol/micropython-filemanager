@@ -5,10 +5,9 @@ import {
   onBoardConnectionStateChanged,
   onBoardConnectionsChanged
 } from './commands/connect-board-command';
-import { getActiveBaudRate, getActiveDevice, getStatusDisplayMode, onStatusDataChanged } from './status-bar';
+import { getStatusDisplayMode, onStatusDataChanged } from './status-bar';
 
 const statusViewId = 'mekatrol.pyboarddev.statusView';
-const selectDeviceCommandId = 'mekatrol.pyboarddev.selectdevice';
 const autoDetectDevicesCommandId = 'mekatrol.pyboarddev.autodetectdevices';
 const toggleBoardConnectionCommandId = 'mekatrol.pyboarddev.toggleboardconnection';
 const softRebootCommandId = 'mekatrol.pyboarddev.softreboot';
@@ -45,30 +44,11 @@ class ExtensionStatusViewProvider implements vscode.TreeDataProvider<ExtensionSt
     }
 
     const connected = isBoardConnected();
-    const selectedDevice = getActiveDevice() ?? '<select device>';
-    const selectedBaudRate = getActiveBaudRate();
     const connections = getConnectedBoards();
 
     const items: ExtensionStatusNode[] = [];
-    if (connections.length > 0) {
-      items.push(new ExtensionStatusNode(`Connected Devices: ${connections.length}`, 'circuit-board'));
-      for (const board of connections) {
-        const runtimeSummary = board.runtimeInfo
-          ? `${board.runtimeInfo.runtimeName} ${board.runtimeInfo.version}`
-          : 'Reading runtime info...';
-        const executing = board.executionCount > 0 ? ` | executing:${board.executionCount}` : '';
-        items.push(new ExtensionStatusNode(`${board.deviceId} | ${board.devicePath} @ ${board.baudRate} | ${runtimeSummary}${executing}`, 'device-mobile'));
-      }
-    }
+    items.push(new ExtensionStatusNode(`Connected Devices: ${connections.length}`, 'circuit-board'));
 
-    items.push(
-      new ExtensionStatusNode(
-        `Serial Port: ${selectedDevice} @ ${selectedBaudRate} | [ Change ]`,
-        'circuit-board',
-        'Click to change selected serial port',
-        { command: selectDeviceCommandId, title: 'Select serial port' }
-      )
-    );
     items.push(
       new ExtensionStatusNode(
         '[ Scan Devices ]',
