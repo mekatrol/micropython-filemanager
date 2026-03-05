@@ -40,6 +40,7 @@ export class Pyboard {
   readonly onDidIO = this.ioEmitter.event;
   private execQueue: Promise<void> = Promise.resolve();
   private static readonly transportLogSettingKey = 'verboseReplTransportLogs';
+  private readonly reportErrorsToUser: boolean;
 
   /**
    * Constructor for Pyboard class.
@@ -47,12 +48,20 @@ export class Pyboard {
    * @param baudrate Serial baud rate (default: 115200)
    * @param user Optional username (default: "micro")
    * @param password Optional password (default: "python")
+   * @param reportErrorsToUser Whether errors should be logged/shown to user (default: true)
    */
-  constructor(device: string, baudrate: number = 115200, user: string = 'micro', password: string = 'python') {
+  constructor(
+    device: string,
+    baudrate: number = 115200,
+    reportErrorsToUser: boolean = true,
+    user: string = 'micro',
+    password: string = 'python'
+  ) {
     this.device = device;
     this.baudrate = baudrate;
     this.user = user;
     this.password = password;
+    this.reportErrorsToUser = reportErrorsToUser;
   }
 
   /**
@@ -639,8 +648,10 @@ export class Pyboard {
   private reportError(context: string, error: unknown): Error {
     const detail = error instanceof Error ? error.message : String(error);
     const message = `${context}: ${detail}`;
-    vscode.window.showErrorMessage(message);
-    logChannelOutput(message, true);
+    if (this.reportErrorsToUser) {
+      vscode.window.showErrorMessage(message);
+      logChannelOutput(message, true);
+    }
     return new Error(message);
   }
 

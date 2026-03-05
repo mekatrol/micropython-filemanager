@@ -19,7 +19,7 @@ interface DetectedDevicePickItem extends vscode.QuickPickItem {
 }
 
 const detectDevice = async (port: PortInfo): Promise<DetectedDevice | undefined> => {
-  const board = new Pyboard(port.path, defaultBaudRate);
+  const board = new Pyboard(port.path, defaultBaudRate, false);
   try {
     await board.open();
   } catch {
@@ -139,7 +139,6 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
 
     await writePersistentState(context, selectedSerialPortStateKey, selected.device.port.path);
     await writePersistentState(context, selectedBaudRateStateKey, defaultBaudRate);
-    logChannelOutput(`Auto detect selected serial device: ${selected.device.port.path}`, true);
 
     await vscode.commands.executeCommand('mekatrol.pyboarddev.connectboard');
   });
