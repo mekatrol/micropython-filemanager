@@ -21,6 +21,7 @@ export interface BoardRuntimeInfo {
   runtimeName: 'MicroPython' | 'CircuitPython';
   version: string;
   machine: string;
+  uniqueId?: string;
   banner: string;
 }
 
@@ -384,14 +385,18 @@ export class Pyboard {
     return this.enqueueExclusive(async () => {
       await this.softRebootRawUnlocked(Math.max(timeoutMs, 8000));
       const { stdout, stderr } = await this.execRawCaptureUnlocked(`${this.buildRuntimeInfoScript()}\n`, timeoutMs);
-      return this.parseRuntimeInfo(stdout, stderr);
+      const runtimeInfo = this.parseRuntimeInfo(stdout, stderr);
+      runtimeInfo.uniqueId = await this.tryReadBoardUniqueIdUnlocked(timeoutMs);
+      return runtimeInfo;
     });
   }
 
   async probeBoardRuntimeInfo(timeoutMs: number = 2500): Promise<BoardRuntimeInfo> {
     return this.enqueueExclusive(async () => {
       const { stdout, stderr } = await this.execRawCaptureUnlocked(`${this.buildRuntimeInfoScript()}\n`, timeoutMs);
-      return this.parseRuntimeInfo(stdout, stderr);
+      const runtimeInfo = this.parseRuntimeInfo(stdout, stderr);
+      runtimeInfo.uniqueId = await this.tryReadBoardUniqueIdUnlocked(timeoutMs);
+      return runtimeInfo;
     });
   }
 
@@ -427,6 +432,36 @@ export class Pyboard {
       `print('${beginMarker}')`,
       'print(version)',
       'print(machine)',
+      `print('${endMarker}')`
+    ].join('\n');
+  }
+
+  private buildUniqueIdScript(): string {
+    const beginMarker = '__PYBOARDDEV_UNIQUE_ID_BEGIN__';
+    const endMarker = '__PYBOARDDEV_UNIQUE_ID_END__';
+    return [
+      `print('${beginMarker}')`,
+      'uid = ""',
+      'try:',
+      '  import machine',
+      '  try:',
+      '    import ubinascii as binascii',
+      '  except:',
+      '    import binascii',
+      '  uid = binascii.hexlify(machine.unique_id()).decode()',
+      'except:',
+      '  try:',
+      '    import pyb',
+      '    uid = pyb.unique_id()',
+      '    if not isinstance(uid, str):',
+      '      try:',
+      '        import ubinascii as binascii',
+      '      except:',
+      '        import binascii',
+      '      uid = binascii.hexlify(uid).decode()',
+      '  except:',
+      '    uid = ""',
+      'print(uid)',
       `print('${endMarker}')`
     ].join('\n');
   }
@@ -467,6 +502,39 @@ export class Pyboard {
       machine,
       banner
     };
+  }
+
+  private parseUniqueId(stdout: string, stderr: string): string {
+    if (stderr.trim().length > 0) {
+      throw new Error(stderr.trim());
+    }
+
+    const beginMarker = '__PYBOARDDEV_UNIQUE_ID_BEGIN__';
+    const endMarker = '__PYBOARDDEV_UNIQUE_ID_END__';
+    const normalised = stdout.replace(/\r/g, '\n');
+    const start = normalised.indexOf(beginMarker);
+    const end = normalised.indexOf(endMarker);
+    if (start < 0 || end < 0 || end <= start) {
+      throw new Error(`Unexpected unique ID response: ${stdout}`);
+    }
+
+    const content = normalised
+      .slice(start + beginMarker.length, end)
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    return content[0] ?? '';
+  }
+
+  private async tryReadBoardUniqueIdUnlocked(timeoutMs: number): Promise<string | undefined> {
+    try {
+      const { stdout, stderr } = await this.execRawCaptureUnlocked(`${this.buildUniqueIdScript()}\n`, timeoutMs);
+      const uniqueId = this.parseUniqueId(stdout, stderr);
+      return uniqueId.length > 0 ? uniqueId : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private async softRebootRawUnlocked(timeoutMs: number): Promise<void> {

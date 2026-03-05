@@ -49,9 +49,11 @@ class ExtensionStatusViewProvider implements vscode.TreeDataProvider<ExtensionSt
       if (runtimeInfo) {
         items.push(new ExtensionStatusNode(`Runtime: ${runtimeInfo.runtimeName} ${runtimeInfo.version}`, 'info'));
         items.push(new ExtensionStatusNode(`Device: ${runtimeInfo.machine}`, 'info'));
+        items.push(new ExtensionStatusNode(`Unique ID: ${runtimeInfo.uniqueId ?? '<not available>'}`, 'info'));
       } else {
         items.push(new ExtensionStatusNode('Runtime: Reading board runtime info...', 'sync~spin'));
         items.push(new ExtensionStatusNode('Device: Reading board details...', 'sync~spin'));
+        items.push(new ExtensionStatusNode('Unique ID: Reading board details...', 'sync~spin'));
       }
     }
 
