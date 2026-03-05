@@ -55,6 +55,8 @@ const commandConnectBoardWithPickerId = 'mekatrol.pyboarddev.connectboardwithpic
 const deviceDocumentScheme = 'pyboarddev-device';
 const defaultBaudRate = 115200;
 const deviceExplorerAutoRefreshIntervalMs = 5000;
+const deviceCreateConfirmTimeoutMs = 6000;
+const deviceCreateConfirmPollIntervalMs = 150;
 const hostMirrorRootFolder = '.pyboard-mirror';
 const hasHostMirrorChildFoldersContextKey = 'mekatrol.pyboarddev.hasHostMirrorChildFolders';
 const hasLinkedHostMappingsContextKey = 'mekatrol.pyboarddev.hasLinkedHostMappings';
@@ -98,6 +100,13 @@ class MirrorNode extends vscode.TreeItem {
   constructor(data: NodeData, label: string, collapsibleState: vscode.TreeItemCollapsibleState) {
     super(label, collapsibleState);
     this.data = data;
+    const marker = data.isRoot
+      ? 'root'
+      : (data.isDeviceIdNode ? 'deviceId' : (data.isIndicator ? 'indicator' : 'entry'));
+    const deviceKey = data.deviceId ?? '';
+    const pathKey = toRelativePath(data.relativePath);
+    const typeKey = data.isDirectory ? 'dir' : 'file';
+    this.id = `${data.side}:${marker}:${deviceKey}:${pathKey}:${typeKey}`;
   }
 }
 
@@ -137,6 +146,36 @@ class DeviceMirrorModel {
       return;
     }
     await this.revealPathNode(target);
+  }
+
+  private async wait(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async waitForDeviceEntry(
+    board: NonNullable<ReturnType<typeof getConnectedBoard>>,
+    relativePath: string,
+    isDirectory: boolean
+  ): Promise<boolean> {
+    const targetPath = toRelativePath(relativePath);
+    const deadline = Date.now() + deviceCreateConfirmTimeoutMs;
+
+    while (Date.now() <= deadline) {
+      try {
+        const entries = await listDeviceEntries(board);
+        const found = entries.some((entry) => toRelativePath(entry.relativePath) === targetPath && entry.isDirectory === isDirectory);
+        if (found) {
+          return true;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logChannelOutput(`Waiting for device path "/${targetPath}" failed: ${message}`, false);
+      }
+
+      await this.wait(deviceCreateConfirmPollIntervalMs);
+    }
+
+    return false;
   }
 
   async refresh(fetchDevice: boolean = true): Promise<void> {
@@ -958,13 +997,14 @@ class DeviceMirrorModel {
 
   async createDeviceFile(node?: MirrorNode): Promise<void> {
     await this.ensureActiveDevice(node);
+    const deviceId = this.activeDeviceId;
     const board = getConnectedBoard(this.activeDeviceId);
     if (!board) {
       vscode.window.showWarningMessage('Connect to a board before creating a device file.');
       return;
     }
 
-    const parentPath = this.getDeviceParentPath(node);
+    const parentPath = this.getDeviceCreateParentPath(node);
     const fileName = await vscode.window.showInputBox({
       title: 'Create Device File',
       prompt: parentPath ? `Create in /${parentPath}` : 'Create in /',
@@ -979,9 +1019,15 @@ class DeviceMirrorModel {
 
     const relativePath = this.joinDevicePath(parentPath, fileName);
     await writeDeviceFile(board, relativePath, Buffer.alloc(0));
-    await this.revealNode({ side: 'device', relativePath: parentPath, deviceId: this.activeDeviceId });
+    const confirmed = await this.waitForDeviceEntry(board, relativePath, false);
     await this.refresh(true);
-    await this.revealNode({ side: 'device', relativePath: parentPath, deviceId: this.activeDeviceId });
+    await this.revealNode({ side: 'device', relativePath: parentPath, deviceId });
+    if (!confirmed) {
+      const warning = `Timed out waiting for created device file: /${relativePath}`;
+      vscode.window.showWarningMessage(warning);
+      logChannelOutput(warning, true);
+      return;
+    }
     if (this.notifyDeviceFilesChanged) {
       await this.notifyDeviceFilesChanged([relativePath]);
     }
@@ -990,7 +1036,7 @@ class DeviceMirrorModel {
         side: 'device',
         relativePath,
         isDirectory: false,
-        deviceId: this.activeDeviceId
+        deviceId
       },
       path.posix.basename(relativePath),
       vscode.TreeItemCollapsibleState.None
@@ -1004,13 +1050,14 @@ class DeviceMirrorModel {
 
   async createDeviceFolder(node?: MirrorNode): Promise<void> {
     await this.ensureActiveDevice(node);
+    const deviceId = this.activeDeviceId;
     const board = getConnectedBoard(this.activeDeviceId);
     if (!board) {
       vscode.window.showWarningMessage('Connect to a board before creating a device folder.');
       return;
     }
 
-    const parentPath = this.getDeviceParentPath(node);
+    const parentPath = this.getDeviceCreateParentPath(node);
     const folderName = await vscode.window.showInputBox({
       title: 'Create Device Folder',
       prompt: parentPath ? `Create in /${parentPath}` : 'Create in /',
@@ -1025,9 +1072,15 @@ class DeviceMirrorModel {
 
     const relativePath = this.joinDevicePath(parentPath, folderName);
     await createDeviceDirectory(board, relativePath);
-    await this.revealNode({ side: 'device', relativePath: parentPath, deviceId: this.activeDeviceId });
+    const confirmed = await this.waitForDeviceEntry(board, relativePath, true);
     await this.refresh(true);
-    await this.revealNode({ side: 'device', relativePath: parentPath, deviceId: this.activeDeviceId });
+    await this.revealNode({ side: 'device', relativePath: parentPath, deviceId });
+    if (!confirmed) {
+      const warning = `Timed out waiting for created device folder: /${relativePath}`;
+      vscode.window.showWarningMessage(warning);
+      logChannelOutput(warning, true);
+      return;
+    }
 
     const msg = `Created device folder: /${relativePath}`;
     vscode.window.showInformationMessage(msg);
@@ -2354,6 +2407,22 @@ class DeviceMirrorModel {
     return parent === '.' ? '' : toRelativePath(parent);
   }
 
+  private getDeviceCreateParentPath(node?: MirrorNode): string {
+    const target = node?.data.side === 'device'
+      ? node
+      : (this.selectedNode?.data.side === 'device' ? this.selectedNode : undefined);
+    if (!target) {
+      return '';
+    }
+
+    // Device-id/root nodes are virtual containers representing the device root.
+    if (target.data.isDeviceIdNode || target.data.isRoot) {
+      return '';
+    }
+
+    return this.getDeviceParentPath(target);
+  }
+
   private joinDevicePath(parentPath: string, name: string): string {
     const trimmedName = name.trim();
     if (!parentPath) {
@@ -3138,6 +3207,33 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
     element.description = isExcludedFromSync ? 'excluded' : undefined;
 
     return element;
+  }
+
+  getParent(element: MirrorNode): MirrorNode | undefined {
+    const sameNode = (a: MirrorNode, b: MirrorNode): boolean => {
+      return a.data.side === b.data.side
+        && toRelativePath(a.data.relativePath) === toRelativePath(b.data.relativePath)
+        && (a.data.deviceId ?? '') === (b.data.deviceId ?? '')
+        && !!a.data.isRoot === !!b.data.isRoot
+        && !!a.data.isDeviceIdNode === !!b.data.isDeviceIdNode
+        && !!a.data.isIndicator === !!b.data.isIndicator
+        && a.data.isDirectory === b.data.isDirectory;
+    };
+
+    const queue: Array<{ node: MirrorNode; parent?: MirrorNode }> = this.getChildren().map((node) => ({ node }));
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (sameNode(current.node, element)) {
+        return current.parent;
+      }
+
+      const children = this.getChildren(current.node);
+      for (const child of children) {
+        queue.push({ node: child, parent: current.node });
+      }
+    }
+
+    return undefined;
   }
 
   getChildren(element?: MirrorNode): MirrorNode[] {
