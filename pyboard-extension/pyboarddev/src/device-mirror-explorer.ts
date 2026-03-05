@@ -1619,6 +1619,12 @@ class DeviceMirrorModel {
       return false;
     }
 
+    // HOST-side nodes are device-agnostic and may be linked to multiple devices,
+    // so exclusion state must not be inferred from the active device.
+    if (data.side === 'local') {
+      return false;
+    }
+
     const deviceId = data.deviceId ?? this.activeDeviceId;
     return this.isPathExcludedFromSync(data.relativePath, deviceId);
   }
