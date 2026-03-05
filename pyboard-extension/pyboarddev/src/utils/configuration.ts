@@ -10,11 +10,79 @@ export enum PyboardDevConfigurationResult {
   NoWorkspace = 'NoWorkspace'
 }
 
+interface DeviceConfigurationJson {
+  hostFolder?: string;
+  alias?: string;
+}
+
+const isObjectRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+};
+
+const normaliseOptionalString = (value: string | undefined): string | undefined => {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
+};
+
+export class DeviceConfiguration {
+  private hostFolder: string | undefined;
+  private alias: string | undefined;
+
+  constructor(initial?: DeviceConfigurationJson) {
+    this.hostFolder = normaliseOptionalString(initial?.hostFolder);
+    this.alias = normaliseOptionalString(initial?.alias);
+  }
+
+  static fromUnknown(value: unknown): DeviceConfiguration {
+    if (value instanceof DeviceConfiguration) {
+      return new DeviceConfiguration(value.toJSON());
+    }
+
+    if (!isObjectRecord(value)) {
+      return new DeviceConfiguration();
+    }
+
+    const hostFolder = typeof value.hostFolder === 'string' ? value.hostFolder : undefined;
+    const alias = typeof value.alias === 'string' ? value.alias : undefined;
+    return new DeviceConfiguration({ hostFolder, alias });
+  }
+
+  getHostFolder(): string | undefined {
+    return this.hostFolder;
+  }
+
+  setHostFolder(value: string | undefined): void {
+    this.hostFolder = normaliseOptionalString(value);
+  }
+
+  getAlias(): string | undefined {
+    return this.alias;
+  }
+
+  setAlias(value: string | undefined): void {
+    this.alias = normaliseOptionalString(value);
+  }
+
+  isEmpty(): boolean {
+    return !this.hostFolder && !this.alias;
+  }
+
+  toJSON(): DeviceConfigurationJson {
+    const json: DeviceConfigurationJson = {};
+    if (this.hostFolder) {
+      json.hostFolder = this.hostFolder;
+    }
+    if (this.alias) {
+      json.alias = this.alias;
+    }
+    return json;
+  }
+}
+
 export interface PyboardDevConfiguration {
   mirrorFolder: string;
   obfuscateOnPull: string[];
-  deviceHostFolderMappings: Record<string, string>;
-  deviceAliases: Record<string, string>;
+  devices: Record<string, DeviceConfiguration>;
 }
 
 export interface MetaPyboardDevConfiguration {
@@ -29,12 +97,99 @@ export interface PyboardDevConfigurationWithMeta extends PyboardDevConfiguration
 export const defaultConfiguration: PyboardDevConfiguration = {
   mirrorFolder: '',
   obfuscateOnPull: [],
-  deviceHostFolderMappings: {},
-  deviceAliases: {}
+  devices: {}
 };
 
 const configurationUpdatedEmitter = new vscode.EventEmitter<PyboardDevConfiguration>();
 export const onPyboardDevConfigurationUpdated = configurationUpdatedEmitter.event;
+
+interface LegacyPyboardDevConfiguration {
+  deviceHostFolderMappings?: Record<string, unknown>;
+  deviceAliases?: Record<string, unknown>;
+}
+
+const cloneDevices = (devices: Record<string, DeviceConfiguration>): Record<string, DeviceConfiguration> => {
+  const next: Record<string, DeviceConfiguration> = {};
+  for (const [deviceId, device] of Object.entries(devices)) {
+    next[deviceId] = DeviceConfiguration.fromUnknown(device);
+  }
+  return next;
+};
+
+const pruneEmptyDevices = (devices: Record<string, DeviceConfiguration>): Record<string, DeviceConfiguration> => {
+  const next: Record<string, DeviceConfiguration> = {};
+  for (const [deviceId, device] of Object.entries(devices)) {
+    if (!device.isEmpty()) {
+      next[deviceId] = device;
+    }
+  }
+  return next;
+};
+
+const parseDevices = (source: Partial<PyboardDevConfiguration> & LegacyPyboardDevConfiguration): Record<string, DeviceConfiguration> => {
+  const devices: Record<string, DeviceConfiguration> = {};
+  const legacyMappings = isObjectRecord(source.deviceHostFolderMappings) ? source.deviceHostFolderMappings : {};
+  for (const [deviceId, hostFolder] of Object.entries(legacyMappings)) {
+    if (typeof hostFolder !== 'string') {
+      continue;
+    }
+    const device = devices[deviceId] ?? new DeviceConfiguration();
+    device.setHostFolder(hostFolder);
+    devices[deviceId] = device;
+  }
+
+  const legacyAliases = isObjectRecord(source.deviceAliases) ? source.deviceAliases : {};
+  for (const [deviceId, alias] of Object.entries(legacyAliases)) {
+    if (typeof alias !== 'string') {
+      continue;
+    }
+    const device = devices[deviceId] ?? new DeviceConfiguration();
+    device.setAlias(alias);
+    devices[deviceId] = device;
+  }
+
+  const rawDevices = isObjectRecord(source.devices) ? source.devices : {};
+  for (const [deviceId, rawDevice] of Object.entries(rawDevices)) {
+    const parsed = DeviceConfiguration.fromUnknown(rawDevice);
+    const device = devices[deviceId] ?? new DeviceConfiguration();
+    device.setHostFolder(parsed.getHostFolder() ?? device.getHostFolder());
+    device.setAlias(parsed.getAlias() ?? device.getAlias());
+    devices[deviceId] = device;
+  }
+
+  return pruneEmptyDevices(devices);
+};
+
+const stripLegacyDeviceFields = <T extends object>(value: T): Omit<T, 'deviceHostFolderMappings' | 'deviceAliases'> => {
+  const {
+    deviceHostFolderMappings: _legacyMappings,
+    deviceAliases: _legacyAliases,
+    ...rest
+  } = value as T & LegacyPyboardDevConfiguration;
+  return rest;
+};
+
+export const getDeviceHostFolderMappings = (configuration: PyboardDevConfiguration): Record<string, string> => {
+  const mappings: Record<string, string> = {};
+  for (const [deviceId, device] of Object.entries(configuration.devices ?? {})) {
+    const hostFolder = device.getHostFolder();
+    if (hostFolder) {
+      mappings[deviceId] = hostFolder;
+    }
+  }
+  return mappings;
+};
+
+export const getDeviceAliases = (configuration: PyboardDevConfiguration): Record<string, string> => {
+  const aliases: Record<string, string> = {};
+  for (const [deviceId, device] of Object.entries(configuration.devices ?? {})) {
+    const alias = device.getAlias();
+    if (alias) {
+      aliases[deviceId] = alias;
+    }
+  }
+  return aliases;
+};
 
 export const getConfigurationFullFileName = (): string | undefined => {
   if (!vscode.workspace.workspaceFolders) {
@@ -55,7 +210,10 @@ export const getConfigurationFullFileName = (): string | undefined => {
 };
 
 export const loadConfiguration = async (): Promise<PyboardDevConfiguration> => {
-  let configuration: PyboardDevConfiguration = Object.assign({}, defaultConfiguration);
+  let configuration: PyboardDevConfiguration = {
+    ...defaultConfiguration,
+    devices: {}
+  };
 
   if (!vscode.workspace.workspaceFolders) {
     // Return default if there is no workspace configuration file
@@ -70,9 +228,13 @@ export const loadConfiguration = async (): Promise<PyboardDevConfiguration> => {
 
     const fileContent = await vscode.workspace.fs.readFile(fileUri);
     const json = Buffer.from(fileContent).toString('utf8');
-    const newConfiguration = JSON.parse(json);
+    const newConfiguration = JSON.parse(json) as Partial<PyboardDevConfiguration> & LegacyPyboardDevConfiguration;
 
-    configuration = Object.assign(configuration, newConfiguration);
+    configuration = {
+      ...configuration,
+      ...newConfiguration,
+      devices: parseDevices(newConfiguration)
+    };
 
     // The configuration comes from user entered value on disk, given this transpiles to
     // JavaScript then the user can override values to invalid values without error.
@@ -106,23 +268,28 @@ export const saveConfiguration = async (configuration: PyboardDevConfiguration):
       version: 1,
       help: 'See: https://github.com/mekatrol/micropython-filemanager/blob/main/pyboard-extension/pyboarddev/README.md for description of configuration values.'
     },
-    ...defaultConfiguration
+    ...defaultConfiguration,
+    devices: {}
   };
 
   try {
     const fileContent = await vscode.workspace.fs.readFile(fileUri);
     const json = Buffer.from(fileContent).toString('utf8');
-    const parsed = JSON.parse(json) as Partial<PyboardDevConfigurationWithMeta>;
-    existing = Object.assign(existing, parsed);
+    const parsed = JSON.parse(json) as Partial<PyboardDevConfigurationWithMeta> & LegacyPyboardDevConfiguration;
+    existing = {
+      ...existing,
+      ...parsed,
+      devices: parseDevices(parsed)
+    };
   } catch {
     // Missing config is expected; file will be created below.
   }
 
+  const existingWithoutLegacy = stripLegacyDeviceFields(existing);
   const merged: PyboardDevConfigurationWithMeta = {
-    ...existing,
+    ...existingWithoutLegacy,
     ...configuration,
-    deviceHostFolderMappings: Object.assign({}, configuration.deviceHostFolderMappings ?? {}),
-    deviceAliases: Object.assign({}, configuration.deviceAliases ?? {})
+    devices: pruneEmptyDevices(cloneDevices(configuration.devices ?? {}))
   };
 
   const content = JSON.stringify(merged, null, 2);
@@ -135,17 +302,18 @@ export const updateDeviceHostFolderMapping = async (
   hostFolderRelativePath: string | undefined
 ): Promise<PyboardDevConfiguration> => {
   const configuration = await loadConfiguration();
-  const nextMappings = Object.assign({}, configuration.deviceHostFolderMappings ?? {});
-
-  if (!hostFolderRelativePath || !hostFolderRelativePath.trim()) {
-    delete nextMappings[deviceId];
+  const nextDevices = cloneDevices(configuration.devices ?? {});
+  const nextDeviceConfig = nextDevices[deviceId] ?? new DeviceConfiguration();
+  nextDeviceConfig.setHostFolder(hostFolderRelativePath);
+  if (nextDeviceConfig.isEmpty()) {
+    delete nextDevices[deviceId];
   } else {
-    nextMappings[deviceId] = hostFolderRelativePath;
+    nextDevices[deviceId] = nextDeviceConfig;
   }
 
   const updated: PyboardDevConfiguration = {
     ...configuration,
-    deviceHostFolderMappings: nextMappings
+    devices: pruneEmptyDevices(nextDevices)
   };
   await saveConfiguration(updated);
   return updated;
@@ -156,18 +324,18 @@ export const updateDeviceAlias = async (
   alias: string | undefined
 ): Promise<PyboardDevConfiguration> => {
   const configuration = await loadConfiguration();
-  const nextAliases = Object.assign({}, configuration.deviceAliases ?? {});
-  const trimmedAlias = alias?.trim();
-
-  if (!trimmedAlias) {
-    delete nextAliases[deviceId];
+  const nextDevices = cloneDevices(configuration.devices ?? {});
+  const nextDeviceConfig = nextDevices[deviceId] ?? new DeviceConfiguration();
+  nextDeviceConfig.setAlias(alias);
+  if (nextDeviceConfig.isEmpty()) {
+    delete nextDevices[deviceId];
   } else {
-    nextAliases[deviceId] = trimmedAlias;
+    nextDevices[deviceId] = nextDeviceConfig;
   }
 
   const updated: PyboardDevConfiguration = {
     ...configuration,
-    deviceAliases: nextAliases
+    devices: pruneEmptyDevices(nextDevices)
   };
   await saveConfiguration(updated);
   return updated;

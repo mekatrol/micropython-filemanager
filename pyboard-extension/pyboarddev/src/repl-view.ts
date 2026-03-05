@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConnectedBoard, getConnectedBoards, onBoardConnectionsChanged } from './commands/connect-board-command';
-import { configurationFileName, loadConfiguration, onPyboardDevConfigurationUpdated } from './utils/configuration';
+import { configurationFileName, getDeviceAliases, loadConfiguration, onPyboardDevConfigurationUpdated } from './utils/configuration';
 
 const openReplCommandId = 'mekatrol.pyboarddev.openrepl';
 const clearReplCommandId = 'mekatrol.pyboarddev.clearrepl';
@@ -59,7 +59,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       this.postState();
     });
     this.configurationUpdatedDisposable = onPyboardDevConfigurationUpdated((configuration) => {
-      this.deviceAliases = Object.assign({}, configuration.deviceAliases ?? {});
+      this.deviceAliases = getDeviceAliases(configuration);
       this.postState();
     });
     this.configurationSavedDisposable = vscode.workspace.onDidSaveTextDocument((document) => {
@@ -101,7 +101,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
 
   private async reloadDeviceAliases(): Promise<void> {
     const configuration = await loadConfiguration();
-    this.deviceAliases = Object.assign({}, configuration.deviceAliases ?? {});
+    this.deviceAliases = getDeviceAliases(configuration);
     this.postState();
   }
 

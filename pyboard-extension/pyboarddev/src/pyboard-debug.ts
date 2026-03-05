@@ -7,7 +7,7 @@ import {
   getConnectedBoards
 } from './commands/connect-board-command';
 import { logChannelOutput } from './output-channel';
-import { loadConfiguration } from './utils/configuration';
+import { getDeviceHostFolderMappings, loadConfiguration } from './utils/configuration';
 import { toRelativePath } from './utils/device-filesystem';
 
 const debugType = 'pyboarddev';
@@ -264,7 +264,7 @@ class PyboardDebugAdapter implements vscode.DebugAdapter {
       const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
       if (workspaceFolder) {
         const config = await loadConfiguration();
-        const mappings = Object.entries(config.deviceHostFolderMappings ?? {})
+        const mappings = Object.entries(getDeviceHostFolderMappings(config))
           .map(([deviceId, folder]) => ({ deviceId, folder: toRelativePath(folder) }))
           .filter((item) => item.folder.length > 0);
         const workspaceRelative = toRelativePath(path.relative(workspaceFolder.uri.fsPath, targetUri.fsPath));

@@ -4,7 +4,13 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { closeAllConnectedBoards, getConnectedBoard, getConnectedBoards, onBoardConnectionStateChanged, onBoardConnectionsChanged } from './commands/connect-board-command';
 import { logChannelOutput } from './output-channel';
-import { loadConfiguration, updateDeviceAlias, updateDeviceHostFolderMapping } from './utils/configuration';
+import {
+  getDeviceAliases,
+  getDeviceHostFolderMappings,
+  loadConfiguration,
+  updateDeviceAlias,
+  updateDeviceHostFolderMapping
+} from './utils/configuration';
 import {
   createDeviceDirectory,
   deleteDevicePath,
@@ -116,13 +122,12 @@ class DeviceMirrorModel {
 
     const config = await loadConfiguration();
     this.obfuscationSet = normaliseObfuscationSet(config.obfuscateOnPull ?? []);
-    this.deviceHostFolderMappings = Object.assign({}, config.deviceHostFolderMappings ?? {});
-    this.deviceAliases = Object.assign({}, config.deviceAliases ?? {});
+    this.deviceHostFolderMappings = getDeviceHostFolderMappings(config);
+    this.deviceAliases = getDeviceAliases(config);
     this.linkableHostFolders = await this.getLinkableHostFolders();
     await vscode.commands.executeCommand('setContext', hasHostMirrorChildFoldersContextKey, this.linkableHostFolders.length > 0);
     await vscode.commands.executeCommand('setContext', hasLinkedHostMappingsContextKey, Object.keys(this.deviceHostFolderMappings).length > 0);
-    this.knownDeviceIds = new Set(Object.keys(this.deviceHostFolderMappings));
-    Object.keys(this.deviceHostFolderMappings).forEach((deviceId) => this.knownDeviceIds.add(deviceId));
+    this.knownDeviceIds = new Set([...Object.keys(this.deviceHostFolderMappings), ...Object.keys(this.deviceAliases)]);
 
     const connected = getConnectedBoards();
     connected.forEach((item) => this.knownDeviceIds.add(item.deviceId));
@@ -1263,7 +1268,7 @@ class DeviceMirrorModel {
     const normalised = picked.relativePath;
 
     const updated = await updateDeviceHostFolderMapping(deviceId, normalised);
-    this.deviceHostFolderMappings = Object.assign({}, updated.deviceHostFolderMappings ?? {});
+    this.deviceHostFolderMappings = getDeviceHostFolderMappings(updated);
 
     const msg = `Linked ${deviceId} to host folder: ${normalised}`;
     logChannelOutput(msg, true);
@@ -1300,7 +1305,7 @@ class DeviceMirrorModel {
     }
 
     const updated = await updateDeviceHostFolderMapping(deviceId, undefined);
-    this.deviceHostFolderMappings = Object.assign({}, updated.deviceHostFolderMappings ?? {});
+    this.deviceHostFolderMappings = getDeviceHostFolderMappings(updated);
 
     const msg = `Unlinked ${deviceId} from host folder: ${current}`;
     logChannelOutput(msg, true);
@@ -1341,7 +1346,7 @@ class DeviceMirrorModel {
 
     const alias = input.trim();
     const updated = await updateDeviceAlias(deviceId, alias.length > 0 ? alias : undefined);
-    this.deviceAliases = Object.assign({}, updated.deviceAliases ?? {});
+    this.deviceAliases = getDeviceAliases(updated);
 
     const msg = alias.length > 0
       ? `Set alias for ${deviceId}: ${alias}`
