@@ -39,6 +39,8 @@ const commandSyncNodeToDeviceId = 'mekatrol.pyboarddev.syncnodetodevice';
 const commandOpenComputerItemId = 'mekatrol.pyboarddev.opencomputermirroritem';
 const commandPullAndOpenDeviceItemId = 'mekatrol.pyboarddev.pullandopendeviceitem';
 const commandOpenDeviceFileId = 'mekatrol.pyboarddev.opendevicefile';
+const commandOpenComputerItemFromTreeId = 'mekatrol.pyboarddev._opencomputermirroritemfromtree';
+const commandOpenDeviceFileFromTreeId = 'mekatrol.pyboarddev._opendevicefilefromtree';
 const commandCompareDeviceWithComputerId = 'mekatrol.pyboarddev.comparedevicewithcomputer';
 const commandCreateMirrorFileId = 'mekatrol.pyboarddev.createmirrorfile';
 const commandCreateMirrorFolderId = 'mekatrol.pyboarddev.createmirrorfolder';
@@ -92,6 +94,10 @@ interface SyncOperationsDialog {
   selectedIds: Set<string>;
   setStatus: (operationId: string, status: SyncOperationRunStatus, errorText?: string) => void;
   finish: (summary: string) => Promise<void>;
+}
+
+interface OpenEditorOptions {
+  explorerClick?: boolean;
 }
 
 class MirrorNode extends vscode.TreeItem {
@@ -857,7 +863,49 @@ class DeviceMirrorModel {
     await this.deleteComputerPath(targetNode);
   }
 
-  async openComputerNode(node: MirrorNode): Promise<void> {
+  private isTextTabForUri(tab: vscode.Tab, uri: vscode.Uri): boolean {
+    return tab.input instanceof vscode.TabInputText && tab.input.uri.toString() === uri.toString();
+  }
+
+  private isUriOpenInPinnedTextTab(uri: vscode.Uri): boolean {
+    for (const group of vscode.window.tabGroups.all) {
+      for (const tab of group.tabs) {
+        if (this.isTextTabForUri(tab, uri) && tab.isPinned) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private async showTextDocumentWithExplorerBehavior(
+    document: vscode.TextDocument,
+    options?: OpenEditorOptions
+  ): Promise<void> {
+    const explorerClick = options?.explorerClick ?? false;
+    if (!explorerClick) {
+      await vscode.window.showTextDocument(document, { preview: false });
+      return;
+    }
+
+    const uri = document.uri;
+    const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
+    const isActiveSameFile = !!activeTab && this.isTextTabForUri(activeTab, uri);
+
+    if (isActiveSameFile) {
+      await vscode.window.showTextDocument(document, { preview: false });
+      return;
+    }
+
+    if (this.isUriOpenInPinnedTextTab(uri)) {
+      await vscode.window.showTextDocument(document, { preview: false });
+      return;
+    }
+
+    await vscode.window.showTextDocument(document, { preview: true });
+  }
+
+  async openComputerNode(node: MirrorNode, options?: OpenEditorOptions): Promise<void> {
     await this.ensureActiveDevice(node);
     const computerRootPath = this.resolveComputerReadRootPath(node);
     if (!computerRootPath) {
@@ -871,21 +919,17 @@ class DeviceMirrorModel {
     }
 
     const document = await vscode.workspace.openTextDocument(vscode.Uri.file(fullPath));
-    await vscode.window.showTextDocument(document, { preview: false });
+    await this.showTextDocumentWithExplorerBehavior(document, options);
   }
 
-  async pullDeviceNodeAndOpen(node: MirrorNode): Promise<void> {
+  async pullDeviceNodeAndOpen(node: MirrorNode, options?: OpenEditorOptions): Promise<void> {
     await this.ensureActiveDevice(node);
     if (!getConnectedBoard(this.activeDeviceId)) {
       vscode.window.showWarningMessage('Connect to a board before opening a device file.');
       return;
     }
 
-    if (!this.mirrorRootPath) {
-      await this.refresh(false);
-    }
-
-    if (!this.mirrorRootPath || node.data.isDirectory) {
+    if (node.data.isDirectory) {
       return;
     }
 
@@ -893,13 +937,13 @@ class DeviceMirrorModel {
     const deviceSegment = encodeURIComponent(this.activeDeviceId ?? '');
     const deviceUri = vscode.Uri.parse(`${deviceDocumentScheme}:/${deviceSegment}/${relativePath}`);
     const document = await vscode.workspace.openTextDocument(deviceUri);
-    await vscode.window.showTextDocument(document, { preview: false });
+    await this.showTextDocumentWithExplorerBehavior(document, options);
   }
 
-  async openDeviceFile(node?: MirrorNode): Promise<void> {
+  async openDeviceFile(node?: MirrorNode, options?: OpenEditorOptions): Promise<void> {
     await this.ensureActiveDevice(node);
     if (node) {
-      await this.pullDeviceNodeAndOpen(node);
+      await this.pullDeviceNodeAndOpen(node, options);
       return;
     }
 
@@ -942,7 +986,7 @@ class DeviceMirrorModel {
       vscode.TreeItemCollapsibleState.None
     );
 
-    await this.pullDeviceNodeAndOpen(quickPickNode);
+    await this.pullDeviceNodeAndOpen(quickPickNode, options);
   }
 
   async compareDeviceWithComputer(node?: MirrorNode): Promise<void> {
@@ -3194,14 +3238,14 @@ class MirrorTreeProvider implements vscode.TreeDataProvider<MirrorNode>, vscode.
       } else {
         element.contextValue = isExcludedFromSync ? 'pyboarddev.deviceFileExcluded' : 'pyboarddev.deviceFile';
       }
-      element.command = data.isDirectory ? undefined : { command: commandOpenDeviceFileId, title: 'Open', arguments: [element] };
+      element.command = data.isDirectory ? undefined : { command: commandOpenDeviceFileFromTreeId, title: 'Open', arguments: [element] };
     } else {
       if (data.isDirectory) {
         element.contextValue = isExcludedFromSync ? 'pyboarddev.hostFolderExcluded' : 'pyboarddev.hostFolder';
       } else {
         element.contextValue = isExcludedFromSync ? 'pyboarddev.hostFileExcluded' : 'pyboarddev.hostFile';
       }
-      element.command = data.isDirectory ? undefined : { command: commandOpenComputerItemId, title: 'Open', arguments: [element] };
+      element.command = data.isDirectory ? undefined : { command: commandOpenComputerItemFromTreeId, title: 'Open', arguments: [element] };
     }
     element.iconPath = data.isDirectory ? vscode.ThemeIcon.Folder : vscode.ThemeIcon.File;
     element.description = isExcludedFromSync ? 'excluded' : undefined;
@@ -3524,6 +3568,12 @@ export const initDeviceMirrorExplorer = async (context: vscode.ExtensionContext)
   context.subscriptions.push(vscode.commands.registerCommand(commandOpenComputerItemId, async (node: MirrorNode) => model.openComputerNode(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandPullAndOpenDeviceItemId, async (node: MirrorNode) => model.pullDeviceNodeAndOpen(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandOpenDeviceFileId, async (node?: MirrorNode) => model.openDeviceFile(node)));
+  context.subscriptions.push(
+    vscode.commands.registerCommand(commandOpenComputerItemFromTreeId, async (node: MirrorNode) => model.openComputerNode(node, { explorerClick: true }))
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand(commandOpenDeviceFileFromTreeId, async (node?: MirrorNode) => model.openDeviceFile(node, { explorerClick: true }))
+  );
   context.subscriptions.push(vscode.commands.registerCommand(commandCompareDeviceWithComputerId, async (node?: MirrorNode) => model.compareDeviceWithComputer(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandCreateMirrorFileId, async (node?: MirrorNode) => model.createMirrorFile(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandCreateMirrorFolderId, async (node?: MirrorNode) => model.createMirrorFolder(node)));
