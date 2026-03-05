@@ -13,14 +13,19 @@ const statusBarSelectCommunicationId = 'mekatrol.pyboarddev.selectdevice';
 const statusBarSelectPythonTypeId = 'mekatrol.pyboarddev.selectpythontype';
 const statusBarToggleBoardConnectionId = 'mekatrol.pyboarddev.toggleboardconnection';
 const statusBarSoftRebootId = 'mekatrol.pyboarddev.softreboot';
+const statusDisplayModeSettingKey = 'statusDisplayMode';
+const extensionStatusViewContextKey = 'mekatrol.pyboarddev.showExtensionStatusView';
 const selectedSerialPortStateKey = 'selectedSerialPort';
 const selectedBaudRateStateKey = 'selectedBaudRate';
 const selectedPythonTypeStateKey = 'selectedPythonType';
 const defaultBaudRate = 115200;
 const pythonTypes = ['MicroPython', 'CircuitPython'] as const;
 type PythonType = typeof pythonTypes[number];
+export type StatusDisplayMode = 'statusBar' | 'extensionView';
 const pythonTypeChangedEmitter = new vscode.EventEmitter<PythonType>();
+const statusDataChangedEmitter = new vscode.EventEmitter<void>();
 export const onPythonTypeChanged = pythonTypeChangedEmitter.event;
+export const onStatusDataChanged = statusDataChangedEmitter.event;
 
 let deviceStatusBarItem: vscode.StatusBarItem | undefined = undefined;
 let pythonTypeStatusBarItem: vscode.StatusBarItem | undefined = undefined;
@@ -60,6 +65,13 @@ export const initStatusBar = async (context: vscode.ExtensionContext): Promise<v
   watcher.onDidChange((_uri) => updateStatusBarItem());
   watcher.onDidDelete((_uri) => updateStatusBarItem());
   context.subscriptions.push(watcher);
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration(`mekatrol.pyboarddev.${statusDisplayModeSettingKey}`)) {
+        void updateStatusBarItem();
+      }
+    })
+  );
   context.subscriptions.push(onBoardConnectionStateChanged(() => updateStatusBarItem()));
   context.subscriptions.push(onConnectedBoardRuntimeInfoChanged(() => updateStatusBarItem()));
 };
@@ -79,6 +91,20 @@ export const updateStatusBarItem = async (): Promise<void> => {
   const selectedBaudRate = getActiveBaudRate();
   const selectedPythonType = await getActivePythonType();
   const connected = isBoardConnected();
+  const statusDisplayMode = getStatusDisplayMode();
+  const showStatusBarItems = statusDisplayMode === 'statusBar';
+
+  void vscode.commands.executeCommand('setContext', extensionStatusViewContextKey, statusDisplayMode === 'extensionView');
+
+  if (!showStatusBarItems) {
+    deviceStatusBarItem.hide();
+    pythonTypeStatusBarItem.hide();
+    boardConnectionStatusBarItem.hide();
+    boardRuntimeStatusBarItem.hide();
+    softRebootStatusBarItem.hide();
+    statusDataChangedEmitter.fire();
+    return;
+  }
 
   deviceStatusBarItem.text = `$(circuit-board) ${selectedDevice ?? '<select device>'} [${selectedBaudRate}]`;
   deviceStatusBarItem.command = connected ? undefined : statusBarSelectCommunicationId;
@@ -119,6 +145,8 @@ export const updateStatusBarItem = async (): Promise<void> => {
   } else {
     softRebootStatusBarItem.hide();
   }
+
+  statusDataChangedEmitter.fire();
 };
 
 const createDeviceNameStatusBarItem = (context: vscode.ExtensionContext) => {
@@ -168,7 +196,7 @@ const createSoftRebootStatusBarItem = (context: vscode.ExtensionContext) => {
   context.subscriptions.push(softRebootStatusBarItem);
 };
 
-const getActiveDevice = (): string | undefined => {
+export const getActiveDevice = (): string | undefined => {
   const selectedFromState = readPersistentState<string>(extensionContext, selectedSerialPortStateKey);
   if (selectedFromState && selectedFromState.length) {
     return selectedFromState;
@@ -177,7 +205,7 @@ const getActiveDevice = (): string | undefined => {
   return undefined;
 };
 
-const getActiveBaudRate = (): number => {
+export const getActiveBaudRate = (): number => {
   return readPersistentState<number>(extensionContext, selectedBaudRateStateKey) ?? defaultBaudRate;
 };
 
@@ -185,7 +213,7 @@ const isPythonType = (value: string): value is PythonType => {
   return pythonTypes.includes(value as PythonType);
 };
 
-const getActivePythonType = async (): Promise<PythonType> => {
+export const getActivePythonType = async (): Promise<PythonType> => {
   const selectedFromState = extensionContext?.workspaceState.get<string>(selectedPythonTypeStateKey);
   if (selectedFromState && isPythonType(selectedFromState)) {
     return selectedFromState;
@@ -197,6 +225,11 @@ const getActivePythonType = async (): Promise<PythonType> => {
   }
 
   return 'MicroPython';
+};
+
+export const getStatusDisplayMode = (): StatusDisplayMode => {
+  const value = vscode.workspace.getConfiguration('mekatrol.pyboarddev').get<string>(statusDisplayModeSettingKey, 'statusBar');
+  return value === 'extensionView' ? 'extensionView' : 'statusBar';
 };
 
 const selectSerialDevice = async (): Promise<void> => {

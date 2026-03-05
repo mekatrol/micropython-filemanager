@@ -134,6 +134,11 @@
     "views": {
       "mekatrol-pyboarddev-sidebar": [
         {
+          "id": "mekatrol.pyboarddev.statusView",
+          "name": "Pyboard Status",
+          "when": "mekatrol.pyboarddev.showExtensionStatusView"
+        },
+        {
           "id": "mekatrol.pyboarddev.mirrorExplorer",
           "name": "Pyboard Explorer"
         }
@@ -274,6 +279,19 @@
           "type": "boolean",
           "default": false,
           "description": "Mount DEVICE as a workspace folder in the native Explorer. Enable only if your tooling supports non-file workspace schemes."
+        },
+        "mekatrol.pyboarddev.statusDisplayMode": {
+          "type": "string",
+          "default": "extensionView",
+          "enum": [
+            "statusBar",
+            "extensionView"
+          ],
+          "markdownEnumDescriptions": [
+            "Show Pyboard status controls in the VS Code status bar.",
+            "Show Pyboard status controls in the Pyboard sidebar view."
+          ],
+          "description": "Where to display Pyboard status controls."
         }
       }
     },

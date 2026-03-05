@@ -15,6 +15,7 @@ import {
 import { initDeviceMirrorExplorer } from './device-mirror-explorer';
 import { initPyboardDebug } from './pyboard-debug';
 import { initTerminal } from './terminal';
+import { initExtensionStatusView } from './extension-status-view';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -36,6 +37,7 @@ export const activate = async (context: vscode.ExtensionContext) => {
 
   // Init status bar
   await initStatusBar(context);
+  initExtensionStatusView(context);
 
   // Init device mirror explorer
   await initDeviceMirrorExplorer(context);
