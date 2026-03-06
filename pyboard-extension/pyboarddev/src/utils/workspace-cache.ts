@@ -5,6 +5,7 @@
  */
 import * as vscode from 'vscode';
 import { posix } from 'path';
+import { configurationFileName } from './configuration';
 
 export const workspaceCacheFileName = '.pyboard-cache';
 
@@ -53,6 +54,20 @@ const loadCacheFromFile = async (fileName: string): Promise<WorkspaceCache | und
   }
 };
 
+const hasWorkspaceConfigurationFile = async (): Promise<boolean> => {
+  const fileUri = getWorkspaceFileUri(configurationFileName);
+  if (!fileUri) {
+    return false;
+  }
+
+  try {
+    await vscode.workspace.fs.stat(fileUri);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const saveCacheToPrimaryFile = async (): Promise<void> => {
   const fileUri = getWorkspaceFileUri(workspaceCacheFileName);
   if (!fileUri) {
@@ -72,6 +87,9 @@ export const initialiseWorkspaceCache = async (): Promise<void> => {
 
   // Create default state
   cacheState = { ...defaultWorkspaceCache };
+  if (await hasWorkspaceConfigurationFile()) {
+    await saveCacheToPrimaryFile();
+  }
 };
 
 export const createDefaultWorkspaceCacheFile = async (): Promise<boolean> => {

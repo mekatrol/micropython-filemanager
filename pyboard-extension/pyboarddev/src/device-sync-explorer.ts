@@ -275,12 +275,7 @@ class DeviceSyncModel {
     }
     this.hasWarnedNoWorkspaceFolder = false;
     if (!hasConfiguration) {
-      if (!this.hasWarnedMissingConfiguration) {
-        const message = `Create ${configurationFileName} in the workspace folder to enable Pyboard Explorer.`;
-        this.hasWarnedMissingConfiguration = true;
-        vscode.window.showWarningMessage(message);
-        logChannelOutput(message, true);
-      }
+      this.hasWarnedMissingConfiguration = true;
       this.computerEntries = [{ relativePath: '', isDirectory: true }];
       this.deviceEntries = [{ relativePath: '', isDirectory: true }];
       this.syncStates = new Map();
@@ -4628,7 +4623,7 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
           missing.push(configurationFileName);
         }
         label = missing.length > 0
-          ? `Initialize workspace (${missing.join(', ')}) to enable Pyboard Explorer`
+          ? `Initialize ${missing.join(', ')}`
           : 'Complete Pyboard Explorer setup';
       }
       return [
@@ -5032,7 +5027,6 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): 
     vscode.window.showInformationMessage('Pyboard Explorer is ready.');
   }));
   context.subscriptions.push(vscode.commands.registerCommand(commandExplorerInitialiseWorkspaceId, async () => {
-    await vscode.commands.executeCommand('workbench.view.explorer');
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
       const action = await vscode.window.showWarningMessage(
@@ -5075,4 +5069,3 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): 
   await model.refresh();
   await ensureNativeExplorerRoots(model);
 };
-
