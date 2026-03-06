@@ -44,7 +44,10 @@
       {
         "command": "mekatrol.pydevice.connectboardrecovery",
         "title": "Recovery Connect",
-        "icon": "$(debug-restart)"
+        "icon": {
+          "light": "images/connect-multi-light.svg",
+          "dark": "images/connect-multi-dark.svg"
+        }
       },
       {
         "command": "mekatrol.pydevice.disconnectboard",
@@ -115,6 +118,11 @@
         "title": "Compare Device File With Computer",
         "enablement": "viewItem != pydevice.deviceFileUnmapped && viewItem != pydevice.deviceFileExcludedUnmapped && viewItem != pydevice.deviceFileHostMissing && viewItem != pydevice.deviceFileExcludedHostMissing",
         "icon": "$(diff)"
+      },
+      {
+        "command": "mekatrol.pydevice.comparedevicefiles",
+        "title": "Compare files",
+        "icon": "$(list-selection)"
       },
       {
         "command": "mekatrol.pydevice.openrepl",
@@ -320,6 +328,10 @@
           "when": "false"
         },
         {
+          "command": "mekatrol.pydevice.comparedevicefiles",
+          "when": "false"
+        },
+        {
           "command": "mekatrol.pydevice.openrepl",
           "when": "false"
         },
@@ -463,6 +475,11 @@
           "command": "mekatrol.pydevice.autodetectdevices",
           "when": "view == mekatrol.pydevice.syncExplorer && mekatrol.pydevice.explorerReady && viewItem == pydevice.deviceRoot",
           "group": "navigation@2.5"
+        },
+        {
+          "command": "mekatrol.pydevice.comparedevicefiles",
+          "when": "view == mekatrol.pydevice.syncExplorer && mekatrol.pydevice.explorerReady && mekatrol.pydevice.boardConnected && (viewItem == pydevice.deviceRoot || viewItem == pydevice.deviceIdNode || viewItem == pydevice.deviceIdNodeMapped || viewItem == pydevice.deviceFolder || viewItem == pydevice.deviceFolderExcluded || viewItem == pydevice.deviceLibraryNode || viewItem == pydevice.deviceLibraryNodeMissing)",
+          "group": "navigation@3"
         },
         {
           "command": "mekatrol.pydevice.opendevicefile",

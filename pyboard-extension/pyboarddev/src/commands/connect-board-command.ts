@@ -4,6 +4,7 @@
  * feature-specific logic isolated for maintainability and unit testing.
  */
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { logChannelOutput } from '../output-channel';
 import { BoardRuntimeInfo, Pydevice } from '../utils/pydevice';
 import { listSerialDevices } from '../utils/serial-port';
@@ -11,6 +12,7 @@ import { getWorkspaceCacheValue, setWorkspaceCacheValue } from '../utils/workspa
 import { ConnectedBoardRegistry, ConnectedBoardState, ConnectedBoardSnapshot } from '../devices/connected-board-registry';
 import { ReconnectStateStore } from '../devices/reconnect-state-store';
 import { toDeviceId } from '../devices/device-id';
+import { getDeviceNames, loadConfiguration } from '../utils/configuration';
 
 const reconnectLastSessionStateKey = 'reconnectLastSession';
 const reconnectDevicePathsStateKey = 'reconnectDevicePaths';
@@ -495,7 +497,10 @@ const pickConnectedDeviceId = async (placeHolder: string): Promise<string | unde
   return selected?.label;
 };
 
-const pickSerialPortToConnect = async (onlyUnconnected: boolean = false): Promise<string | undefined> => {
+const pickSerialPortToConnect = async (
+  onlyUnconnected: boolean = false,
+  recoveryMode: boolean = false
+): Promise<string | undefined> => {
   const ports = await listSerialDevices();
   if (ports.length === 0) {
     const msg = 'No serial devices found.';
@@ -516,15 +521,56 @@ const pickSerialPortToConnect = async (onlyUnconnected: boolean = false): Promis
     return undefined;
   }
 
-  const items = candidatePorts.map((port) => {
+  let configuredDeviceNames: Record<string, string> = {};
+  if (recoveryMode) {
+    const configuration = await loadConfiguration();
+    configuredDeviceNames = getDeviceNames(configuration);
+  }
+
+  const connectedSnapshots = boardRegistry.getSnapshots();
+  const connectedDeviceIdByPath = new Map(connectedSnapshots.map((snapshot) => [snapshot.devicePath, snapshot.deviceId]));
+  const resolveRecoveryDeviceId = async (devicePath: string): Promise<string | undefined> => {
+    const connectedDeviceId = connectedDeviceIdByPath.get(devicePath);
+    if (connectedDeviceId) {
+      return connectedDeviceId;
+    }
+
+    if (!recoveryMode) {
+      return undefined;
+    }
+
+    const board = new Pydevice(devicePath, defaultBaudRate, false);
+    try {
+      await board.open();
+      const runtimeInfo = await board.probeBoardRuntimeInfo(1800);
+      return toDeviceId(devicePath, runtimeInfo);
+    } catch {
+      return undefined;
+    } finally {
+      try {
+        await board.close();
+      } catch {
+        // Ignore close failures during non-fatal picker probing.
+      }
+    }
+  };
+
+  const items = await Promise.all(candidatePorts.map(async (port) => {
     const details = [port.manufacturer, `VID:${port.vendorId}`, `PID:${port.productId}`].filter(Boolean).join(' | ');
     const alreadyConnected = connectedPaths.has(port.path);
+    const serialPortName = path.basename(port.path);
+    const resolvedDeviceId = await resolveRecoveryDeviceId(port.path);
+    const fallbackDeviceId = toDeviceId(port.path);
+    const deviceId = resolvedDeviceId ?? fallbackDeviceId;
+    const deviceName = configuredDeviceNames[deviceId];
+    const recoveryLabel = deviceName ? `${deviceName} (${serialPortName})` : `${deviceId} (${serialPortName})`;
     return {
-      label: port.path,
+      label: recoveryMode ? recoveryLabel : port.path,
       description: alreadyConnected ? `already connected${details ? ` | ${details}` : ''}` : details,
-      picked: false
+      picked: false,
+      devicePath: port.path
     };
-  });
+  }));
 
   const selected = await vscode.window.showQuickPick(items, {
     placeHolder: 'Select a serial port to connect',
@@ -532,7 +578,7 @@ const pickSerialPortToConnect = async (onlyUnconnected: boolean = false): Promis
     ignoreFocusOut: true
   });
 
-  return selected?.label;
+  return selected?.devicePath;
 };
 
 export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
@@ -553,7 +599,7 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
 
     if (forcePickPort || !devicePath) {
       try {
-        devicePath = await pickSerialPortToConnect(forcePickPort);
+        devicePath = await pickSerialPortToConnect(forcePickPort, recoveryMode);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         const msg = `Unable to list serial ports. ${reason}`;
