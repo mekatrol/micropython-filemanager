@@ -357,7 +357,7 @@ const connectBoardForPath = async (
     return existingForPath;
   }
 
-  const board = new Pydevice(devicePath, baudRate);
+  const board = new Pydevice(devicePath, baudRate, showMessages);
   await board.open();
 
   const runtimeInfo = recoveryMode
@@ -961,6 +961,9 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
     let rowsById = new Map<string, RecoveryReconnectRow>();
     const resolvedDeviceIdByPath = new Map<string, string>();
     const probingPaths = new Set<string>();
+    const connectingPaths = new Set<string>();
+    const wasConnectedByPath = new Map<string, boolean>();
+    const wasPresentByPath = new Map<string, boolean>();
     let disposed = false;
     let reconcileInProgress = false;
     let reconcilePending = false;
@@ -1005,6 +1008,8 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
         for (const devicePath of [...resolvedDeviceIdByPath.keys()]) {
           if (!currentPortPaths.has(devicePath)) {
             resolvedDeviceIdByPath.delete(devicePath);
+            wasConnectedByPath.delete(devicePath);
+            wasPresentByPath.delete(devicePath);
           }
         }
 
@@ -1013,6 +1018,22 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
         const claimedConfiguredIdByPort = new Map<string, string>();
 
         for (const port of activePorts) {
+          const presentBefore = wasPresentByPath.get(port.path) ?? false;
+          const presentNow = true;
+          if (!presentBefore && presentNow) {
+            // Port path has (re)appeared; require a fresh ID probe for this session.
+            resolvedDeviceIdByPath.delete(port.path);
+          }
+          wasPresentByPath.set(port.path, true);
+
+          const connectedNow = !!getConnectedBoardStateByPortPath(port.path);
+          const connectedBefore = wasConnectedByPath.get(port.path) ?? false;
+          if (connectedBefore && !connectedNow) {
+            // This path disconnected; require a fresh probe before trusting identity again.
+            resolvedDeviceIdByPath.delete(port.path);
+          }
+          wasConnectedByPath.set(port.path, connectedNow);
+
           const connectedState = getConnectedBoardStateByPortPath(port.path);
           const connectedDeviceId = connectedState?.deviceId;
           if (connectedDeviceId && configuredDeviceIdSet.has(connectedDeviceId)) {
@@ -1088,7 +1109,15 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
           };
           nextRows.set(rowId, row);
 
-          if (!resolvedDeviceId && !probingPaths.has(port.path)) {
+          const needsReprobe = !connectedState
+            && !probingPaths.has(port.path)
+            && !connectingPaths.has(port.path)
+            && existing?.status !== 'connecting'
+            && (
+              !resolvedDeviceId
+              || (claimedConfiguredId !== undefined)
+            );
+          if (needsReprobe) {
             probingPaths.add(port.path);
             void (async () => {
               const probedDeviceId = await probeRecoveryDeviceId(port.path);
@@ -1112,8 +1141,9 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
           }
           const connectedState = boardRegistry.getByDeviceId(configuredDeviceId);
           const connectedPath = connectedState?.board.device;
+          const isPortPresent = !!connectedPath && currentPortPaths.has(connectedPath);
           const rememberedPort = lastKnownDevicePortById[configuredDeviceId];
-          const serialPortPath = connectedPath ?? rememberedPort ?? '';
+          const serialPortPath = (isPortPresent ? connectedPath : undefined) ?? rememberedPort ?? '';
           const serialPortName = serialPortPath ? path.basename(serialPortPath) : '';
           const rowId = `config:${configuredDeviceId}`;
           nextRows.set(rowId, {
@@ -1122,7 +1152,7 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
             serialPortName,
             deviceId: configuredDeviceId,
             deviceName: configuredDeviceNames[configuredDeviceId] ?? '',
-            status: connectedState ? 'connected' : 'not_connected'
+            status: connectedState && isPortPresent ? 'connected' : 'not_connected'
           });
         }
 
@@ -1141,6 +1171,9 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
       if (!row.devicePath) {
         return;
       }
+      if (connectingPaths.has(row.devicePath)) {
+        return;
+      }
       const currentlyConnected = getConnectedBoardByPortPath(row.devicePath);
       if (currentlyConnected) {
         row.status = 'connected';
@@ -1148,12 +1181,35 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
         return;
       }
 
+      connectingPaths.add(row.devicePath);
       row.status = 'connecting';
       row.errorText = undefined;
       updateRow(row);
 
       try {
-        const state = await connectBoardForPath(row.devicePath, defaultBaudRate, true, true);
+        if (row.id.startsWith('config:')) {
+          const probedId = await probeRecoveryDeviceId(row.devicePath);
+          if (probedId && probedId !== row.deviceId) {
+            resolvedDeviceIdByPath.set(row.devicePath, probedId);
+            row.status = 'ready';
+            row.errorText = undefined;
+            await reconcileRows();
+            return;
+          }
+        }
+
+        let state: ConnectedBoardState | undefined;
+        try {
+          state = await connectBoardForPath(row.devicePath, defaultBaudRate, true, true);
+        } catch (error) {
+          const message = error instanceof Error ? error.message.toLocaleLowerCase() : String(error).toLocaleLowerCase();
+          const transientLock = message.includes('cannot lock port') || message.includes('resource temporarily unavailable');
+          if (!transientLock) {
+            throw error;
+          }
+          await wait(350);
+          state = await connectBoardForPath(row.devicePath, defaultBaudRate, true, true);
+        }
         const nextDeviceId = state?.deviceId ?? row.deviceId;
         resolvedDeviceIdByPath.set(row.devicePath, nextDeviceId);
         void updateLastKnownDevicePort(nextDeviceId, row.devicePath);
@@ -1162,6 +1218,8 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
         row.status = 'error';
         row.errorText = error instanceof Error ? error.message : String(error);
         updateRow(row);
+      } finally {
+        connectingPaths.delete(row.devicePath);
       }
     };
 
@@ -1241,7 +1299,16 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
       }
       void reconcileRows();
     }, 2000);
-    panel.onDidDispose(() => clearInterval(monitorTimer));
+    const boardChangeDisposable = onBoardConnectionsChanged(() => {
+      if (disposed) {
+        return;
+      }
+      void reconcileRows();
+    });
+    panel.onDidDispose(() => {
+      clearInterval(monitorTimer);
+      boardChangeDisposable.dispose();
+    });
     await reconcileRows(ports);
   });
 
