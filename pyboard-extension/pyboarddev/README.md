@@ -7,7 +7,7 @@ Mekatrol Pydevice is a VS Code extension for developing against MicroPython devi
 | Core Function | What It Does | Details |
 |---|---|---|
 | File / Folder Synchronisation | Syncs files and folders between connected device storage and your computer sync, in both directions with preview and selection. | [File / Folder Synchronisation](#file--folder-synchronisation-device--computer) |
-| Library Mapping | Maps device library roots to dedicated computer folders so library code can be managed independently from a device’s main linked folder. | [Library Mapping](#library-mapping-computer-folder--device-library-root) |
+| Library Mapping | Maps device library roots to dedicated computer folders so library code can be managed independently from a device’s main mapped folder. | [Library Mapping](#library-mapping-computer-folder--device-library-root) |
 | File Difference Comparison | Compares a device file against its computer sync file using VS Code diff view. | [File Difference Comparison](#file-difference-comparison) |
 | Excluding Files | Excludes selected device paths from sync operations to protect **passwords** and **secrets** stored on a device. | [Exclude Files From Sync](#exclude-files-from-sync) |
 | Computer / Device Explorer View | Shows a dual-tree explorer (COMPUTER + DEVICE) with context actions for open, sync, compare, and mapping. | [Computer / Device Explorer View](#computer--device-explorer-view) |
@@ -46,7 +46,7 @@ The extension supports two-way sync between device storage and computer sync fil
 
 ### Sync directions
 
-- **Device -> Computer**: Pull device content to the linked/mapped computer folders.
+- **Device -> Computer**: Pull device content to the mapped computer folders.
 - **Computer -> Device**: Push local computer changes to the connected device.
 
 ### How sync works
@@ -69,13 +69,13 @@ Library mapping lets you maintain reusable libraries in dedicated computer folde
 ### Key behavior
 
 - A device can have library folders mapped from computer to device library roots.
-- Library-mapped paths are handled separately from the device’s primary linked folder.
+- Library-mapped paths are handled separately from the device’s primary mapped folder.
 - Device-node sync preview includes mapped library operations and allows selective syncing.
 
 ### Why this matters
 
 - Separates app code from shared library code.
-- Prevents library content from being mixed into unrelated linked-folder sync paths.
+- Prevents library content from being mixed into unrelated mapped-folder sync paths.
 - Supports cleaner project structure and better reuse.
 
 ## File Difference Comparison
@@ -86,8 +86,8 @@ You can compare a device file with its computer sync file directly in VS Code di
 
 - Opens `Computer <-> Device` diff for selected file.
 - For device files:
-  - Compare action is hidden if the device path is not linked.
-  - Compare action is disabled when linked but host file is missing.
+  - Compare action is hidden if the device path is not mapped.
+  - Compare action is disabled when mapped but host file is missing.
 
 ### Why this matters
 
@@ -119,7 +119,7 @@ The extension provides a dual explorer model with **COMPUTER** and **DEVICE** ro
 - Browse host sync and device filesystem in one view.
 - Open computer files and pull/open device files.
 - Run per-node actions: sync, compare, exclude, create, rename, delete.
-- Manage device links and library mappings from context menus.
+- Manage device mappings and library mappings from context menus.
 
 ### Why this matters
 
@@ -187,4 +187,3 @@ This extension contributes these main settings:
 ## Release Notes
 
 See `CHANGELOG.md` for version-by-version changes.
-

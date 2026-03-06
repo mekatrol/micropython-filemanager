@@ -55,8 +55,8 @@ const commandCreateSyncFileId = 'mekatrol.pydevice.createsyncfile';
 const commandCreateSyncFolderId = 'mekatrol.pydevice.createsyncfolder';
 const commandRenameSyncPathId = 'mekatrol.pydevice.renamesyncpath';
 const commandDeleteSyncPathId = 'mekatrol.pydevice.deletesyncpath';
-const commandLinkDeviceHostFolderId = 'mekatrol.pydevice.linkdevicehostfolder';
-const commandUnlinkDeviceHostFolderId = 'mekatrol.pydevice.unlinkdevicehostfolder';
+const commandMapDeviceHostFolderId = 'mekatrol.pydevice.mapdevicehostfolder';
+const commandUnmapDeviceHostFolderId = 'mekatrol.pydevice.unmapdevicehostfolder';
 const commandAddDeviceLibraryFolderId = 'mekatrol.pydevice.adddevicelibraryfolder';
 const commandRemoveDeviceLibraryFolderId = 'mekatrol.pydevice.removedevicelibraryfolder';
 const commandSetDeviceNameId = 'mekatrol.pydevice.setdevicename';
@@ -73,7 +73,7 @@ const deviceExplorerAutoRefreshIntervalMs = 5000;
 const deviceCreateConfirmTimeoutMs = 6000;
 const deviceCreateConfirmPollIntervalMs = 150;
 const hasHostSyncChildFoldersContextKey = 'mekatrol.pydevice.hasHostSyncChildFolders';
-const hasLinkedHostMappingsContextKey = 'mekatrol.pydevice.hasLinkedHostMappings';
+const hasMappedHostMappingsContextKey = 'mekatrol.pydevice.hasMappedHostMappings';
 const explorerHasWorkspaceContextKey = 'mekatrol.pydevice.explorerHasWorkspace';
 const explorerHasConfigurationContextKey = 'mekatrol.pydevice.explorerHasConfiguration';
 const explorerHasSyncFolderContextKey = 'mekatrol.pydevice.explorerHasSyncFolder';
@@ -96,7 +96,7 @@ interface NodeData {
   isIndicator?: boolean;
 }
 
-type DeviceFileCompareAvailability = 'available' | 'unlinked' | 'hostMissing';
+type DeviceFileCompareAvailability = 'available' | 'unmapped' | 'hostMissing';
 
 interface DeviceLibraryMapping {
   hostRelativePath: string;
@@ -164,8 +164,8 @@ class DeviceSyncModel {
   private deviceEntriesByDeviceId = new Map<string, FileEntry[]>();
   private syncStatesByDeviceId = new Map<string, Map<string, SyncState>>();
   private librariesByDeviceId = new Map<string, DeviceLibraryMapping[]>();
-  private linkableHostFolders: string[] = [];
-  private unlinkedHostEntries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
+  private mappableHostFolders: string[] = [];
+  private unmappedHostEntries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
 
   private computerEntries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
   private deviceEntries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
@@ -264,12 +264,12 @@ class DeviceSyncModel {
       this.computerEntries = [{ relativePath: '', isDirectory: true }];
       this.deviceEntries = [{ relativePath: '', isDirectory: true }];
       this.syncStates = new Map();
-      this.linkableHostFolders = [];
+      this.mappableHostFolders = [];
       this.deviceLibraryFolderMappings = {};
       this.librariesByDeviceId.clear();
       this.deviceSyncExcludedPaths = {};
       await vscode.commands.executeCommand('setContext', hasHostSyncChildFoldersContextKey, false);
-      await vscode.commands.executeCommand('setContext', hasLinkedHostMappingsContextKey, false);
+      await vscode.commands.executeCommand('setContext', hasMappedHostMappingsContextKey, false);
       this.onDidChangeDataEmitter.fire();
       return;
     }
@@ -279,12 +279,12 @@ class DeviceSyncModel {
       this.computerEntries = [{ relativePath: '', isDirectory: true }];
       this.deviceEntries = [{ relativePath: '', isDirectory: true }];
       this.syncStates = new Map();
-      this.linkableHostFolders = [];
+      this.mappableHostFolders = [];
       this.deviceLibraryFolderMappings = {};
       this.librariesByDeviceId.clear();
       this.deviceSyncExcludedPaths = {};
       await vscode.commands.executeCommand('setContext', hasHostSyncChildFoldersContextKey, false);
-      await vscode.commands.executeCommand('setContext', hasLinkedHostMappingsContextKey, false);
+      await vscode.commands.executeCommand('setContext', hasMappedHostMappingsContextKey, false);
       this.onDidChangeDataEmitter.fire();
       return;
     }
@@ -303,9 +303,9 @@ class DeviceSyncModel {
     this.deviceSyncExcludedPaths = Object.fromEntries(
       Object.entries(getDeviceSyncExcludedPaths(config)).map(([deviceId, relativePaths]) => [deviceId, new Set(relativePaths)])
     );
-    this.linkableHostFolders = await this.getLinkableHostFolders();
-    await vscode.commands.executeCommand('setContext', hasHostSyncChildFoldersContextKey, this.linkableHostFolders.length > 0);
-    await vscode.commands.executeCommand('setContext', hasLinkedHostMappingsContextKey, Object.keys(this.deviceHostFolderMappings).length > 0);
+    this.mappableHostFolders = await this.getMappableHostFolders();
+    await vscode.commands.executeCommand('setContext', hasHostSyncChildFoldersContextKey, this.mappableHostFolders.length > 0);
+    await vscode.commands.executeCommand('setContext', hasMappedHostMappingsContextKey, Object.keys(this.deviceHostFolderMappings).length > 0);
     this.knownDeviceIds = new Set([
       ...Object.keys(this.deviceHostFolderMappings),
       ...Object.keys(this.deviceLibraryFolderMappings),
@@ -356,7 +356,7 @@ class DeviceSyncModel {
     }
     this.activateDevice(this.activeDeviceId);
     const hostRootPath = this.getHostSyncRootPath();
-    this.unlinkedHostEntries = hostRootPath
+    this.unmappedHostEntries = hostRootPath
       ? await scanComputerSyncEntries(hostRootPath)
       : [{ relativePath: '', isDirectory: true }];
     this.lastRefreshError = undefined;
@@ -379,7 +379,7 @@ class DeviceSyncModel {
     return this.workspaceFolder.uri.fsPath;
   }
 
-  private async getLinkableHostFolders(): Promise<string[]> {
+  private async getMappableHostFolders(): Promise<string[]> {
     const syncRootPath = this.getHostSyncRootPath();
     if (!syncRootPath) {
       return [];
@@ -504,7 +504,7 @@ class DeviceSyncModel {
     const selected = await vscode.window.showQuickPick(
       candidates.map((deviceId) => {
         const name = this.getDeviceName(deviceId);
-        const mapping = this.getMappedHostFolder(deviceId) ?? 'not linked';
+        const mapping = this.getMappedHostFolder(deviceId) ?? 'not mapped';
         return {
           deviceId,
           label: name ?? deviceId,
@@ -533,7 +533,7 @@ class DeviceSyncModel {
     }
 
     if (!this.syncRootPath) {
-      vscode.window.showWarningMessage('Link this device to a computer folder before syncing from device.');
+      vscode.window.showWarningMessage('Map this device to a computer folder before syncing from device.');
       return;
     }
 
@@ -747,7 +747,7 @@ class DeviceSyncModel {
     }
 
     if (!this.syncRootPath) {
-      vscode.window.showWarningMessage('Link this device to a computer folder before syncing from device.');
+      vscode.window.showWarningMessage('Map this device to a computer folder before syncing from device.');
       return;
     }
 
@@ -767,20 +767,20 @@ class DeviceSyncModel {
 
     const syncOperations: SyncOperation[] = [];
 
-    const linkedComputerEntries = this.filterSyncableEntries(await scanComputerSyncEntries(this.syncRootPath))
+    const mappedComputerEntries = this.filterSyncableEntries(await scanComputerSyncEntries(this.syncRootPath))
       .filter((entry) => !this.isWithinLibraryRoots(toRelativePath(entry.relativePath), libraryRoots));
-    const linkedComputerEntryMap = new Map(linkedComputerEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
-    const linkedDeviceEntries = syncableDeviceEntries
+    const mappedComputerEntryMap = new Map(mappedComputerEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
+    const mappedDeviceEntries = syncableDeviceEntries
       .filter((entry) => {
         const relativePath = toRelativePath(entry.relativePath);
         return relativePath.length > 0 && !this.isWithinLibraryRoots(relativePath, libraryRoots);
       });
-    const desiredLinkedDevicePaths = new Set(linkedDeviceEntries.map((entry) => toRelativePath(entry.relativePath)));
+    const desiredMappedDevicePaths = new Set(mappedDeviceEntries.map((entry) => toRelativePath(entry.relativePath)));
 
-    for (const entry of linkedDeviceEntries) {
+    for (const entry of mappedDeviceEntries) {
       const relativePath = toRelativePath(entry.relativePath);
       const isExcluded = this.isPathExcludedFromSync(relativePath, this.activeDeviceId);
-      const computerEntry = linkedComputerEntryMap.get(relativePath);
+      const computerEntry = mappedComputerEntryMap.get(relativePath);
       if (!computerEntry) {
         const operation: Omit<SyncOperation, 'id'> = {
           action: 'create',
@@ -819,9 +819,9 @@ class DeviceSyncModel {
       }
     }
 
-    for (const entry of linkedComputerEntries) {
+    for (const entry of mappedComputerEntries) {
       const relativePath = toRelativePath(entry.relativePath);
-      if (!relativePath || desiredLinkedDevicePaths.has(relativePath)) {
+      if (!relativePath || desiredMappedDevicePaths.has(relativePath)) {
         continue;
       }
       const isExcluded = this.isPathExcludedFromSync(relativePath, this.activeDeviceId);
@@ -1050,7 +1050,7 @@ class DeviceSyncModel {
     }
 
     if (!this.syncRootPath) {
-      vscode.window.showWarningMessage('Link this device to a computer folder before syncing to device.');
+      vscode.window.showWarningMessage('Map this device to a computer folder before syncing to device.');
       return;
     }
 
@@ -2273,7 +2273,7 @@ class DeviceSyncModel {
       return false;
     }
 
-    // COMPUTER-side nodes are device-agnostic and may be linked to multiple devices,
+    // COMPUTER-side nodes are device-agnostic and may be mapped to multiple devices,
     // so exclusion state must not be inferred from the active device.
     if (data.side === 'computer') {
       return false;
@@ -2290,7 +2290,7 @@ class DeviceSyncModel {
 
     const deviceId = data.deviceId;
     if (!deviceId) {
-      return 'unlinked';
+      return 'unmapped';
     }
 
     if (data.libraryHostFolder) {
@@ -2301,11 +2301,11 @@ class DeviceSyncModel {
       if (library || this.resolveWorkspaceRelativePath(data.libraryHostFolder)) {
         return 'available';
       }
-      return 'unlinked';
+      return 'unmapped';
     }
 
     if (!this.syncRootByDeviceId.get(deviceId)) {
-      return 'unlinked';
+      return 'unmapped';
     }
 
     const relativePath = toRelativePath(data.relativePath);
@@ -2326,7 +2326,7 @@ class DeviceSyncModel {
 
     const deviceId = this.getNodeDeviceId(targetNode);
     if (!deviceId) {
-      vscode.window.showWarningMessage('Select a linked device path to exclude from sync.');
+      vscode.window.showWarningMessage('Select a mapped device path to exclude from sync.');
       return;
     }
 
@@ -2359,7 +2359,7 @@ class DeviceSyncModel {
 
     const deviceId = this.getNodeDeviceId(targetNode);
     if (!deviceId) {
-      vscode.window.showWarningMessage('Select a linked device path to update sync exclusions.');
+      vscode.window.showWarningMessage('Select a mapped device path to update sync exclusions.');
       return;
     }
 
@@ -2401,7 +2401,7 @@ class DeviceSyncModel {
 
     const computerRootPath = scope?.computerRootPath ?? this.syncRootPath;
     if (!computerRootPath) {
-      vscode.window.showWarningMessage('Link this device to a computer folder before syncing from device.');
+      vscode.window.showWarningMessage('Map this device to a computer folder before syncing from device.');
       return;
     }
 
@@ -2510,7 +2510,7 @@ class DeviceSyncModel {
 
     const computerRootPath = scope?.computerRootPath ?? this.syncRootPath;
     if (!computerRootPath) {
-      vscode.window.showWarningMessage('Link this device to a computer folder before syncing to device.');
+      vscode.window.showWarningMessage('Map this device to a computer folder before syncing to device.');
       return;
     }
 
@@ -2842,7 +2842,7 @@ class DeviceSyncModel {
     this.activateDevice(deviceId ?? this.activeDeviceId);
     const sourceEntries = side === 'device'
       ? this.deviceEntries
-      : (deviceId ? this.computerEntries : this.unlinkedHostEntries);
+      : (deviceId ? this.computerEntries : this.unmappedHostEntries);
     const nodes: SyncNode[] = [];
     const normalisedParentPath = toRelativePath(parentRelativePath);
 
@@ -2920,11 +2920,11 @@ class DeviceSyncModel {
     return [...this.knownDeviceIds].sort((a, b) => a.localeCompare(b));
   }
 
-  getLinkedHostDeviceIds(): string[] {
+  getMappedHostDeviceIds(): string[] {
     return Object.keys(this.deviceHostFolderMappings).sort((a, b) => a.localeCompare(b));
   }
 
-  getLinkedHostFolderCount(): number {
+  getMappedHostFolderCount(): number {
     return new Set(
       Object.values(this.deviceHostFolderMappings)
         .map((item) => toRelativePath(item))
@@ -2933,11 +2933,11 @@ class DeviceSyncModel {
   }
 
   getAvailableHostFolderCount(): number {
-    return this.linkableHostFolders.length;
+    return this.mappableHostFolders.length;
   }
 
   getAvailableHostFolders(): string[] {
-    return [...this.linkableHostFolders];
+    return [...this.mappableHostFolders];
   }
 
   getConnectedDeviceIds(): string[] {
@@ -3353,20 +3353,20 @@ class DeviceSyncModel {
     }
   }
 
-  async linkDeviceToHostFolder(node?: SyncNode): Promise<void> {
+  async mapDeviceToHostFolder(node?: SyncNode): Promise<void> {
     let deviceId = await this.ensureActiveDevice(node);
     if (!deviceId) {
-      deviceId = await this.pickKnownDeviceId('Select device to link');
+      deviceId = await this.pickKnownDeviceId('Select device to map');
       if (deviceId) {
         this.activateDevice(deviceId);
       }
     }
     if (!deviceId || !this.workspaceFolder) {
-      vscode.window.showWarningMessage('Select a device to link.');
+      vscode.window.showWarningMessage('Select a device to map.');
       return;
     }
 
-    const folderOptions = this.linkableHostFolders.map((folder) => {
+    const folderOptions = this.mappableHostFolders.map((folder) => {
       const leafName = path.posix.basename(toRelativePath(folder));
       return {
         label: leafName,
@@ -3381,7 +3381,7 @@ class DeviceSyncModel {
     }
 
     const picked = await vscode.window.showQuickPick(folderOptions, {
-      title: 'Link Device to Computer Folder',
+      title: 'Map Device to Computer Folder',
       placeHolder: `Select computer folder for ${deviceId}`,
       canPickMany: false,
       ignoreFocusOut: true
@@ -3395,44 +3395,44 @@ class DeviceSyncModel {
     const updated = await updateDeviceHostFolderMapping(deviceId, normalised);
     this.deviceHostFolderMappings = getDeviceHostFolderMappings(updated);
 
-    const msg = `Linked ${deviceId} to computer folder: ${normalised}`;
+    const msg = `Mapped ${deviceId} to computer folder: ${normalised}`;
     logChannelOutput(msg, true);
     vscode.window.showInformationMessage(msg);
     await this.refresh(true);
   }
 
-  async unlinkDeviceFromHostFolder(node?: SyncNode): Promise<void> {
+  async unmapDeviceFromHostFolder(node?: SyncNode): Promise<void> {
     let deviceId = await this.ensureActiveDevice(node);
     if (!deviceId) {
-      deviceId = await this.pickKnownDeviceId('Select device to unlink');
+      deviceId = await this.pickKnownDeviceId('Select device to unmap');
       if (deviceId) {
         this.activateDevice(deviceId);
       }
     }
     if (!deviceId) {
-      vscode.window.showWarningMessage('Select a device to unlink.');
+      vscode.window.showWarningMessage('Select a device to unmap.');
       return;
     }
 
     const current = this.getMappedHostFolder(deviceId);
     if (!current) {
-      vscode.window.showInformationMessage(`No computer folder link exists for ${deviceId}.`);
+      vscode.window.showInformationMessage(`No mapped computer folder exists for ${deviceId}.`);
       return;
     }
 
     const action = await vscode.window.showWarningMessage(
-      `Unlink ${deviceId} from computer folder "${current}"?`,
+      `Unmap ${deviceId} from computer folder "${current}"?`,
       { modal: true },
-      'Unlink'
+      'Unmap'
     );
-    if (action !== 'Unlink') {
+    if (action !== 'Unmap') {
       return;
     }
 
     const updated = await updateDeviceHostFolderMapping(deviceId, undefined);
     this.deviceHostFolderMappings = getDeviceHostFolderMappings(updated);
 
-    const msg = `Unlinked ${deviceId} from computer folder: ${current}`;
+    const msg = `Unmapped ${deviceId} from computer folder: ${current}`;
     logChannelOutput(msg, true);
     vscode.window.showInformationMessage(msg);
     await this.refresh(true);
@@ -3776,14 +3776,14 @@ class DeviceSyncModel {
     }
 
     const compareAvailability = this.getDeviceFileCompareAvailability(node.data);
-    if (compareAvailability === 'unlinked') {
-      vscode.window.showWarningMessage('Link this device to a computer folder before comparing files.');
+    if (compareAvailability === 'unmapped') {
+      vscode.window.showWarningMessage('Map this device to a computer folder before comparing files.');
       return;
     }
 
     const relativePath = this.toNodeScopedComputerRelativePath(node);
     if (compareAvailability === 'hostMissing') {
-      vscode.window.showWarningMessage(`The file "${relativePath}" does not exist on the linked computer folder.`);
+      vscode.window.showWarningMessage(`The file "${relativePath}" does not exist on the mapped computer folder.`);
       return;
     }
 
@@ -4490,9 +4490,9 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
         const count = this.model.getConnectedDeviceIds().length;
         element.description = count > 0 ? `${count} connected` : 'disconnected';
       } else {
-        const linkedCount = this.model.getLinkedHostFolderCount();
-        element.description = linkedCount > 0
-          ? `${linkedCount} linked`
+        const mappedCount = this.model.getMappedHostFolderCount();
+        element.description = mappedCount > 0
+          ? `${mappedCount} mapped`
           : `${this.model.getAvailableHostFolderCount()} computer folders`;
       }
       element.command = undefined;
@@ -4513,7 +4513,7 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
     if (data.isDeviceIdNode) {
       const mappedFolder = data.deviceId ? this.model.getMappedHostFolder(data.deviceId) : undefined;
       if (data.side === 'device') {
-        element.contextValue = mappedFolder ? 'pydevice.deviceIdNodeLinked' : 'pydevice.deviceIdNode';
+        element.contextValue = mappedFolder ? 'pydevice.deviceIdNodeMapped' : 'pydevice.deviceIdNode';
       } else {
         element.contextValue = 'pydevice.hostDeviceMappingNode';
       }
@@ -4528,7 +4528,7 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
           const state = connected ? 'connected' : 'disconnected';
           element.description = mappedFolder ? `${state} | computer:${mappedFolder}` : state;
         } else {
-          element.description = mappedFolder ?? 'not linked';
+          element.description = mappedFolder ?? 'not mapped';
         }
       } else {
         element.description = data.side === 'device' ? 'connected' : 'sync';
@@ -4556,13 +4556,13 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
       } else {
         compareAvailability = this.model.getDeviceFileCompareAvailability(data);
         if (isExcludedFromSync) {
-          element.contextValue = compareAvailability === 'unlinked'
-            ? 'pydevice.deviceFileExcludedUnlinked'
-            : (compareAvailability === 'hostMissing' ? 'pydevice.deviceFileExcludedHostMissing' : 'pydevice.deviceFileExcludedLinked');
+          element.contextValue = compareAvailability === 'unmapped'
+            ? 'pydevice.deviceFileExcludedUnmapped'
+            : (compareAvailability === 'hostMissing' ? 'pydevice.deviceFileExcludedHostMissing' : 'pydevice.deviceFileExcludedMapped');
         } else {
-          element.contextValue = compareAvailability === 'unlinked'
-            ? 'pydevice.deviceFileUnlinked'
-            : (compareAvailability === 'hostMissing' ? 'pydevice.deviceFileHostMissing' : 'pydevice.deviceFileLinked');
+          element.contextValue = compareAvailability === 'unmapped'
+            ? 'pydevice.deviceFileUnmapped'
+            : (compareAvailability === 'hostMissing' ? 'pydevice.deviceFileHostMissing' : 'pydevice.deviceFileMapped');
         }
       }
       element.command = data.isDirectory ? undefined : { command: commandOpenDeviceFileFromTreeId, title: 'Open', arguments: [element] };
@@ -4577,7 +4577,7 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
     element.iconPath = data.isDirectory ? vscode.ThemeIcon.Folder : vscode.ThemeIcon.File;
     element.description = isExcludedFromSync ? 'excluded' : undefined;
     if (data.side === 'device' && !data.isDirectory && compareAvailability === 'hostMissing') {
-      const compareHint = 'Compare unavailable: file does not exist on linked computer folder.';
+      const compareHint = 'Compare unavailable: file does not exist on mapped computer folder.';
       element.tooltip = element.tooltip ? `${element.tooltip}\n${compareHint}` : compareHint;
     }
 
@@ -4671,20 +4671,20 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
 
     if (element.data.isRoot) {
       if (element.data.side === 'computer') {
-        const linkedHostDeviceIds = this.model.getLinkedHostDeviceIds();
-        if (linkedHostDeviceIds.length > 0) {
-          const linkedByFolder = new Map<string, string>();
-          for (const deviceId of linkedHostDeviceIds) {
+        const mappedHostDeviceIds = this.model.getMappedHostDeviceIds();
+        if (mappedHostDeviceIds.length > 0) {
+          const mappedByFolder = new Map<string, string>();
+          for (const deviceId of mappedHostDeviceIds) {
             const mappedFolder = this.model.getMappedHostFolder(deviceId);
             const folderKey = mappedFolder && mappedFolder.trim().length > 0
               ? toRelativePath(mappedFolder)
               : `__device__/${deviceId}`;
-            if (!linkedByFolder.has(folderKey)) {
-              linkedByFolder.set(folderKey, deviceId);
+            if (!mappedByFolder.has(folderKey)) {
+              mappedByFolder.set(folderKey, deviceId);
             }
           }
 
-          return [...linkedByFolder.entries()]
+          return [...mappedByFolder.entries()]
             .sort((a, b) => a[0].localeCompare(b[0]))
             .map(([folderKey, deviceId]) => {
               const label = folderKey.startsWith('__device__/')
@@ -4982,8 +4982,8 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): 
   context.subscriptions.push(vscode.commands.registerCommand(commandCreateSyncFolderId, async (node?: SyncNode) => model.createSyncFolder(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandRenameSyncPathId, async (node?: SyncNode) => model.renameSyncPath(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandDeleteSyncPathId, async (node?: SyncNode) => model.deleteSyncPath(node)));
-  context.subscriptions.push(vscode.commands.registerCommand(commandLinkDeviceHostFolderId, async (node?: SyncNode) => model.linkDeviceToHostFolder(node)));
-  context.subscriptions.push(vscode.commands.registerCommand(commandUnlinkDeviceHostFolderId, async (node?: SyncNode) => model.unlinkDeviceFromHostFolder(node)));
+  context.subscriptions.push(vscode.commands.registerCommand(commandMapDeviceHostFolderId, async (node?: SyncNode) => model.mapDeviceToHostFolder(node)));
+  context.subscriptions.push(vscode.commands.registerCommand(commandUnmapDeviceHostFolderId, async (node?: SyncNode) => model.unmapDeviceFromHostFolder(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandAddDeviceLibraryFolderId, async (node?: SyncNode) => model.addDeviceLibraryFolder(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandRemoveDeviceLibraryFolderId, async (node?: SyncNode) => model.removeDeviceLibraryFolder(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandSetDeviceNameId, async (node?: SyncNode) => model.setDeviceName(node)));

@@ -18,9 +18,41 @@ The difference compare tool shows what changed between a file on your computer a
 
 You can also open the REPL window to run Python commands directly on the device for quick testing and print debugging.
 
-## Open a workspace
+## Workspace folder structure
 
-A workspace needs to be open to create a workspace. Select a folder in vscode to use as the workspace. The folder can contain other files, but the folder structure will need to confirm  
+A workspace is just any folder on your computer where you want to keep your Python files. It is easier and cleaner to create a dedicated folder for the workspace so that other files do not clutter the explorer view.
+
+When a workspace is initialised, your project folder becomes the "home" for device mappings and sync settings.
+
+A simple example might look like this:
+
+```text
+my-project/
+|-- .pydevice-config
+|-- .pydevice-cache
+`-- devices/
+    |-- sensor-01/
+    |   |-- main.py
+    |   `-- lib/
+    `-- sensor-02/
+    |   |-- main.py
+    |   `-- lib/
+    `-- switch-01/
+        |-- main.py
+        `-- lib/
+```
+
+What each part is for:
+
+- `devices/` (or any folders you choose): these are the local folders your devices map to.
+- `.pydevice-config`: shared project settings. This should usually be committed so other developers get the same workspace setup. 
+- `.pydevice-cache`: local developer cache/settings. This is for machine/user-specific data and usually should not be shared.
+
+The reason there are two files is simple: some settings make sense for the whole team (`.pydevice-config`), while cached details only make sense for one developer (`.pydevice-cache`).
+
+## Open and initialise workspace
+
+A workspace needs to be opened before you can initialise a workspace. The folder can contain other files, but the folder structure will need to confirm  
 
 ## Initialise the workspace
 
@@ -32,7 +64,11 @@ A workspace needs to be open to create a workspace. Select a folder in vscode to
 
 ## Create a library
 
+## Sync from a new device (code not on computer)
 
+## Sync to a new device, no code on device yet.
+
+## Map a device to an exist folder and to a file compare to see what is different across the device
 
 ### File synchronisation and change comparison
 
