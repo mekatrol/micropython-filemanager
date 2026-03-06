@@ -159,7 +159,7 @@ export class DeviceConfiguration {
 }
 
 export interface PyboardDevConfiguration {
-  mirrorFolder: string;
+  syncFolder: string;
   devices: Record<string, DeviceConfiguration>;
 }
 
@@ -173,7 +173,7 @@ export interface PyboardDevConfigurationWithMeta extends PyboardDevConfiguration
 }
 
 export const defaultConfiguration: PyboardDevConfiguration = {
-  mirrorFolder: '',
+  syncFolder: '',
   devices: {}
 };
 
@@ -344,13 +344,13 @@ export const loadConfiguration = async (): Promise<PyboardDevConfiguration> => {
     const fileContent = await vscode.workspace.fs.readFile(fileUri);
     const json = Buffer.from(fileContent).toString('utf8');
     const newConfiguration = JSON.parse(json) as Partial<PyboardDevConfiguration> & LegacyPyboardDevConfiguration;
-    const mirrorFolder = typeof newConfiguration.mirrorFolder === 'string'
-      ? newConfiguration.mirrorFolder
-      : configuration.mirrorFolder;
+    const syncFolder = typeof newConfiguration.syncFolder === 'string'
+      ? newConfiguration.syncFolder
+      : configuration.syncFolder;
 
     configuration = {
       ...configuration,
-      mirrorFolder,
+      syncFolder,
       devices: parseDevices(newConfiguration)
     };
 
@@ -395,12 +395,12 @@ export const saveConfiguration = async (configuration: PyboardDevConfiguration):
     const json = Buffer.from(fileContent).toString('utf8');
     const parsed = JSON.parse(json) as Partial<PyboardDevConfigurationWithMeta> & LegacyPyboardDevConfiguration;
     const meta = parsed.meta ?? existing.meta;
-    const mirrorFolder = typeof parsed.mirrorFolder === 'string'
-      ? parsed.mirrorFolder
-      : existing.mirrorFolder;
+    const syncFolder = typeof parsed.syncFolder === 'string'
+      ? parsed.syncFolder
+      : existing.syncFolder;
     existing = {
       meta,
-      mirrorFolder,
+      syncFolder,
       devices: parseDevices(parsed)
     };
   } catch {
@@ -646,3 +646,4 @@ const clampNumber = (value: number, min: number, max: number | undefined = undef
 
   return value;
 };
+

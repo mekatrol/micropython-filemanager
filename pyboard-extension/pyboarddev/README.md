@@ -1,14 +1,14 @@
 # Mekatrol Pyboard Dev
 
-Mekatrol Pyboard Dev is a VS Code extension for developing against MicroPython devices with a mirrored computer workspace, sync tooling, and side-by-side device/computer workflows.
+Mekatrol Pyboard Dev is a VS Code extension for developing against MicroPython devices with a synced computer workspace, sync tooling, and side-by-side device/computer workflows.
 
 ## Core Functions (Quick Summary)
 
 | Core Function | What It Does | Details |
 |---|---|---|
-| File / Folder Synchronisation | Syncs files and folders between connected device storage and your computer mirror, in both directions with preview and selection. | [File / Folder Synchronisation](#file--folder-synchronisation-device--computer) |
+| File / Folder Synchronisation | Syncs files and folders between connected device storage and your computer sync, in both directions with preview and selection. | [File / Folder Synchronisation](#file--folder-synchronisation-device--computer) |
 | Library Mapping | Maps device library roots to dedicated computer folders so library code can be managed independently from a device’s main linked folder. | [Library Mapping](#library-mapping-computer-folder--device-library-root) |
-| File Difference Comparison | Compares a device file against its computer mirror file using VS Code diff view. | [File Difference Comparison](#file-difference-comparison) |
+| File Difference Comparison | Compares a device file against its computer sync file using VS Code diff view. | [File Difference Comparison](#file-difference-comparison) |
 | Excluding Files | Excludes selected device paths from sync operations to protect **passwords** and **secrets** stored on a device. | [Exclude Files From Sync](#exclude-files-from-sync) |
 | Computer / Device Explorer View | Shows a dual-tree explorer (COMPUTER + DEVICE) with context actions for open, sync, compare, and mapping. | [Computer / Device Explorer View](#computer--device-explorer-view) |
 | Multi-Device Connections | Connects and manages multiple boards at the same time, with per-device status and operations. | [Multi-Device Connections](#multi-device-connections) |
@@ -59,7 +59,7 @@ When you add them, embed like this:
 
 ## File / Folder Synchronisation (Device <-> Computer)
 
-The extension supports two-way sync between device storage and computer mirror files.
+The extension supports two-way sync between device storage and computer sync files.
 
 ### Sync directions
 
@@ -97,7 +97,7 @@ Library mapping lets you maintain reusable libraries in dedicated computer folde
 
 ## File Difference Comparison
 
-You can compare a device file with its computer mirror file directly in VS Code diff.
+You can compare a device file with its computer sync file directly in VS Code diff.
 
 ### Compare behavior
 
@@ -133,7 +133,7 @@ The extension provides a dual explorer model with **COMPUTER** and **DEVICE** ro
 
 ### Explorer capabilities
 
-- Browse host mirror and device filesystem in one view.
+- Browse host sync and device filesystem in one view.
 - Open computer files and pull/open device files.
 - Run per-node actions: sync, compare, exclude, create, rename, delete.
 - Manage device links and library mappings from context menus.
@@ -191,7 +191,7 @@ This extension contributes these main settings:
 - `mekatrol.pyboarddev.autoReconnectLastDevice`: Reconnect previously connected device on startup.
 - `mekatrol.pyboarddev.verboseReplTransportLogs`: Enable low-level REPL transport logging.
 - `mekatrol.pyboarddev.deviceFileOpenWaitForConnectionMs`: Wait time before device file open/save fails.
-- `mekatrol.pyboarddev.mountHostInWorkspaceExplorer`: Mount host mirror in native VS Code Explorer.
+- `mekatrol.pyboarddev.mountHostInWorkspaceExplorer`: Mount host sync in native VS Code Explorer.
 - `mekatrol.pyboarddev.mountDeviceInWorkspaceExplorer`: Mount device filesystem in native Explorer.
 - `mekatrol.pyboarddev.replHistoryLimit`: Per-device REPL history length.
 - `mekatrol.pyboarddev.statusDisplayMode`: Show status in status bar or extension view.
@@ -204,3 +204,4 @@ This extension contributes these main settings:
 ## Release Notes
 
 See `CHANGELOG.md` for version-by-version changes.
+

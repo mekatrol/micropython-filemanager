@@ -6,10 +6,15 @@
 import * as vscode from 'vscode';
 import { posix } from 'path';
 
-export const workspaceCacheFileName = '.pyboarcd-cache';
-const legacyWorkspaceCacheFileName = '.pyboard-cache';
+export const workspaceCacheFileName = '.pyboard-cache';
 
 type WorkspaceCache = Record<string, unknown>;
+
+const defaultWorkspaceCache: WorkspaceCache = {
+  reconnectLastSession: false,
+  reconnectDevicePaths: [],
+  replHistoryByDevice: {}
+};
 
 let cacheState: WorkspaceCache = {};
 let writeChain: Promise<void> = Promise.resolve();
@@ -65,8 +70,20 @@ export const initialiseWorkspaceCache = async (): Promise<void> => {
     return;
   }
 
-  const legacy = await loadCacheFromFile(legacyWorkspaceCacheFileName);
-  cacheState = legacy ?? {};
+  // Create default state
+  cacheState = { ...defaultWorkspaceCache };
+};
+
+export const createDefaultWorkspaceCacheFile = async (): Promise<boolean> => {
+  const primary = await loadCacheFromFile(workspaceCacheFileName);
+  if (primary !== undefined) {
+    cacheState = primary;
+    return false;
+  }
+
+  cacheState = { ...defaultWorkspaceCache };
+  await saveCacheToPrimaryFile();
+  return true;
 };
 
 export const getWorkspaceCacheValue = <T>(key: string): T | undefined => {

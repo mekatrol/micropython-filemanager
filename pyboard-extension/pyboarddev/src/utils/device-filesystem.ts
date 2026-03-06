@@ -336,12 +336,12 @@ const walkComputerDirectory = async (basePath: string, currentRelativePath: stri
   }
 };
 
-export const scanComputerMirrorEntries = async (mirrorRoot: string): Promise<FileEntry[]> => {
+export const scanComputerSyncEntries = async (syncRoot: string): Promise<FileEntry[]> => {
   const entries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
 
   try {
-    await fs.mkdir(mirrorRoot, { recursive: true });
-    await walkComputerDirectory(mirrorRoot, '', entries);
+    await fs.mkdir(syncRoot, { recursive: true });
+    await walkComputerDirectory(syncRoot, '', entries);
   } catch {
     return entries;
   }
@@ -349,10 +349,10 @@ export const scanComputerMirrorEntries = async (mirrorRoot: string): Promise<Fil
   return entries;
 };
 
-export const resolveMirrorRootPath = async (workspaceFolder: vscode.WorkspaceFolder, mirrorFolder: string): Promise<string> => {
-  const mirrorRoot = path.join(workspaceFolder.uri.fsPath, mirrorFolder);
-  await fs.mkdir(mirrorRoot, { recursive: true });
-  return mirrorRoot;
+export const resolveSyncRootPath = async (workspaceFolder: vscode.WorkspaceFolder, syncFolder: string): Promise<string> => {
+  const syncRoot = path.join(workspaceFolder.uri.fsPath, syncFolder);
+  await fs.mkdir(syncRoot, { recursive: true });
+  return syncRoot;
 };
 
 export const toRelativePath = toPosixRelative;
@@ -399,3 +399,4 @@ export const buildSyncStateMap = (
 
   return status;
 };
+

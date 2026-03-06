@@ -18,7 +18,7 @@ import {
   initToggleBoardConnectionCommand,
   tryReconnectBoardOnStartup
 } from './commands/connect-board-command';
-import { initDeviceMirrorExplorer } from './device-mirror-explorer';
+import { initDeviceSyncExplorer } from './device-sync-explorer';
 import { initPyboardDebug } from './pyboard-debug';
 import { initReplView } from './repl-view';
 import { initExtensionStatusView } from './extension-status-view';
@@ -48,8 +48,8 @@ export const activate = async (context: vscode.ExtensionContext) => {
   await initStatusBar(context);
   initExtensionStatusView(context);
 
-  // Init device mirror explorer
-  await initDeviceMirrorExplorer(context);
+  // Init device sync explorer
+  await initDeviceSyncExplorer(context);
 
   // Init Run/Debug integration
   initPyboardDebug(context);
@@ -68,3 +68,4 @@ export async function deactivate() {
 
   await closeAllConnectedBoards(false, true, false, false);
 }
+

@@ -2,13 +2,13 @@
  * Unit tests for filesystem utility behavior.
  *
  * These tests cover both happy-path and failure-path behavior for path
- * normalization, sync-state derivation, and local mirror scanning.
+ * normalization, sync-state derivation, and local sync scanning.
  */
 import * as assert from 'assert';
 import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { buildSyncStateMap, scanComputerMirrorEntries, toRelativePath } from '../../utils/device-filesystem';
+import { buildSyncStateMap, scanComputerSyncEntries, toRelativePath } from '../../utils/device-filesystem';
 
 suite('device-filesystem utils', () => {
   test('toRelativePath normalises separators and trims slashes', () => {
@@ -64,7 +64,7 @@ suite('device-filesystem utils', () => {
     assert.strictEqual(status.get('out-of-sync.py'), 'device_only');
   });
 
-  test('scanComputerMirrorEntries returns file and directory metadata', async () => {
+  test('scanComputerSyncEntries returns file and directory metadata', async () => {
     // Arrange: create isolated temporary root to avoid touching workspace files.
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'pyboarddev-test-'));
 
@@ -74,8 +74,8 @@ suite('device-filesystem utils', () => {
       await fs.writeFile(path.join(root, 'main.py'), 'print("ok")');
       await fs.writeFile(path.join(root, 'pkg', 'mod.py'), 'x = 1');
 
-      // Act: scan mirror entries from this root.
-      const entries = await scanComputerMirrorEntries(root);
+      // Act: scan sync entries from this root.
+      const entries = await scanComputerSyncEntries(root);
 
       // Act: flatten and sort just the relative paths for deterministic assertion.
       const paths = entries.map((entry) => entry.relativePath).sort();
@@ -96,11 +96,12 @@ suite('device-filesystem utils', () => {
     }
   });
 
-  test('scanComputerMirrorEntries safely handles invalid root', async () => {
+  test('scanComputerSyncEntries safely handles invalid root', async () => {
     // Act: scan an intentionally invalid root path.
-    const entries = await scanComputerMirrorEntries('/dev/null/does-not-exist');
+    const entries = await scanComputerSyncEntries('/dev/null/does-not-exist');
 
     // Assert: function should not throw; it should return only the default root entry.
     assert.deepStrictEqual(entries, [{ relativePath: '', isDirectory: true }]);
   });
 });
+

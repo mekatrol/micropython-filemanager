@@ -73,7 +73,9 @@ const readBoardRuntimeInfoWithRetries = async (
   }
 
   const reason = lastError instanceof Error ? lastError.message : String(lastError);
-  logChannelOutput(`Connected, but failed to read board runtime info for ${devicePath} after ${attempts} attempt(s): ${reason}`, false);
+  const message = `Connected, but failed to read board runtime info for ${devicePath} after ${attempts} attempt(s): ${reason}`;
+  logChannelOutput(message, true);
+  void vscode.window.showWarningMessage(message);
   return undefined;
 };
 
@@ -108,10 +110,9 @@ const readBoardRuntimeInfoWithRecovery = async (
   }
 
   const reason = lastError instanceof Error ? lastError.message : String(lastError);
-  logChannelOutput(
-    `Recovery connect: failed to read board runtime info for ${devicePath} after ${runtimeInfoRecoveryProbeAttempts + runtimeInfoRecoveryRebootAttempts} attempt(s): ${reason}`,
-    false
-  );
+  const message = `Recovery connect: failed to read board runtime info for ${devicePath} after ${runtimeInfoRecoveryProbeAttempts + runtimeInfoRecoveryRebootAttempts} attempt(s): ${reason}`;
+  logChannelOutput(message, true);
+  void vscode.window.showWarningMessage(message);
   return undefined;
 };
 
@@ -343,10 +344,9 @@ const connectBoardForPath = async (
       }
 
       const reason = lastError instanceof Error ? lastError.message : String(lastError);
-      logChannelOutput(
-        `Runtime info remained unavailable for ${state.deviceId} after ${runtimeInfoBackgroundRetryAttempts} background attempt(s): ${reason}`,
-        false
-      );
+      const message = `Runtime info remained unavailable for ${state.deviceId} after ${runtimeInfoBackgroundRetryAttempts} background attempt(s): ${reason}`;
+      logChannelOutput(message, true);
+      void vscode.window.showWarningMessage(message);
     })();
   }
 
@@ -565,6 +565,12 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
 
     if (!devicePath) {
       return;
+    }
+
+    if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
+      const workspaceWarning = 'No workspace folder is open. Device can connect, but it will not appear in Pyboard Explorer until you open a workspace folder.';
+      vscode.window.showWarningMessage(workspaceWarning);
+      logChannelOutput(workspaceWarning, true);
     }
 
     if (getConnectedBoardByPortPath(devicePath)) {
