@@ -12,6 +12,7 @@ export enum PyboardDevConfigurationResult {
 
 interface DeviceConfigurationJson {
   hostFolder?: string;
+  libraryFolders?: string[];
   name?: string;
   syncExcludedPaths?: string[];
 }
@@ -51,11 +52,13 @@ const normaliseRelativePathArray = (values: readonly string[] | undefined): stri
 
 export class DeviceConfiguration {
   private hostFolder: string | undefined;
+  private libraryFolders: string[] = [];
   private name: string | undefined;
   private syncExcludedPaths: string[] = [];
 
   constructor(initial?: DeviceConfigurationJson) {
     this.hostFolder = normaliseOptionalString(initial?.hostFolder);
+    this.libraryFolders = normaliseRelativePathArray(initial?.libraryFolders);
     this.name = normaliseOptionalString(initial?.name);
     this.syncExcludedPaths = normaliseRelativePathArray(initial?.syncExcludedPaths);
   }
@@ -70,11 +73,14 @@ export class DeviceConfiguration {
     }
 
     const hostFolder = typeof value.hostFolder === 'string' ? value.hostFolder : undefined;
+    const libraryFolders = Array.isArray(value.libraryFolders)
+      ? value.libraryFolders.filter((item): item is string => typeof item === 'string')
+      : undefined;
     const name = typeof value.name === 'string' ? value.name : undefined;
     const syncExcludedPaths = Array.isArray(value.syncExcludedPaths)
       ? value.syncExcludedPaths.filter((item): item is string => typeof item === 'string')
       : undefined;
-    return new DeviceConfiguration({ hostFolder, name, syncExcludedPaths });
+    return new DeviceConfiguration({ hostFolder, libraryFolders, name, syncExcludedPaths });
   }
 
   getHostFolder(): string | undefined {
@@ -83,6 +89,14 @@ export class DeviceConfiguration {
 
   setHostFolder(value: string | undefined): void {
     this.hostFolder = normaliseOptionalString(value);
+  }
+
+  getLibraryFolders(): string[] {
+    return [...this.libraryFolders];
+  }
+
+  setLibraryFolders(values: readonly string[] | undefined): void {
+    this.libraryFolders = normaliseRelativePathArray(values);
   }
 
   getName(): string | undefined {
@@ -118,13 +132,16 @@ export class DeviceConfiguration {
   }
 
   isEmpty(): boolean {
-    return !this.hostFolder && !this.name && this.syncExcludedPaths.length === 0;
+    return !this.hostFolder && this.libraryFolders.length === 0 && !this.name && this.syncExcludedPaths.length === 0;
   }
 
   toJSON(): DeviceConfigurationJson {
     const json: DeviceConfigurationJson = {};
     if (this.hostFolder) {
       json.hostFolder = this.hostFolder;
+    }
+    if (this.libraryFolders.length > 0) {
+      json.libraryFolders = [...this.libraryFolders];
     }
     if (this.name) {
       json.name = this.name;
@@ -208,6 +225,7 @@ const parseDevices = (source: Partial<PyboardDevConfiguration> & LegacyPyboardDe
     const parsed = DeviceConfiguration.fromUnknown(rawDevice);
     const device = devices[deviceId] ?? new DeviceConfiguration();
     device.setHostFolder(parsed.getHostFolder() ?? device.getHostFolder());
+    device.setLibraryFolders(parsed.getLibraryFolders());
     device.setName(parsed.getName() ?? device.getName());
     device.setSyncExcludedPaths(parsed.getSyncExcludedPaths());
     devices[deviceId] = device;
@@ -245,6 +263,17 @@ export const getDeviceHostFolderMappings = (configuration: PyboardDevConfigurati
     const hostFolder = device.getHostFolder();
     if (hostFolder) {
       mappings[deviceId] = hostFolder;
+    }
+  }
+  return mappings;
+};
+
+export const getDeviceLibraryFolderMappings = (configuration: PyboardDevConfiguration): Record<string, string[]> => {
+  const mappings: Record<string, string[]> = {};
+  for (const [deviceId, device] of Object.entries(configuration.devices ?? {})) {
+    const folders = device.getLibraryFolders();
+    if (folders.length > 0) {
+      mappings[deviceId] = folders;
     }
   }
   return mappings;
@@ -419,6 +448,28 @@ export const updateDeviceName = async (
   const nextDevices = cloneDevices(configuration.devices ?? {});
   const nextDeviceConfig = nextDevices[deviceId] ?? new DeviceConfiguration();
   nextDeviceConfig.setName(name);
+  if (nextDeviceConfig.isEmpty()) {
+    delete nextDevices[deviceId];
+  } else {
+    nextDevices[deviceId] = nextDeviceConfig;
+  }
+
+  const updated: PyboardDevConfiguration = {
+    ...configuration,
+    devices: pruneEmptyDevices(nextDevices)
+  };
+  await saveConfiguration(updated);
+  return updated;
+};
+
+export const updateDeviceLibraryFolders = async (
+  deviceId: string,
+  libraryFolderRelativePaths: readonly string[]
+): Promise<PyboardDevConfiguration> => {
+  const configuration = await loadConfiguration();
+  const nextDevices = cloneDevices(configuration.devices ?? {});
+  const nextDeviceConfig = nextDevices[deviceId] ?? new DeviceConfiguration();
+  nextDeviceConfig.setLibraryFolders(libraryFolderRelativePaths);
   if (nextDeviceConfig.isEmpty()) {
     delete nextDevices[deviceId];
   } else {
