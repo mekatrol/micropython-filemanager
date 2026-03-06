@@ -1,3 +1,8 @@
+/**
+ * Module overview:
+ * This file is part of the Pyboard extension runtime and contains
+ * feature-specific logic isolated for maintainability and unit testing.
+ */
 import * as vscode from 'vscode';
 import { initStatusBar } from './status-bar';
 import { initOutputChannel, logChannelOutput as logChannelOutput } from './output-channel';

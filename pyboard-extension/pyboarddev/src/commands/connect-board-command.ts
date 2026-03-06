@@ -1,8 +1,16 @@
+/**
+ * Module overview:
+ * This file is part of the Pyboard extension runtime and contains
+ * feature-specific logic isolated for maintainability and unit testing.
+ */
 import * as vscode from 'vscode';
 import { logChannelOutput } from '../output-channel';
 import { BoardRuntimeInfo, Pyboard } from '../utils/pyboard';
 import { listSerialDevices } from '../utils/serial-port';
 import { getWorkspaceCacheValue, setWorkspaceCacheValue } from '../utils/workspace-cache';
+import { ConnectedBoardRegistry, ConnectedBoardState, ConnectedBoardSnapshot } from '../devices/connected-board-registry';
+import { ReconnectStateStore } from '../devices/reconnect-state-store';
+import { toDeviceId } from '../devices/device-id';
 
 const reconnectLastSessionStateKey = 'reconnectLastSession';
 const reconnectDevicePathsStateKey = 'reconnectDevicePaths';
@@ -19,23 +27,9 @@ const autoReconnectSettingKey = 'autoReconnectLastDevice';
 const deviceDocumentScheme = 'pyboarddev-device';
 const pyboardDebugType = 'pyboarddev';
 
-interface ConnectedBoardState {
-  deviceId: string;
-  board: Pyboard;
-  runtimeInfo: BoardRuntimeInfo | undefined;
-  executionCount: number;
-}
+export type { ConnectedBoardSnapshot } from '../devices/connected-board-registry';
 
-export interface ConnectedBoardSnapshot {
-  deviceId: string;
-  devicePath: string;
-  baudRate: number;
-  runtimeInfo: BoardRuntimeInfo | undefined;
-  executionCount: number;
-}
-
-const connectedBoards = new Map<string, ConnectedBoardState>();
-const deviceIdByPortPath = new Map<string, string>();
+const boardRegistry = new ConnectedBoardRegistry();
 const boardConnectionStateEmitter = new vscode.EventEmitter<boolean>();
 const boardConnectionsChangedEmitter = new vscode.EventEmitter<ConnectedBoardSnapshot[]>();
 const boardRuntimeInfoChangedEmitter = new vscode.EventEmitter<BoardRuntimeInfo | undefined>();
@@ -46,79 +40,19 @@ export const onBoardConnectionsChanged = boardConnectionsChangedEmitter.event;
 export const onConnectedBoardRuntimeInfoChanged = boardRuntimeInfoChangedEmitter.event;
 export const onBoardExecutionStateChanged = boardExecutionStateChangedEmitter.event;
 
-const readPersistentState = <T>(key: string): T | undefined => {
-  return getWorkspaceCacheValue<T>(key);
-};
-
-const writePersistentState = async <T>(key: string, value: T): Promise<void> => {
-  await setWorkspaceCacheValue(key, value);
-};
-
-const readReconnectDevicePaths = (): string[] => {
-  const stored = readPersistentState<unknown>(reconnectDevicePathsStateKey);
-  if (!Array.isArray(stored)) {
-    return [];
-  }
-
-  const normalised = stored
-    .filter((item): item is string => typeof item === 'string')
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0);
-  return [...new Set(normalised)];
-};
-
-const writeReconnectDevicePaths = async (devicePaths: string[]): Promise<void> => {
-  const next = [...new Set(devicePaths.map((item) => item.trim()).filter((item) => item.length > 0))];
-  await writePersistentState(reconnectDevicePathsStateKey, next);
-};
-
-const addReconnectDevicePath = async (devicePath: string): Promise<void> => {
-  const current = readReconnectDevicePaths();
-  if (current.includes(devicePath)) {
-    return;
-  }
-
-  await writeReconnectDevicePaths([...current, devicePath]);
-};
-
-const removeReconnectDevicePath = async (devicePath: string): Promise<void> => {
-  const current = readReconnectDevicePaths();
-  if (!current.includes(devicePath)) {
-    return;
-  }
-
-  await writeReconnectDevicePaths(current.filter((item) => item !== devicePath));
-};
-
-const normaliseDeviceId = (value: string): string => {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return 'unknown-device';
-  }
-
-  return trimmed.replace(/\s+/g, '-').replace(/[^\w.-]/g, '_');
-};
+const reconnectStateStore = new ReconnectStateStore(
+  <T>(key: string): T | undefined => getWorkspaceCacheValue<T>(key),
+  async <T>(key: string, value: T): Promise<void> => setWorkspaceCacheValue(key, value),
+  reconnectLastSessionStateKey,
+  reconnectDevicePathsStateKey
+);
 
 const wait = async (ms: number): Promise<void> => {
   await new Promise((resolve) => setTimeout(resolve, ms));
 };
 
-const toDeviceId = (devicePath: string, runtimeInfo?: BoardRuntimeInfo): string => {
-  if (runtimeInfo?.uniqueId && runtimeInfo.uniqueId.trim().length > 0) {
-    return normaliseDeviceId(runtimeInfo.uniqueId);
-  }
-
-  return `port_${normaliseDeviceId(devicePath)}`;
-};
-
-const getConnectedBoardStateByPortPath = (devicePath: string): ConnectedBoardState | undefined => {
-  const existingDeviceId = deviceIdByPortPath.get(devicePath);
-  if (!existingDeviceId) {
-    return undefined;
-  }
-
-  return connectedBoards.get(existingDeviceId);
-};
+const getConnectedBoardStateByPortPath = (devicePath: string): ConnectedBoardState | undefined =>
+  boardRegistry.getByPortPath(devicePath);
 
 const readBoardRuntimeInfoWithRetries = async (
   board: Pyboard,
@@ -181,24 +115,8 @@ const readBoardRuntimeInfoWithRecovery = async (
   return undefined;
 };
 
-const toSnapshot = (state: ConnectedBoardState): ConnectedBoardSnapshot => ({
-  deviceId: state.deviceId,
-  devicePath: state.board.device,
-  baudRate: state.board.baudrate,
-  runtimeInfo: state.runtimeInfo,
-  executionCount: state.executionCount
-});
-
-const getSnapshots = (): ConnectedBoardSnapshot[] => {
-  return [...connectedBoards.values()].map(toSnapshot).sort((a, b) => a.deviceId.localeCompare(b.deviceId));
-};
-
-const getActiveBoardState = (): ConnectedBoardState | undefined => {
-  return connectedBoards.values().next().value as ConnectedBoardState | undefined;
-};
-
 const updateReconnectState = async (shouldReconnectOnStartup: boolean): Promise<void> => {
-  await writePersistentState(reconnectLastSessionStateKey, shouldReconnectOnStartup);
+  await reconnectStateStore.writeShouldReconnect(shouldReconnectOnStartup);
 };
 
 const parseDeviceIdFromDeviceUri = (uri: vscode.Uri): string | undefined => {
@@ -306,7 +224,7 @@ const closeOpenDeviceTabsAfterDisconnect = async (deviceId?: string): Promise<vo
 };
 
 const notifyStateChanged = (): void => {
-  const snapshots = getSnapshots();
+  const snapshots = boardRegistry.getSnapshots();
   const connected = snapshots.length > 0;
   void vscode.commands.executeCommand('setContext', 'mekatrol.pyboarddev.boardConnected', connected);
   void vscode.commands.executeCommand('setContext', 'mekatrol.pyboarddev.connectedBoardCount', snapshots.length);
@@ -316,14 +234,10 @@ const notifyStateChanged = (): void => {
   boardExecutionStateChangedEmitter.fire(snapshots);
 };
 
-export const isBoardConnected = (): boolean => connectedBoards.size > 0;
+export const isBoardConnected = (): boolean => boardRegistry.isConnected();
 
 export const getConnectedBoard = (deviceId?: string): Pyboard | undefined => {
-  if (deviceId) {
-    return connectedBoards.get(deviceId)?.board;
-  }
-
-  return getActiveBoardState()?.board;
+  return boardRegistry.getByDeviceId(deviceId)?.board;
 };
 
 export const getConnectedBoardByPortPath = (devicePath: string): Pyboard | undefined => {
@@ -331,43 +245,33 @@ export const getConnectedBoardByPortPath = (devicePath: string): Pyboard | undef
 };
 
 export const getConnectedBoardRuntimeInfo = (deviceId?: string): BoardRuntimeInfo | undefined => {
-  if (deviceId) {
-    return connectedBoards.get(deviceId)?.runtimeInfo;
-  }
-
-  return getActiveBoardState()?.runtimeInfo;
+  return boardRegistry.getByDeviceId(deviceId)?.runtimeInfo;
 };
 
-export const getConnectedBoards = (): ConnectedBoardSnapshot[] => getSnapshots();
+export const getConnectedBoards = (): ConnectedBoardSnapshot[] => boardRegistry.getSnapshots();
 
-export const getConnectedDeviceIds = (): string[] => getSnapshots().map((item) => item.deviceId);
+export const getConnectedDeviceIds = (): string[] => boardRegistry.getConnectedDeviceIds();
 
 export const getDeviceIdForPortPath = (devicePath: string): string | undefined => {
   return getConnectedBoardStateByPortPath(devicePath)?.deviceId;
 };
 
 export const beginBoardExecution = (deviceId: string): void => {
-  const state = connectedBoards.get(deviceId);
-  if (!state) {
+  if (!boardRegistry.beginExecution(deviceId)) {
     return;
   }
-
-  state.executionCount += 1;
   notifyStateChanged();
 };
 
 export const endBoardExecution = (deviceId: string): void => {
-  const state = connectedBoards.get(deviceId);
-  if (!state) {
+  if (!boardRegistry.endExecution(deviceId)) {
     return;
   }
-
-  state.executionCount = Math.max(0, state.executionCount - 1);
   notifyStateChanged();
 };
 
 export const isBoardExecuting = (deviceId: string): boolean => {
-  return (connectedBoards.get(deviceId)?.executionCount ?? 0) > 0;
+  return boardRegistry.isExecuting(deviceId);
 };
 
 const connectBoardForPath = async (
@@ -399,7 +303,7 @@ const connectBoardForPath = async (
     );
 
   const deviceId = toDeviceId(devicePath, runtimeInfo);
-  if (connectedBoards.has(deviceId)) {
+  if (boardRegistry.hasDeviceId(deviceId)) {
     await board.close();
     throw new Error(`A board with device ID ${deviceId} is already connected.`);
   }
@@ -411,9 +315,8 @@ const connectBoardForPath = async (
     executionCount: 0
   };
 
-  connectedBoards.set(deviceId, state);
-  deviceIdByPortPath.set(board.device, deviceId);
-  await addReconnectDevicePath(board.device);
+  boardRegistry.add(state);
+  await reconnectStateStore.addReconnectDevicePath(board.device);
   await updateReconnectState(true);
   notifyStateChanged();
 
@@ -423,14 +326,14 @@ const connectBoardForPath = async (
       for (let attempt = 1; attempt <= runtimeInfoBackgroundRetryAttempts; attempt += 1) {
         await wait(runtimeInfoBackgroundRetryDelayMs);
 
-        const currentState = connectedBoards.get(state.deviceId);
+        const currentState = boardRegistry.getByDeviceId(state.deviceId);
         if (!currentState || currentState !== state) {
           return;
         }
 
         try {
           const refreshedRuntimeInfo = await state.board.getBoardRuntimeInfo();
-          state.runtimeInfo = refreshedRuntimeInfo;
+          boardRegistry.setRuntimeInfo(state.deviceId, refreshedRuntimeInfo);
           notifyStateChanged();
           logChannelOutput(`Runtime info recovered for ${state.deviceId} on attempt ${attempt}.`, false);
           return;
@@ -463,7 +366,7 @@ export const closeConnectedBoardByDeviceId = async (
   promptToSaveDirtyDeviceFiles = true,
   closeDeviceTabsAfterDisconnect = true
 ): Promise<boolean> => {
-  const state = connectedBoards.get(deviceId);
+  const state = boardRegistry.getByDeviceId(deviceId);
   if (!state) {
     if (showSuccessMessage) {
       const msg = `No active board connection found for ${deviceId}.`;
@@ -482,13 +385,12 @@ export const closeConnectedBoardByDeviceId = async (
 
   try {
     await state.board.close();
-    connectedBoards.delete(deviceId);
-    deviceIdByPortPath.delete(state.board.device);
+    boardRegistry.remove(deviceId);
     if (!preserveReconnectState) {
-      await removeReconnectDevicePath(state.board.device);
+      await reconnectStateStore.removeReconnectDevicePath(state.board.device);
     }
 
-    if (!preserveReconnectState && connectedBoards.size === 0) {
+    if (!preserveReconnectState && !boardRegistry.isConnected()) {
       await updateReconnectState(false);
     }
 
@@ -521,7 +423,7 @@ export const closeConnectedBoard = async (
   promptToSaveDirtyDeviceFiles = true,
   closeDeviceTabsAfterDisconnect = true
 ): Promise<boolean> => {
-  const active = getActiveBoardState();
+  const active = boardRegistry.getByDeviceId();
   if (!active) {
     if (showSuccessMessage) {
       const msg = 'No active board connection to close.';
@@ -562,14 +464,14 @@ export const closeAllConnectedBoards = async (
 
   if (!preserveReconnectState) {
     await updateReconnectState(false);
-    await writeReconnectDevicePaths([]);
+    await reconnectStateStore.writeReconnectDevicePaths([]);
   }
 
   return true;
 };
 
 const pickConnectedDeviceId = async (placeHolder: string): Promise<string | undefined> => {
-  const snapshots = getSnapshots();
+  const snapshots = boardRegistry.getSnapshots();
   if (snapshots.length === 0) {
     return undefined;
   }
@@ -602,7 +504,7 @@ const pickSerialPortToConnect = async (onlyUnconnected: boolean = false): Promis
     return undefined;
   }
 
-  const connectedPaths = new Set(getSnapshots().map((item) => item.devicePath));
+  const connectedPaths = new Set(boardRegistry.getSnapshots().map((item) => item.devicePath));
   const candidatePorts = onlyUnconnected
     ? ports.filter((port) => !connectedPaths.has(port.path))
     : ports;
@@ -775,12 +677,12 @@ export const tryReconnectBoardOnStartup = async (context: vscode.ExtensionContex
     return;
   }
 
-  const shouldReconnect = readPersistentState<boolean>(reconnectLastSessionStateKey) ?? false;
+  const shouldReconnect = reconnectStateStore.readShouldReconnect();
   if (!shouldReconnect) {
     return;
   }
 
-  const reconnectDevicePaths = readReconnectDevicePaths();
+  const reconnectDevicePaths = reconnectStateStore.readReconnectDevicePaths();
   const baudRate = defaultBaudRate;
 
   if (reconnectDevicePaths.length === 0) {
@@ -855,7 +757,7 @@ export const initSoftRebootBoardCommand = (context: vscode.ExtensionContext) => 
       return;
     }
 
-    const state = connectedBoards.get(targetDeviceId);
+    const state = boardRegistry.getByDeviceId(targetDeviceId);
     if (!state) {
       const msg = `Device ${targetDeviceId} is not connected.`;
       vscode.window.showWarningMessage(msg);

@@ -1,3 +1,8 @@
+/**
+ * Module overview:
+ * This file is part of the Pyboard extension runtime and contains
+ * feature-specific logic isolated for maintainability and unit testing.
+ */
 import * as vscode from 'vscode';
 import { posix } from 'path';
 

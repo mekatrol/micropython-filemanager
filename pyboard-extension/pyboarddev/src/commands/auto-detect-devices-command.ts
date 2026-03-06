@@ -1,42 +1,22 @@
+/**
+ * Module overview:
+ * This file is part of the Pyboard extension runtime and contains
+ * feature-specific logic isolated for maintainability and unit testing.
+ */
 import * as vscode from 'vscode';
 import { logChannelOutput } from '../output-channel';
 import { listAllSerialPorts, PortInfo } from '../utils/serial-port';
-import { BoardRuntimeInfo, Pyboard } from '../utils/pyboard';
 import { getConnectedBoardByPortPath } from './connect-board-command';
+import { ProbedSerialDevice, SerialDeviceProber } from '../devices/serial-device-prober';
 
 const autoDetectDevicesCommandId = 'mekatrol.pyboarddev.autodetectdevices';
 const defaultBaudRate = 115200;
 
-interface DetectedDevice {
-  port: PortInfo;
-  runtimeInfo?: BoardRuntimeInfo;
-}
+type DetectedDevice = ProbedSerialDevice;
 
 interface DetectedDevicePickItem extends vscode.QuickPickItem {
   device: DetectedDevice;
 }
-
-const detectDevice = async (port: PortInfo): Promise<DetectedDevice | undefined> => {
-  const board = new Pyboard(port.path, defaultBaudRate, false);
-  try {
-    await board.open();
-  } catch {
-    return undefined;
-  }
-
-  try {
-    const runtimeInfo = await board.probeBoardRuntimeInfo();
-    return { port, runtimeInfo };
-  } catch {
-    return undefined;
-  } finally {
-    try {
-      await board.close();
-    } catch {
-      // Ignore close errors during probing.
-    }
-  }
-};
 
 const buildDeviceDetails = (device: DetectedDevice): string => {
   const parts = [device.port.manufacturer, `VID:${device.port.vendorId}`, `PID:${device.port.productId}`].filter(Boolean);
@@ -44,6 +24,7 @@ const buildDeviceDetails = (device: DetectedDevice): string => {
 };
 
 export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): void => {
+  const serialDeviceProber = new SerialDeviceProber(defaultBaudRate);
   const command = vscode.commands.registerCommand(autoDetectDevicesCommandId, async () => {
     let detectedDevices: DetectedDevice[] = [];
     try {
@@ -69,7 +50,7 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
 
           for (const port of availablePorts) {
             progress.report({ increment, message: `Probing ${port.path}` });
-            const detected = await detectDevice(port);
+            const detected = await serialDeviceProber.probePort(port);
             if (detected) {
               results.push(detected);
             }
