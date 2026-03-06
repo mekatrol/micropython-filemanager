@@ -86,7 +86,20 @@ You can auto detect connected devices.
 
 ![Auto detect devices](images/autodetect-devices.png)
 
-![Auto detect devices list](images/autodetect-list.png)
+<table>
+  <tr>
+    <th align="left">Windows</th>
+    <th align="left">Linux/Mac</th>
+  </tr>
+  <tr>
+    <td valign="top">
+      <img src="images/autodetect-list-windows.png" alt="Auto detect devices list (Windows)">
+    </td>
+    <td valign="top">
+      <img src="images/autodetect-list-linux.png" alt="Auto detect devices list (Linux)">
+    </td>
+  </tr>
+</table>
 
 Clicking any device in the list will connect to that device.
 
@@ -96,9 +109,20 @@ You can also try connecting by selecting a serial port. This will let you pick a
 
 ![Connect serial port](images/connect-serial-port.png)
 
-![Connect serial port list](images/connect-serial-port-list.png)
-
->>> TODO: Show linux serial port list view as well
+<table>
+  <tr>
+    <th align="left">Windows</th>
+    <th align="left">Linux/Mac</th>
+  </tr>
+  <tr>
+    <td valign="top">
+      <img src="images/connect-serial-port-list-windows.png" alt="Connect serial port list (Windows)">
+    </td>
+    <td valign="top">
+      <img src="images/connect-serial-port-list-linux.png" alt="Connect serial port list (Linux)">
+    </td>
+  </tr>
+</table>
 
 Clicking any device in the list will connect to that device.
 
