@@ -4,13 +4,19 @@ The following tutorial helps understand the variaous functions within this vscod
 
 ## How it works
 
-The Mekatrol pydevice extension works by linking Python embedded devices to a folder on the host computer. Files and folders can then be synced between the device and the computer. The allows keeping a copy of the files on the computer without needing to copy and paste beween the computer and the device.
+Think of this extension like a file bridge between your computer and your embedded Python device.
 
-Addtitonally individual files can be excluded from synchronisation if you do not want to sync those files. For example, if files on a device contain passwords or secretts and you do not want those synced to the host computer.
+You connect a device to a folder on your computer, then sync files both ways. That means no more constant copy/paste, and you always have a backup of your device code on your computer.
 
-Further, a device can map to library folders on the host computer so that you can keep 
+You can choose files to skip during sync. This is useful for things like passwords or device-only settings that should stay private.
 
+You can also point multiple devices at the same project folder. Great for reusing code. If each device needs different settings (like `config.py`), just exclude that file so devices do not overwrite each other.
 
+Shared library folders are supported too. These are common folders (outside a project) where you keep reusable code like WiFi or MQTT helpers, then sync that code to any device that needs it.
+
+The difference compare tool shows what changed between a file on your computer and the same file on the device, so you know when to sync.
+
+You can also open the REPL window to run Python commands directly on the device for quick testing and print debugging.
 
 ## Open a workspace
 
