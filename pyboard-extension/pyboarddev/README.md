@@ -14,26 +14,9 @@ Mekatrol Pyboard Dev is a VS Code extension for developing against MicroPython d
 | Multi-Device Connections | Connects and manages multiple boards at the same time, with per-device status and operations. | [Multi-Device Connections](#multi-device-connections) |
 | REPL Window | Provides an interactive REPL panel with per-device command history and quick switching between connected devices. | [REPL Window](#repl-window) |
 
-## Scenarios
+## Tutorial
 
-The following scenarios help understand the purpose of this extension and how it solves the problem I have when writing code for MicroPython devices.
-
-### File synchronisation and change comparison
-
-As a long term professional developer (aka I develop for my day job), I found it frustrating to develop on my hobby MicroPython devices and not have a way of easily tracking changes and synchronising files to my computer. This extension was born from that need.
-
-I also often have Python logic that I use on multiple devices and all that changes are things like the names for MQTT or the wifi passwords. This mean I needed to keep copying files between devices and my development computer.
-
-For example, I have many devices connected to my home automation that turns on and off lights at different times for various scenarios. On my host computer I have a folder structure similar to the following:
-
--- Switch
-   -- mqtt
-      __init__.py
-      mqtt_client
-   -- wifi
-   main.py
-
-
+Follow the [tutorial](./tutorial.md) to help understand the variaous functions within this vscpode extension.
 
 ## Screenshots
 
