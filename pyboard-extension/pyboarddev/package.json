@@ -20,7 +20,7 @@
     "commands": [
       {
         "command": "mekatrol.pydevice.initconfig",
-        "title": "Pydevice: Reset config"
+        "title": "Reset config"
       },
       {
         "command": "mekatrol.pydevice.selectdevice",
@@ -28,12 +28,12 @@
       },
       {
         "command": "mekatrol.pydevice.autodetectdevices",
-        "title": "Pydevice: Auto detect serial devices",
+        "title": "Auto detect serial devices",
         "icon": "$(search)"
       },
       {
         "command": "mekatrol.pydevice.connectboard",
-        "title": "Pydevice: Connect to board",
+        "title": "Connect to board",
         "icon": "$(plug)"
       },
       {
@@ -42,21 +42,21 @@
         "icon": "$(plug)"
       },
       {
-        "command": "mekatrol.pydevice.connectboardesp32recovery",
-        "title": "Pydevice: ESP32 Recovery Connect",
+        "command": "mekatrol.pydevice.connectboardrecovery",
+        "title": "Recovery Connect",
         "icon": "$(debug-restart)"
       },
       {
         "command": "mekatrol.pydevice.disconnectboard",
-        "title": "Pydevice: Disconnect from board"
+        "title": "Disconnect from board"
       },
       {
         "command": "mekatrol.pydevice.toggleboardconnection",
-        "title": "Pydevice: Toggle board connection"
+        "title": "Toggle board connection"
       },
       {
         "command": "mekatrol.pydevice.softreboot",
-        "title": "Pydevice: Soft reboot device",
+        "title": "Soft reboot device",
         "icon": "$(debug-restart)"
       },
       {
@@ -75,7 +75,7 @@
       },
       {
         "command": "mekatrol.pydevice.explorerinitialiseworkspace",
-        "title": "Pydevice: Initialize explorer workspace",
+        "title": "Pydevice: Initialize Pydevice Workspace",
         "icon": "$(tools)"
       },
       {
@@ -264,7 +264,7 @@
           "when": "false"
         },
         {
-          "command": "mekatrol.pydevice.connectboardesp32recovery",
+          "command": "mekatrol.pydevice.connectboardrecovery",
           "when": "false"
         },
         {
@@ -445,7 +445,7 @@
           "group": "inline@1"
         },
         {
-          "command": "mekatrol.pydevice.connectboardesp32recovery",
+          "command": "mekatrol.pydevice.connectboardrecovery",
           "when": "view == mekatrol.pydevice.syncExplorer && mekatrol.pydevice.explorerReady && viewItem == pydevice.deviceRoot",
           "group": "inline@1.5"
         },
@@ -458,6 +458,11 @@
           "command": "mekatrol.pydevice.autodetectdevices",
           "when": "view == mekatrol.pydevice.syncExplorer && mekatrol.pydevice.explorerReady && viewItem == pydevice.deviceRoot",
           "group": "inline@3"
+        },
+        {
+          "command": "mekatrol.pydevice.autodetectdevices",
+          "when": "view == mekatrol.pydevice.syncExplorer && mekatrol.pydevice.explorerReady && viewItem == pydevice.deviceRoot",
+          "group": "navigation@2.5"
         },
         {
           "command": "mekatrol.pydevice.opendevicefile",

@@ -4623,7 +4623,7 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
           missing.push(configurationFileName);
         }
         label = missing.length > 0
-          ? `Initialize ${missing.join(', ')}`
+          ? 'Initialize Pydevice Workspace'
           : 'Complete Pydevice Explorer setup';
       }
       return [
@@ -5030,7 +5030,7 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): 
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
       const action = await vscode.window.showWarningMessage(
-        'Open a workspace folder first to initialize Pydevice Explorer.',
+        'Open a workspace folder first to Initialize Pydevice Workspace.',
         'Open Folder'
       );
       if (action === 'Open Folder') {

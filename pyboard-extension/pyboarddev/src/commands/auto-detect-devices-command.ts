@@ -5,7 +5,7 @@
  */
 import * as vscode from 'vscode';
 import { logChannelOutput } from '../output-channel';
-import { listAllSerialPorts, PortInfo } from '../utils/serial-port';
+import { listAllSerialPorts } from '../utils/serial-port';
 import { getConnectedBoardByPortPath } from './connect-board-command';
 import { ProbedSerialDevice, SerialDeviceProber } from '../devices/serial-device-prober';
 

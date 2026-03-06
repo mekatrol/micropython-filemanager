@@ -595,7 +595,7 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
 };
 
 export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext) => {
-  const command = vscode.commands.registerCommand('mekatrol.pydevice.connectboardesp32recovery', async (arg?: unknown) => {
+  const command = vscode.commands.registerCommand('mekatrol.pydevice.connectboardrecovery', async (arg?: unknown) => {
     const devicePath = typeof arg === 'string'
       ? arg
       : typeof arg === 'object' && arg && 'devicePath' in arg && typeof (arg as { devicePath?: unknown }).devicePath === 'string'

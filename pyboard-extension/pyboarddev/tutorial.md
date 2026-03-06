@@ -46,17 +46,61 @@ What each part is for:
 
 - `devices/` (or any folders you choose): these are the local folders your devices map to.
 - `.pydevice-config`: shared project settings. This should usually be committed so other developers get the same workspace setup. 
-- `.pydevice-cache`: local developer cache/settings. This is for machine/user-specific data and usually should not be shared.
-
-The reason there are two files is simple: some settings make sense for the whole team (`.pydevice-config`), while cached details only make sense for one developer (`.pydevice-cache`).
+- `.pydevice-cache`: local developer cache/settings. This is for user-specific preferences and usually isn't shared.
 
 ## Open and initialise workspace
 
-A workspace needs to be opened before you can initialise a workspace. The folder can contain other files, but the folder structure will need to confirm  
+### Open workspace folder
 
-## Initialise the workspace
+A workspace folder must be open in VS Code before you can initialise it.
 
-## Connnect a device
+You can open a folder from the VS Code file browser:
+
+![Open Folder](images/open-folder-1.png)
+
+Or from the Pydevice workspace view, which will take you to the same folder picker:
+
+![Open Folder](images/open-folder-2.png)
+
+### Initialise workspace
+
+After your folder is open, click **Initialise Workspace**.
+
+![Initialise Workspace](images/initialise-workspace.png)
+
+That sets up the Pydevice files and view for this project.
+
+When it is done, your workspace should look like this:
+
+![Initialised Workspace](images/initialised-workspace.png)
+
+![Initialised Workspace](images/initialised-browser.png)
+
+> IMPORTANT NOTE: If you picked a workspacefolder that already has files and folders then you will see those as well (they are not deleted or modified).
+
+## Connect devices
+
+### Auto detect and connect
+
+You can auto detect connected devices.
+
+![Auto detect devices](images/autodetect-devices.png)
+
+![Auto detect devices list](images/autodetect-list.png)
+
+Clicking any device in the list will connect to that device.
+
+### Connect by serial port
+
+You can also try connecting by selecting a serial port. This will let you pick any serial port, whether a device is known to be connected or not.
+
+![Connect serial port](images/connect-serial-port.png)
+
+![Connect serial port list](images/connect-serial-port-list.png)
+
+>>> TODO: Show linux serial port list view as well
+
+Clicking any device in the list will connect to that device.
 
 ## Create computer folder to sync device
 
