@@ -12,10 +12,11 @@ import { getWorkspaceCacheValue, setWorkspaceCacheValue } from '../utils/workspa
 import { ConnectedBoardRegistry, ConnectedBoardState, ConnectedBoardSnapshot } from '../devices/connected-board-registry';
 import { ReconnectStateStore } from '../devices/reconnect-state-store';
 import { toDeviceId } from '../devices/device-id';
-import { getDeviceNames, loadConfiguration } from '../utils/configuration';
+import { getDeviceNames, loadConfiguration, updateDeviceName } from '../utils/configuration';
 
 const reconnectLastSessionStateKey = 'reconnectLastSession';
 const reconnectDevicePathsStateKey = 'reconnectDevicePaths';
+const lastKnownDevicePortByIdStateKey = 'lastKnownDevicePortById';
 const defaultBaudRate = 115200;
 const runtimeInfoConnectRetryAttempts = 3;
 const runtimeInfoConnectRetryDelayMs = 250;
@@ -48,6 +49,69 @@ const reconnectStateStore = new ReconnectStateStore(
   reconnectLastSessionStateKey,
   reconnectDevicePathsStateKey
 );
+
+const readLastKnownDevicePorts = (): Record<string, string> => {
+  const raw = getWorkspaceCacheValue<unknown>(lastKnownDevicePortByIdStateKey);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {};
+  }
+
+  const entries = Object.entries(raw as Record<string, unknown>)
+    .filter(([deviceId, port]) => typeof deviceId === 'string' && deviceId.length > 0 && typeof port === 'string' && port.length > 0)
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  return Object.fromEntries(entries) as Record<string, string>;
+};
+
+const writeLastKnownDevicePorts = async (mapping: Record<string, string>): Promise<void> => {
+  await setWorkspaceCacheValue(lastKnownDevicePortByIdStateKey, mapping);
+};
+
+const setLastKnownDevicePort = async (deviceId: string, devicePath: string): Promise<void> => {
+  if (!deviceId || !devicePath) {
+    return;
+  }
+  const current = readLastKnownDevicePorts();
+  if (current[deviceId] === devicePath) {
+    return;
+  }
+  const next = { ...current, [deviceId]: devicePath };
+  await writeLastKnownDevicePorts(next);
+};
+
+const getDistinctConfiguredDeviceNames = (namesByDeviceId: Record<string, string>): Record<string, string> => {
+  const distinct: Record<string, string> = {};
+  const ownerByNameLower = new Map<string, string>();
+  const duplicateDetails: Array<{ name: string; existingDeviceId: string; ignoredDeviceId: string }> = [];
+
+  for (const deviceId of Object.keys(namesByDeviceId).sort((a, b) => a.localeCompare(b))) {
+    const rawName = namesByDeviceId[deviceId];
+    const name = rawName?.trim();
+    if (!name) {
+      continue;
+    }
+
+    const key = name.toLocaleLowerCase();
+    const existingOwner = ownerByNameLower.get(key);
+    if (existingOwner && existingOwner !== deviceId) {
+      duplicateDetails.push({ name, existingDeviceId: existingOwner, ignoredDeviceId: deviceId });
+      continue;
+    }
+
+    ownerByNameLower.set(key, deviceId);
+    distinct[deviceId] = name;
+  }
+
+  if (duplicateDetails.length > 0) {
+    const summary = duplicateDetails
+      .map((item) => `"${item.name}" kept for ${item.existingDeviceId}, ignored for ${item.ignoredDeviceId}`)
+      .join('; ');
+    const message = `Duplicate device names detected in .pydevice-config. ${summary}`;
+    logChannelOutput(message, true);
+    void vscode.window.showWarningMessage(message);
+  }
+
+  return distinct;
+};
 
 const wait = async (ms: number): Promise<void> => {
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -320,6 +384,7 @@ const connectBoardForPath = async (
 
   boardRegistry.add(state);
   await reconnectStateStore.addReconnectDevicePath(board.device);
+  await setLastKnownDevicePort(state.deviceId, board.device);
   await updateReconnectState(true);
   notifyStateChanged();
 
@@ -497,7 +562,7 @@ const pickConnectedDeviceId = async (placeHolder: string): Promise<string | unde
   return selected?.label;
 };
 
-type RecoveryReconnectStatus = 'resolving' | 'ready' | 'connecting' | 'connected' | 'error';
+type RecoveryReconnectStatus = 'resolving' | 'ready' | 'connecting' | 'connected' | 'not_connected' | 'error';
 
 interface RecoveryReconnectRow {
   id: string;
@@ -613,6 +678,7 @@ const renderRecoveryReconnectHtml = (rows: RecoveryReconnectRow[]): string => {
     const tbody = document.getElementById('rows');
     const passIconSvg = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.6484 5.64648C10.8434 5.45148 11.1605 5.45148 11.3555 5.64648C11.5498 5.84137 11.5499 6.15766 11.3555 6.35254L7.35547 10.3525C7.25747 10.4495 7.12898 10.499 7.00098 10.499C6.87299 10.499 6.74545 10.4505 6.64746 10.3525L4.64746 8.35254C4.45247 8.15754 4.45248 7.84148 4.64746 7.64648C4.84246 7.45148 5.15949 7.45148 5.35449 7.64648L7 9.29199L10.6465 5.64648H10.6484Z"></path><path fill-rule="evenodd" clip-rule="evenodd" d="M8 1C11.86 1 15 4.14 15 8C15 11.86 11.86 15 8 15C4.14 15 1 11.86 1 8C1 4.14 4.14 1 8 1ZM8 2C4.691 2 2 4.691 2 8C2 11.309 4.691 14 8 14C11.309 14 14 11.309 14 8C14 4.691 11.309 2 8 2Z"></path></svg>';
     const warningIconSvg = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M14.831 11.965L9.206 1.714C8.965 1.274 8.503 1 8 1C7.497 1 7.035 1.274 6.794 1.714L1.169 11.965C1.059 12.167 1 12.395 1 12.625C1 13.383 1.617 14 2.375 14H13.625C14.383 14 15 13.383 15 12.625C15 12.395 14.941 12.167 14.831 11.965ZM13.625 13H2.375C2.168 13 2 12.832 2 12.625C2 12.561 2.016 12.5 2.046 12.445L7.671 2.195C7.736 2.075 7.863 2 8 2C8.137 2 8.264 2.075 8.329 2.195L13.954 12.445C13.984 12.501 14 12.561 14 12.625C14 12.832 13.832 13 13.625 13ZM8.75 11.25C8.75 11.664 8.414 12 8 12C7.586 12 7.25 11.664 7.25 11.25C7.25 10.836 7.586 10.5 8 10.5C8.414 10.5 8.75 10.836 8.75 11.25ZM7.5 9V5.5C7.5 5.224 7.724 5 8 5C8.276 5 8.5 5.224 8.5 5.5V9C8.5 9.276 8.276 9.5 8 9.5C7.724 9.5 7.5 9.276 7.5 9Z"></path></svg>';
+    const disconnectedIconSvg = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 2.5C7 2.224 7.224 2 7.5 2C7.776 2 8 2.224 8 2.5V7.5C8 7.776 7.776 8 7.5 8C7.224 8 7 7.776 7 7.5V2.5ZM7.5 11.5C7.086 11.5 6.75 11.164 6.75 10.75C6.75 10.336 7.086 10 7.5 10C7.914 10 8.25 10.336 8.25 10.75C8.25 11.164 7.914 11.5 7.5 11.5ZM12.884 13.591L11.586 12.293C10.506 13.345 9.03 14 7.4 14C4.093 14 1.4 11.309 1.4 8C1.4 5.316 3.172 3.041 5.607 2.284C5.871 2.202 6.149 2.35 6.231 2.613C6.313 2.877 6.165 3.155 5.902 3.237C3.874 3.867 2.4 5.762 2.4 8C2.4 10.758 4.643 13 7.4 13C8.753 13 9.979 12.46 10.88 11.586L9.62 10.326C9.425 10.131 9.425 9.815 9.62 9.62C9.815 9.425 10.131 9.425 10.326 9.62L13.591 12.884C13.786 13.079 13.786 13.395 13.591 13.59C13.396 13.786 13.079 13.786 12.884 13.591Z"></path></svg>';
 
     const statusHtml = (row) => {
       if (row.status === 'resolving') {
@@ -628,15 +694,21 @@ const renderRecoveryReconnectHtml = (rows: RecoveryReconnectRow[]): string => {
         const errText = row.errorText ? ' - ' + row.errorText : '';
         return '<span class="status-wrap err"><span class="icon">' + warningIconSvg + '</span><span>Error' + errText + '</span></span>';
       }
+      if (row.status === 'not_connected') {
+        return '<span class="status-wrap secondary-text"><span class="icon">' + disconnectedIconSvg + '</span><span>Not connected</span></span>';
+      }
       return '<button type="button" class="link" data-action="reconnect" data-id="' + row.id + '">Reconnect</button>';
     };
 
     const render = () => {
       tbody.innerHTML = '';
       for (const row of rows) {
+        const nameHtml = row.deviceName
+          ? row.deviceName
+          : ('<button type="button" class="link" data-action="set-name" data-id="' + row.id + '">Set device name</button>');
         const tr = document.createElement('tr');
         tr.innerHTML =
-          '<td class="name">' + (row.deviceName || '') + '</td>' +
+          '<td class="name">' + nameHtml + '</td>' +
           '<td class="id">' + (row.deviceId || '') + '</td>' +
           '<td class="port">' + (row.serialPortName || '') + '</td>' +
           '<td class="status">' + statusHtml(row) + '</td>';
@@ -645,6 +717,11 @@ const renderRecoveryReconnectHtml = (rows: RecoveryReconnectRow[]): string => {
       for (const button of document.querySelectorAll('button[data-action="reconnect"]')) {
         button.addEventListener('click', () => {
           vscode.postMessage({ type: 'reconnect', rowId: button.dataset.id });
+        });
+      }
+      for (const button of document.querySelectorAll('button[data-action="set-name"]')) {
+        button.addEventListener('click', () => {
+          vscode.postMessage({ type: 'setName', rowId: button.dataset.id });
         });
       }
     };
@@ -663,6 +740,11 @@ const renderRecoveryReconnectHtml = (rows: RecoveryReconnectRow[]): string => {
         } else {
           rows.push(message.row);
         }
+        render();
+        return;
+      }
+      if (message.type === 'replaceRows' && Array.isArray(message.rows)) {
+        rows.splice(0, rows.length, ...message.rows);
         render();
       }
     });
@@ -705,7 +787,7 @@ const pickSerialPortToConnect = async (
   let configuredDeviceNames: Record<string, string> = {};
   if (recoveryMode) {
     const configuration = await loadConfiguration();
-    configuredDeviceNames = getDeviceNames(configuration);
+    configuredDeviceNames = getDistinctConfiguredDeviceNames(getDeviceNames(configuration));
   }
 
   const connectedSnapshots = boardRegistry.getSnapshots();
@@ -844,23 +926,29 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
     }
 
     const configuration = await loadConfiguration();
-    const configuredDeviceNames = getDeviceNames(configuration);
-    const connectedByPath = new Map(boardRegistry.getSnapshots().map((item) => [item.devicePath, item.deviceId]));
-
-    const rows: RecoveryReconnectRow[] = ports.map((port) => {
-      const serialPortName = path.basename(port.path);
-      const connectedDeviceId = connectedByPath.get(port.path);
-      const deviceId = connectedDeviceId ?? toDeviceId(port.path);
-      return {
-        id: port.path,
-        devicePath: port.path,
-        serialPortName,
-        deviceId,
-        deviceName: configuredDeviceNames[deviceId] ?? '',
-        status: connectedDeviceId ? 'connected' : 'resolving',
-        details: [port.manufacturer, `VID:${port.vendorId}`, `PID:${port.productId}`].filter(Boolean).join(' | ')
-      };
-    });
+    let configuredDeviceNames = getDistinctConfiguredDeviceNames(getDeviceNames(configuration));
+    let configuredDeviceIds = Object.keys(configuration.devices ?? {}).sort((a, b) => a.localeCompare(b));
+    const configuredDeviceIdSet = new Set(configuredDeviceIds);
+    const lastKnownDevicePortById = readLastKnownDevicePorts();
+    const updateLastKnownDevicePort = async (deviceId: string, serialPortPath: string): Promise<void> => {
+      if (!deviceId || !serialPortPath) {
+        return;
+      }
+      if (lastKnownDevicePortById[deviceId] === serialPortPath) {
+        return;
+      }
+      lastKnownDevicePortById[deviceId] = serialPortPath;
+      await writeLastKnownDevicePorts(lastKnownDevicePortById);
+    };
+    const refreshConfiguredMappings = async (): Promise<void> => {
+      const nextConfig = await loadConfiguration();
+      configuredDeviceNames = getDistinctConfiguredDeviceNames(getDeviceNames(nextConfig));
+      configuredDeviceIds = Object.keys(nextConfig.devices ?? {}).sort((a, b) => a.localeCompare(b));
+      configuredDeviceIdSet.clear();
+      for (const deviceId of configuredDeviceIds) {
+        configuredDeviceIdSet.add(deviceId);
+      }
+    };
 
     const panel = vscode.window.createWebviewPanel(
       'pydevice.recoveryReconnect',
@@ -868,13 +956,191 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true }
     );
-    panel.webview.html = renderRecoveryReconnectHtml(rows);
+    panel.webview.html = renderRecoveryReconnectHtml([]);
+
+    let rowsById = new Map<string, RecoveryReconnectRow>();
+    const resolvedDeviceIdByPath = new Map<string, string>();
+    const probingPaths = new Set<string>();
+    let disposed = false;
+    let reconcileInProgress = false;
+    let reconcilePending = false;
+
+    panel.onDidDispose(() => {
+      disposed = true;
+    });
+
+    const pushRows = (): void => {
+      const sortedRows = [...rowsById.values()].sort((a, b) => {
+        const aKey = (a.deviceName || a.deviceId || a.serialPortName).toLocaleLowerCase();
+        const bKey = (b.deviceName || b.deviceId || b.serialPortName).toLocaleLowerCase();
+        return aKey.localeCompare(bKey);
+      });
+      void panel.webview.postMessage({ type: 'replaceRows', rows: sortedRows });
+    };
 
     const updateRow = (row: RecoveryReconnectRow): void => {
       void panel.webview.postMessage({ type: 'updateRow', row });
     };
 
+    const reconcileRows = async (knownPorts?: Awaited<ReturnType<typeof listSerialDevices>>): Promise<void> => {
+      if (disposed) {
+        return;
+      }
+      if (reconcileInProgress) {
+        reconcilePending = true;
+        return;
+      }
+      reconcileInProgress = true;
+
+      try {
+        let activePorts = knownPorts;
+        if (!activePorts) {
+          try {
+            activePorts = await listSerialDevices();
+          } catch {
+            activePorts = [];
+          }
+        }
+        const currentPortPaths = new Set(activePorts.map((port) => port.path));
+        for (const devicePath of [...resolvedDeviceIdByPath.keys()]) {
+          if (!currentPortPaths.has(devicePath)) {
+            resolvedDeviceIdByPath.delete(devicePath);
+          }
+        }
+
+        const nextRows = new Map<string, RecoveryReconnectRow>();
+        const seenConfiguredDeviceIds = new Set<string>();
+        const claimedConfiguredIdByPort = new Map<string, string>();
+
+        for (const port of activePorts) {
+          const connectedState = getConnectedBoardStateByPortPath(port.path);
+          const connectedDeviceId = connectedState?.deviceId;
+          if (connectedDeviceId && configuredDeviceIdSet.has(connectedDeviceId)) {
+            claimedConfiguredIdByPort.set(port.path, connectedDeviceId);
+            seenConfiguredDeviceIds.add(connectedDeviceId);
+            continue;
+          }
+
+          const cachedCandidate = configuredDeviceIds.find((deviceId) =>
+            !seenConfiguredDeviceIds.has(deviceId) && lastKnownDevicePortById[deviceId] === port.path
+          );
+          if (cachedCandidate) {
+            claimedConfiguredIdByPort.set(port.path, cachedCandidate);
+            seenConfiguredDeviceIds.add(cachedCandidate);
+          }
+        }
+
+        for (const port of activePorts) {
+          const claimedConfiguredId = claimedConfiguredIdByPort.get(port.path);
+          const initialRowId = claimedConfiguredId ? `config:${claimedConfiguredId}` : `port:${port.path}`;
+          let rowId = initialRowId;
+          let existing = rowsById.get(rowId);
+          const serialPortName = path.basename(port.path);
+          const connectedState = getConnectedBoardStateByPortPath(port.path);
+          const connectedDeviceId = connectedState?.deviceId;
+          if (connectedDeviceId) {
+            resolvedDeviceIdByPath.set(port.path, connectedDeviceId);
+            void updateLastKnownDevicePort(connectedDeviceId, port.path);
+          }
+          const resolvedDeviceId = connectedDeviceId ?? resolvedDeviceIdByPath.get(port.path);
+          let deviceId = claimedConfiguredId ?? resolvedDeviceId ?? toDeviceId(port.path);
+
+          if (
+            claimedConfiguredId
+            && resolvedDeviceId
+            && resolvedDeviceId !== claimedConfiguredId
+            && !connectedState
+          ) {
+            // Port appeared where a configured device was last seen, but probed ID does not match.
+            // Keep the configured row as not connected and create a distinct port row.
+            rowId = `port:${port.path}`;
+            existing = rowsById.get(rowId);
+            deviceId = resolvedDeviceId;
+            seenConfiguredDeviceIds.delete(claimedConfiguredId);
+          }
+
+          if (configuredDeviceIdSet.has(deviceId)) {
+            seenConfiguredDeviceIds.add(deviceId);
+          }
+
+          let status: RecoveryReconnectStatus;
+          if (connectedState) {
+            status = 'connected';
+          } else if (existing?.status === 'connecting') {
+            status = 'connecting';
+          } else if (existing?.status === 'error') {
+            status = 'error';
+          } else if (resolvedDeviceId) {
+            status = 'ready';
+          } else {
+            status = 'resolving';
+          }
+
+          const row: RecoveryReconnectRow = {
+            id: rowId,
+            devicePath: port.path,
+            serialPortName,
+            deviceId,
+            deviceName: configuredDeviceNames[deviceId] ?? '',
+            status,
+            errorText: status === 'error' ? existing?.errorText : undefined,
+            details: [port.manufacturer, `VID:${port.vendorId}`, `PID:${port.productId}`].filter(Boolean).join(' | ')
+          };
+          nextRows.set(rowId, row);
+
+          if (!resolvedDeviceId && !probingPaths.has(port.path)) {
+            probingPaths.add(port.path);
+            void (async () => {
+              const probedDeviceId = await probeRecoveryDeviceId(port.path);
+              probingPaths.delete(port.path);
+              if (disposed) {
+                return;
+              }
+              const nextDeviceId = probedDeviceId ?? toDeviceId(port.path);
+              resolvedDeviceIdByPath.set(port.path, nextDeviceId);
+              if (probedDeviceId) {
+                void updateLastKnownDevicePort(probedDeviceId, port.path);
+              }
+              await reconcileRows();
+            })();
+          }
+        }
+
+        for (const configuredDeviceId of configuredDeviceIds) {
+          if (seenConfiguredDeviceIds.has(configuredDeviceId)) {
+            continue;
+          }
+          const connectedState = boardRegistry.getByDeviceId(configuredDeviceId);
+          const connectedPath = connectedState?.board.device;
+          const rememberedPort = lastKnownDevicePortById[configuredDeviceId];
+          const serialPortPath = connectedPath ?? rememberedPort ?? '';
+          const serialPortName = serialPortPath ? path.basename(serialPortPath) : '';
+          const rowId = `config:${configuredDeviceId}`;
+          nextRows.set(rowId, {
+            id: rowId,
+            devicePath: serialPortPath,
+            serialPortName,
+            deviceId: configuredDeviceId,
+            deviceName: configuredDeviceNames[configuredDeviceId] ?? '',
+            status: connectedState ? 'connected' : 'not_connected'
+          });
+        }
+
+        rowsById = nextRows;
+        pushRows();
+      } finally {
+        reconcileInProgress = false;
+        if (reconcilePending) {
+          reconcilePending = false;
+          void reconcileRows();
+        }
+      }
+    };
+
     const connectRow = async (row: RecoveryReconnectRow): Promise<void> => {
+      if (!row.devicePath) {
+        return;
+      }
       const currentlyConnected = getConnectedBoardByPortPath(row.devicePath);
       if (currentlyConnected) {
         row.status = 'connected';
@@ -889,10 +1155,9 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
       try {
         const state = await connectBoardForPath(row.devicePath, defaultBaudRate, true, true);
         const nextDeviceId = state?.deviceId ?? row.deviceId;
-        row.deviceId = nextDeviceId;
-        row.deviceName = configuredDeviceNames[nextDeviceId] ?? '';
-        row.status = 'connected';
-        updateRow(row);
+        resolvedDeviceIdByPath.set(row.devicePath, nextDeviceId);
+        void updateLastKnownDevicePort(nextDeviceId, row.devicePath);
+        await reconcileRows();
       } catch (error) {
         row.status = 'error';
         row.errorText = error instanceof Error ? error.message : String(error);
@@ -901,7 +1166,9 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
     };
 
     const connectAll = async (): Promise<void> => {
-      const candidates = rows.filter((row) => row.status === 'ready' || row.status === 'error');
+      const candidates = [...rowsById.values()].filter(
+        (row) => row.devicePath.length > 0 && (row.status === 'ready' || row.status === 'error')
+      );
       for (const row of candidates) {
         // Sequential connect to avoid multiple simultaneous serial handshake collisions.
         await connectRow(row);
@@ -922,26 +1189,60 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
         return;
       }
       if (typed.type === 'reconnect' && typeof typed.rowId === 'string') {
-        const row = rows.find((item) => item.id === typed.rowId);
+        const row = rowsById.get(typed.rowId);
         if (!row) {
           return;
         }
         void connectRow(row);
+        return;
+      }
+      if (typed.type === 'setName' && typeof typed.rowId === 'string') {
+        const row = rowsById.get(typed.rowId);
+        if (!row || !row.deviceId) {
+          return;
+        }
+        void (async () => {
+          const suggested = row.deviceName || '';
+          const name = await vscode.window.showInputBox({
+            title: 'Set Device Name',
+            prompt: `Set device name for ${row.deviceId}`,
+            value: suggested,
+            ignoreFocusOut: true,
+            validateInput: (value) => {
+              const trimmed = value.trim();
+              if (!trimmed) {
+                return 'Device name is required.';
+              }
+              return undefined;
+            }
+          });
+          if (!name) {
+            return;
+          }
+
+          try {
+            await updateDeviceName(row.deviceId, name);
+            await refreshConfiguredMappings();
+            await reconcileRows();
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            const msg = `Failed to set device name for ${row.deviceId}. ${reason}`;
+            vscode.window.showErrorMessage(msg);
+            logChannelOutput(msg, true);
+          }
+        })();
       }
     });
 
-    for (const row of rows) {
-      if (row.status === 'connected') {
-        continue;
+    const monitorTimer = setInterval(() => {
+      if (disposed) {
+        clearInterval(monitorTimer);
+        return;
       }
-      void (async () => {
-        const resolvedDeviceId = await probeRecoveryDeviceId(row.devicePath);
-        row.deviceId = resolvedDeviceId ?? toDeviceId(row.devicePath);
-        row.deviceName = configuredDeviceNames[row.deviceId] ?? '';
-        row.status = getConnectedBoardByPortPath(row.devicePath) ? 'connected' : 'ready';
-        updateRow(row);
-      })();
-    }
+      void reconcileRows();
+    }, 2000);
+    panel.onDidDispose(() => clearInterval(monitorTimer));
+    await reconcileRows(ports);
   });
 
   context.subscriptions.push(command);

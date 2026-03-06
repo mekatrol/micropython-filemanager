@@ -14,6 +14,7 @@ type WorkspaceCache = Record<string, unknown>;
 const defaultWorkspaceCache: WorkspaceCache = {
   reconnectLastSession: false,
   reconnectDevicePaths: [],
+  lastKnownDevicePortById: {},
   replHistoryByDevice: {}
 };
 
