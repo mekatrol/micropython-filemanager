@@ -72,7 +72,6 @@ const defaultBaudRate = 115200;
 const deviceExplorerAutoRefreshIntervalMs = 5000;
 const deviceCreateConfirmTimeoutMs = 6000;
 const deviceCreateConfirmPollIntervalMs = 150;
-const hostSyncRootFolder = '.pyboard-sync';
 const hasHostSyncChildFoldersContextKey = 'mekatrol.pyboarddev.hasHostSyncChildFolders';
 const hasLinkedHostMappingsContextKey = 'mekatrol.pyboarddev.hasLinkedHostMappings';
 const explorerHasWorkspaceContextKey = 'mekatrol.pyboarddev.explorerHasWorkspace';
@@ -180,10 +179,9 @@ class DeviceSyncModel {
   private lastRefreshError: string | undefined;
   private hasWarnedNoWorkspaceFolder = false;
   private hasWarnedMissingConfiguration = false;
-  private hasWarnedMissingSyncFolder = false;
   private explorerReady = false;
   private hasConfigurationFile = false;
-  private hasSyncFolder = false;
+  private hasSyncFolder = true;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -236,7 +234,7 @@ class DeviceSyncModel {
     this.workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     const hasWorkspace = !!this.workspaceFolder;
     let hasConfiguration = false;
-    let hasSyncFolder = false;
+    const hasSyncFolder = hasWorkspace;
     if (hasWorkspace && this.workspaceFolder) {
       const configUri = this.workspaceFolder.uri.with({
         path: path.posix.join(this.workspaceFolder.uri.path, configurationFileName)
@@ -246,14 +244,6 @@ class DeviceSyncModel {
         hasConfiguration = true;
       } catch {
         hasConfiguration = false;
-      }
-
-      const syncRootPath = path.join(this.workspaceFolder.uri.fsPath, hostSyncRootFolder);
-      try {
-        const syncStat = await fs.stat(syncRootPath);
-        hasSyncFolder = syncStat.isDirectory();
-      } catch {
-        hasSyncFolder = false;
       }
     }
     this.hasConfigurationFile = hasConfiguration;
@@ -304,27 +294,6 @@ class DeviceSyncModel {
       return;
     }
     this.hasWarnedMissingConfiguration = false;
-    if (!hasSyncFolder) {
-      if (!this.hasWarnedMissingSyncFolder) {
-        const message = `Create ${hostSyncRootFolder}/ in the workspace folder to enable Pyboard Explorer.`;
-        this.hasWarnedMissingSyncFolder = true;
-        vscode.window.showWarningMessage(message);
-        logChannelOutput(message, true);
-      }
-      this.computerEntries = [{ relativePath: '', isDirectory: true }];
-      this.deviceEntries = [{ relativePath: '', isDirectory: true }];
-      this.syncStates = new Map();
-      this.linkableHostFolders = [];
-      this.deviceLibraryFolderMappings = {};
-      this.librariesByDeviceId.clear();
-      this.deviceSyncExcludedPaths = {};
-      await vscode.commands.executeCommand('setContext', hasHostSyncChildFoldersContextKey, false);
-      await vscode.commands.executeCommand('setContext', hasLinkedHostMappingsContextKey, false);
-      this.onDidChangeDataEmitter.fire();
-      return;
-    }
-    this.hasWarnedMissingSyncFolder = false;
-
     const config = await loadConfiguration();
     this.deviceHostFolderMappings = getDeviceHostFolderMappings(config);
     this.deviceLibraryFolderMappings = getDeviceLibraryFolderMappings(config);
@@ -412,7 +381,7 @@ class DeviceSyncModel {
       return undefined;
     }
 
-    return path.join(this.workspaceFolder.uri.fsPath, hostSyncRootFolder);
+    return this.workspaceFolder.uri.fsPath;
   }
 
   private async getLinkableHostFolders(): Promise<string[]> {
@@ -424,7 +393,7 @@ class DeviceSyncModel {
       const children = await fs.readdir(syncRootPath, { withFileTypes: true });
       return children
         .filter((child) => child.isDirectory())
-        .map((child) => toRelativePath(path.posix.join(hostSyncRootFolder, child.name)))
+        .map((child) => toRelativePath(child.name))
         .sort((a, b) => a.localeCompare(b));
     } catch {
       return [];
@@ -2949,7 +2918,7 @@ class DeviceSyncModel {
   }
 
   hasWorkspaceSyncFolder(): boolean {
-    return this.hasSyncFolder;
+    return true;
   }
 
   getKnownDeviceIds(): string[] {
@@ -3412,7 +3381,7 @@ class DeviceSyncModel {
     });
 
     if (folderOptions.length === 0) {
-      vscode.window.showWarningMessage(`No computer folders available under ${hostSyncRootFolder}/.`);
+      vscode.window.showWarningMessage('No computer folders available at workspace root.');
       return;
     }
 
@@ -4658,9 +4627,6 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
         if (!this.model.hasConfigurationFolder()) {
           missing.push(configurationFileName);
         }
-        if (!this.model.hasWorkspaceSyncFolder()) {
-          missing.push(hostSyncRootFolder);
-        }
         label = missing.length > 0
           ? `Initialize workspace (${missing.join(', ')}) to enable Pyboard Explorer`
           : 'Complete Pyboard Explorer setup';
@@ -5087,15 +5053,6 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): 
       createdItems.push(configurationFileName);
     } else {
       existingItems.push(configurationFileName);
-    }
-
-    const syncRootPath = path.join(workspaceFolder.uri.fsPath, hostSyncRootFolder);
-    try {
-      await fs.stat(syncRootPath);
-      existingItems.push(hostSyncRootFolder);
-    } catch {
-      await fs.mkdir(syncRootPath, { recursive: true });
-      createdItems.push(hostSyncRootFolder);
     }
 
     const createdCache = await createDefaultWorkspaceCacheFile();
