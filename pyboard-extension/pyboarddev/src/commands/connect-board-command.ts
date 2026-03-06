@@ -497,6 +497,187 @@ const pickConnectedDeviceId = async (placeHolder: string): Promise<string | unde
   return selected?.label;
 };
 
+type RecoveryReconnectStatus = 'resolving' | 'ready' | 'connecting' | 'connected' | 'error';
+
+interface RecoveryReconnectRow {
+  id: string;
+  devicePath: string;
+  serialPortName: string;
+  deviceId: string;
+  deviceName: string;
+  status: RecoveryReconnectStatus;
+  errorText?: string;
+  details?: string;
+}
+
+const probeRecoveryDeviceId = async (devicePath: string): Promise<string | undefined> => {
+  const board = new Pydevice(devicePath, defaultBaudRate, false);
+  try {
+    await board.open();
+    const runtimeInfo = await board.probeBoardRuntimeInfo(1800);
+    return toDeviceId(devicePath, runtimeInfo);
+  } catch {
+    return undefined;
+  } finally {
+    try {
+      await board.close();
+    } catch {
+      // Ignore close failures during non-fatal probing.
+    }
+  }
+};
+
+const renderRecoveryReconnectHtml = (rows: RecoveryReconnectRow[]): string => {
+  const rowsJson = JSON.stringify(rows);
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Recovery Reconnect</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin: 0; font-family: var(--vscode-font-family); color: var(--vscode-foreground); }
+    .wrap { max-width: 1100px; margin: 28px auto; padding: 0 20px 20px; }
+    h2 { margin: 0 0 10px; font-size: 16px; }
+    .hint { margin: 0 0 12px; opacity: 0.9; }
+    table { width: 100%; border-collapse: collapse; border: 1px solid var(--vscode-editorWidget-border); table-layout: fixed; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid var(--vscode-editorWidget-border); vertical-align: middle; }
+    th { text-align: left; font-weight: 600; }
+    th.name, td.name { width: 200px; }
+    th.id, td.id { width: 320px; }
+    th.port, td.port { width: 200px; }
+    th.status, td.status { width: 220px; }
+    td.id, td.port { font-family: var(--vscode-editor-font-family); font-size: 12px; }
+    .status-wrap { display: inline-flex; align-items: center; gap: 8px; }
+    .icon { width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; }
+    .icon svg { width: 14px; height: 14px; fill: currentColor; }
+    .spinner {
+      width: 12px;
+      height: 12px;
+      border: 2px solid var(--vscode-descriptionForeground);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .ok { color: var(--vscode-charts-green); font-weight: 600; }
+    .err { color: var(--vscode-errorForeground); }
+    .secondary-text { color: var(--vscode-descriptionForeground); }
+    .link {
+      color: var(--vscode-textLink-foreground);
+      text-decoration: underline;
+      background: none;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      font: inherit;
+    }
+    .buttons { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }
+    button {
+      border: 1px solid var(--vscode-button-border, transparent);
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      padding: 6px 14px;
+      cursor: pointer;
+    }
+    button.secondary {
+      background: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h2>Recovery Reconnect</h2>
+    <p class="hint">Device IDs are probed in the background. Reconnect individual rows or use Connect all.</p>
+    <table>
+      <thead>
+        <tr>
+          <th class="name">Device Name</th>
+          <th class="id">Device ID</th>
+          <th class="port">Serial Port</th>
+          <th class="status">Status</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="buttons">
+      <button id="connectAll">Connect all</button>
+      <button id="close" class="secondary">Close</button>
+    </div>
+  </div>
+  <script>
+    const vscode = acquireVsCodeApi();
+    const rows = ${rowsJson};
+    const tbody = document.getElementById('rows');
+    const passIconSvg = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.6484 5.64648C10.8434 5.45148 11.1605 5.45148 11.3555 5.64648C11.5498 5.84137 11.5499 6.15766 11.3555 6.35254L7.35547 10.3525C7.25747 10.4495 7.12898 10.499 7.00098 10.499C6.87299 10.499 6.74545 10.4505 6.64746 10.3525L4.64746 8.35254C4.45247 8.15754 4.45248 7.84148 4.64746 7.64648C4.84246 7.45148 5.15949 7.45148 5.35449 7.64648L7 9.29199L10.6465 5.64648H10.6484Z"></path><path fill-rule="evenodd" clip-rule="evenodd" d="M8 1C11.86 1 15 4.14 15 8C15 11.86 11.86 15 8 15C4.14 15 1 11.86 1 8C1 4.14 4.14 1 8 1ZM8 2C4.691 2 2 4.691 2 8C2 11.309 4.691 14 8 14C11.309 14 14 11.309 14 8C14 4.691 11.309 2 8 2Z"></path></svg>';
+    const warningIconSvg = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M14.831 11.965L9.206 1.714C8.965 1.274 8.503 1 8 1C7.497 1 7.035 1.274 6.794 1.714L1.169 11.965C1.059 12.167 1 12.395 1 12.625C1 13.383 1.617 14 2.375 14H13.625C14.383 14 15 13.383 15 12.625C15 12.395 14.941 12.167 14.831 11.965ZM13.625 13H2.375C2.168 13 2 12.832 2 12.625C2 12.561 2.016 12.5 2.046 12.445L7.671 2.195C7.736 2.075 7.863 2 8 2C8.137 2 8.264 2.075 8.329 2.195L13.954 12.445C13.984 12.501 14 12.561 14 12.625C14 12.832 13.832 13 13.625 13ZM8.75 11.25C8.75 11.664 8.414 12 8 12C7.586 12 7.25 11.664 7.25 11.25C7.25 10.836 7.586 10.5 8 10.5C8.414 10.5 8.75 10.836 8.75 11.25ZM7.5 9V5.5C7.5 5.224 7.724 5 8 5C8.276 5 8.5 5.224 8.5 5.5V9C8.5 9.276 8.276 9.5 8 9.5C7.724 9.5 7.5 9.276 7.5 9Z"></path></svg>';
+
+    const statusHtml = (row) => {
+      if (row.status === 'resolving') {
+        return '<span class="status-wrap"><span class="spinner"></span><span class="secondary-text">Fetching ID...</span></span>';
+      }
+      if (row.status === 'connecting') {
+        return '<span class="status-wrap"><span class="spinner"></span><span>Connecting...</span></span>';
+      }
+      if (row.status === 'connected') {
+        return '<span class="status-wrap ok"><span class="icon">' + passIconSvg + '</span><span>Connected</span></span>';
+      }
+      if (row.status === 'error') {
+        const errText = row.errorText ? ' - ' + row.errorText : '';
+        return '<span class="status-wrap err"><span class="icon">' + warningIconSvg + '</span><span>Error' + errText + '</span></span>';
+      }
+      return '<button type="button" class="link" data-action="reconnect" data-id="' + row.id + '">Reconnect</button>';
+    };
+
+    const render = () => {
+      tbody.innerHTML = '';
+      for (const row of rows) {
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td class="name">' + (row.deviceName || '') + '</td>' +
+          '<td class="id">' + (row.deviceId || '') + '</td>' +
+          '<td class="port">' + (row.serialPortName || '') + '</td>' +
+          '<td class="status">' + statusHtml(row) + '</td>';
+        tbody.appendChild(tr);
+      }
+      for (const button of document.querySelectorAll('button[data-action="reconnect"]')) {
+        button.addEventListener('click', () => {
+          vscode.postMessage({ type: 'reconnect', rowId: button.dataset.id });
+        });
+      }
+    };
+
+    render();
+
+    window.addEventListener('message', (event) => {
+      const message = event.data;
+      if (!message || typeof message !== 'object') {
+        return;
+      }
+      if (message.type === 'updateRow' && message.row && typeof message.row.id === 'string') {
+        const index = rows.findIndex((item) => item.id === message.row.id);
+        if (index >= 0) {
+          rows[index] = message.row;
+        } else {
+          rows.push(message.row);
+        }
+        render();
+      }
+    });
+
+    document.getElementById('connectAll').addEventListener('click', () => {
+      vscode.postMessage({ type: 'connectAll' });
+    });
+    document.getElementById('close').addEventListener('click', () => {
+      vscode.postMessage({ type: 'close' });
+    });
+  </script>
+</body>
+</html>`;
+};
+
 const pickSerialPortToConnect = async (
   onlyUnconnected: boolean = false,
   recoveryMode: boolean = false
@@ -539,20 +720,7 @@ const pickSerialPortToConnect = async (
       return undefined;
     }
 
-    const board = new Pydevice(devicePath, defaultBaudRate, false);
-    try {
-      await board.open();
-      const runtimeInfo = await board.probeBoardRuntimeInfo(1800);
-      return toDeviceId(devicePath, runtimeInfo);
-    } catch {
-      return undefined;
-    } finally {
-      try {
-        await board.close();
-      } catch {
-        // Ignore close failures during non-fatal picker probing.
-      }
-    }
+    return probeRecoveryDeviceId(devicePath);
   };
 
   const items = await Promise.all(candidatePorts.map(async (port) => {
@@ -648,11 +816,132 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
         ? (arg as { devicePath: string }).devicePath
         : undefined;
 
-    await vscode.commands.executeCommand('mekatrol.pydevice.connectboard', {
-      forcePickPort: !devicePath,
-      devicePath,
-      recoveryMode: true
+    if (devicePath) {
+      await vscode.commands.executeCommand('mekatrol.pydevice.connectboard', {
+        forcePickPort: false,
+        devicePath,
+        recoveryMode: true
+      });
+      return;
+    }
+
+    let ports: Awaited<ReturnType<typeof listSerialDevices>>;
+    try {
+      ports = await listSerialDevices();
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      const msg = `Unable to list serial ports. ${reason}`;
+      vscode.window.showErrorMessage(msg);
+      logChannelOutput(msg, true);
+      return;
+    }
+
+    if (ports.length === 0) {
+      const msg = 'No serial devices found.';
+      vscode.window.showWarningMessage(msg);
+      logChannelOutput(msg, true);
+      return;
+    }
+
+    const configuration = await loadConfiguration();
+    const configuredDeviceNames = getDeviceNames(configuration);
+    const connectedByPath = new Map(boardRegistry.getSnapshots().map((item) => [item.devicePath, item.deviceId]));
+
+    const rows: RecoveryReconnectRow[] = ports.map((port) => {
+      const serialPortName = path.basename(port.path);
+      const connectedDeviceId = connectedByPath.get(port.path);
+      const deviceId = connectedDeviceId ?? toDeviceId(port.path);
+      return {
+        id: port.path,
+        devicePath: port.path,
+        serialPortName,
+        deviceId,
+        deviceName: configuredDeviceNames[deviceId] ?? '',
+        status: connectedDeviceId ? 'connected' : 'resolving',
+        details: [port.manufacturer, `VID:${port.vendorId}`, `PID:${port.productId}`].filter(Boolean).join(' | ')
+      };
     });
+
+    const panel = vscode.window.createWebviewPanel(
+      'pydevice.recoveryReconnect',
+      'Recovery Reconnect',
+      { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
+      { enableScripts: true }
+    );
+    panel.webview.html = renderRecoveryReconnectHtml(rows);
+
+    const updateRow = (row: RecoveryReconnectRow): void => {
+      void panel.webview.postMessage({ type: 'updateRow', row });
+    };
+
+    const connectRow = async (row: RecoveryReconnectRow): Promise<void> => {
+      const currentlyConnected = getConnectedBoardByPortPath(row.devicePath);
+      if (currentlyConnected) {
+        row.status = 'connected';
+        updateRow(row);
+        return;
+      }
+
+      row.status = 'connecting';
+      row.errorText = undefined;
+      updateRow(row);
+
+      try {
+        const state = await connectBoardForPath(row.devicePath, defaultBaudRate, true, true);
+        const nextDeviceId = state?.deviceId ?? row.deviceId;
+        row.deviceId = nextDeviceId;
+        row.deviceName = configuredDeviceNames[nextDeviceId] ?? '';
+        row.status = 'connected';
+        updateRow(row);
+      } catch (error) {
+        row.status = 'error';
+        row.errorText = error instanceof Error ? error.message : String(error);
+        updateRow(row);
+      }
+    };
+
+    const connectAll = async (): Promise<void> => {
+      const candidates = rows.filter((row) => row.status === 'ready' || row.status === 'error');
+      for (const row of candidates) {
+        // Sequential connect to avoid multiple simultaneous serial handshake collisions.
+        await connectRow(row);
+      }
+    };
+
+    panel.webview.onDidReceiveMessage((message: unknown) => {
+      if (!message || typeof message !== 'object') {
+        return;
+      }
+      const typed = message as { type?: string; rowId?: string };
+      if (typed.type === 'close') {
+        panel.dispose();
+        return;
+      }
+      if (typed.type === 'connectAll') {
+        void connectAll();
+        return;
+      }
+      if (typed.type === 'reconnect' && typeof typed.rowId === 'string') {
+        const row = rows.find((item) => item.id === typed.rowId);
+        if (!row) {
+          return;
+        }
+        void connectRow(row);
+      }
+    });
+
+    for (const row of rows) {
+      if (row.status === 'connected') {
+        continue;
+      }
+      void (async () => {
+        const resolvedDeviceId = await probeRecoveryDeviceId(row.devicePath);
+        row.deviceId = resolvedDeviceId ?? toDeviceId(row.devicePath);
+        row.deviceName = configuredDeviceNames[row.deviceId] ?? '';
+        row.status = getConnectedBoardByPortPath(row.devicePath) ? 'connected' : 'ready';
+        updateRow(row);
+      })();
+    }
   });
 
   context.subscriptions.push(command);
