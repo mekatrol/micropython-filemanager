@@ -103,6 +103,7 @@
       {
         "command": "mekatrol.pyboarddev.comparedevicewithcomputer",
         "title": "Compare Device File With Computer",
+        "enablement": "viewItem != pyboarddev.deviceFileUnlinked && viewItem != pyboarddev.deviceFileExcludedUnlinked && viewItem != pyboarddev.deviceFileHostMissing && viewItem != pyboarddev.deviceFileExcludedHostMissing",
         "icon": "$(diff)"
       },
       {
@@ -440,32 +441,32 @@
         },
         {
           "command": "mekatrol.pyboarddev.opendevicefile",
-          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFileExcluded)",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceFileLinked || viewItem == pyboarddev.deviceFileHostMissing || viewItem == pyboarddev.deviceFileUnlinked || viewItem == pyboarddev.deviceFileExcludedLinked || viewItem == pyboarddev.deviceFileExcludedHostMissing || viewItem == pyboarddev.deviceFileExcludedUnlinked)",
           "group": "navigation@2"
         },
         {
           "command": "mekatrol.pyboarddev.comparedevicewithcomputer",
-          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFileExcluded || viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFileExcluded)",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFileExcluded || viewItem == pyboarddev.deviceFileLinked || viewItem == pyboarddev.deviceFileExcludedLinked || viewItem == pyboarddev.deviceFileHostMissing || viewItem == pyboarddev.deviceFileExcludedHostMissing)",
           "group": "navigation@3"
         },
         {
           "command": "mekatrol.pyboarddev.syncnodefromdevice",
-          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFolder || viewItem == pyboarddev.deviceIdNode || viewItem == pyboarddev.deviceIdNodeLinked || viewItem == pyboarddev.deviceLibraryNode || viewItem == pyboarddev.deviceLibraryNodeMissing)",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceFileLinked || viewItem == pyboarddev.deviceFileHostMissing || viewItem == pyboarddev.deviceFileUnlinked || viewItem == pyboarddev.deviceFolder || viewItem == pyboarddev.deviceIdNode || viewItem == pyboarddev.deviceIdNodeLinked || viewItem == pyboarddev.deviceLibraryNode || viewItem == pyboarddev.deviceLibraryNodeMissing)",
           "group": "navigation@4"
         },
         {
           "command": "mekatrol.pyboarddev.syncnodetodevice",
-          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFolder || viewItem == pyboarddev.deviceIdNode || viewItem == pyboarddev.deviceIdNodeLinked || viewItem == pyboarddev.deviceLibraryNode || viewItem == pyboarddev.deviceLibraryNodeMissing)",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceFileLinked || viewItem == pyboarddev.deviceFileHostMissing || viewItem == pyboarddev.deviceFileUnlinked || viewItem == pyboarddev.deviceFolder || viewItem == pyboarddev.deviceIdNode || viewItem == pyboarddev.deviceIdNodeLinked || viewItem == pyboarddev.deviceLibraryNode || viewItem == pyboarddev.deviceLibraryNodeMissing)",
           "group": "navigation@5"
         },
         {
           "command": "mekatrol.pyboarddev.excludedevicefilefromsync",
-          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFolder)",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceFileLinked || viewItem == pyboarddev.deviceFileHostMissing || viewItem == pyboarddev.deviceFileUnlinked || viewItem == pyboarddev.deviceFolder)",
           "group": "navigation@5.1"
         },
         {
           "command": "mekatrol.pyboarddev.removedevicefilefromsyncexclusion",
-          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceFileExcluded || viewItem == pyboarddev.deviceFolderExcluded)",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.deviceFileExcludedLinked || viewItem == pyboarddev.deviceFileExcludedHostMissing || viewItem == pyboarddev.deviceFileExcludedUnlinked || viewItem == pyboarddev.deviceFolderExcluded)",
           "group": "navigation@5.2"
         },
         {
@@ -480,12 +481,12 @@
         },
         {
           "command": "mekatrol.pyboarddev.renamemirrorpath",
-          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFileExcluded || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.hostFolderExcluded || viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFileExcluded || viewItem == pyboarddev.deviceFolder || viewItem == pyboarddev.deviceFolderExcluded)",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFileExcluded || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.hostFolderExcluded || viewItem == pyboarddev.deviceFileLinked || viewItem == pyboarddev.deviceFileHostMissing || viewItem == pyboarddev.deviceFileUnlinked || viewItem == pyboarddev.deviceFileExcludedLinked || viewItem == pyboarddev.deviceFileExcludedHostMissing || viewItem == pyboarddev.deviceFileExcludedUnlinked || viewItem == pyboarddev.deviceFolder || viewItem == pyboarddev.deviceFolderExcluded)",
           "group": "navigation@8"
         },
         {
           "command": "mekatrol.pyboarddev.deletemirrorpath",
-          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFileExcluded || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.hostFolderExcluded || viewItem == pyboarddev.deviceFile || viewItem == pyboarddev.deviceFileExcluded || viewItem == pyboarddev.deviceFolder || viewItem == pyboarddev.deviceFolderExcluded)",
+          "when": "view == mekatrol.pyboarddev.mirrorExplorer && (viewItem == pyboarddev.hostFile || viewItem == pyboarddev.hostFileExcluded || viewItem == pyboarddev.hostFolder || viewItem == pyboarddev.hostFolderExcluded || viewItem == pyboarddev.deviceFileLinked || viewItem == pyboarddev.deviceFileHostMissing || viewItem == pyboarddev.deviceFileUnlinked || viewItem == pyboarddev.deviceFileExcludedLinked || viewItem == pyboarddev.deviceFileExcludedHostMissing || viewItem == pyboarddev.deviceFileExcludedUnlinked || viewItem == pyboarddev.deviceFolder || viewItem == pyboarddev.deviceFolderExcluded)",
           "group": "navigation@9"
         },
         {
