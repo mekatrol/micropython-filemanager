@@ -10,6 +10,7 @@ import {
   onBoardConnectionStateChanged,
   onBoardConnectionsChanged
 } from './commands/connect-board-command';
+import type { ConnectedBoardSnapshot } from './commands/connect-board-command';
 import { configurationFileName } from './utils/configuration';
 import { listSerialDevices } from './utils/serial-port';
 import { logChannelOutput } from './output-channel';
@@ -98,17 +99,10 @@ export const updateStatusBarItem = async (): Promise<void> => {
     : undefined;
   boardConnectionStatusBarItem.show();
 
-  if (connectedBoards.length > 0) {
-    const summary = connectedBoards
-      .map((board) => {
-        const runtime = board.runtimeInfo ? `${board.runtimeInfo.runtimeName} ${board.runtimeInfo.version}` : 'probing';
-        const executing = board.executionCount > 0 ? ` exec:${board.executionCount}` : '';
-        return `${board.deviceId} (${runtime}${executing})`;
-      })
-      .join(' | ');
-    const shortText = summary.length > 60 ? `${summary.slice(0, 57)}...` : summary;
-    boardRuntimeStatusBarItem.text = `$(info) ${shortText}`;
-    boardRuntimeStatusBarItem.tooltip = summary;
+  const runtimeSummary = formatBoardRuntimeSummary(connectedBoards);
+  if (runtimeSummary) {
+    boardRuntimeStatusBarItem.text = `$(info) ${runtimeSummary.shortText}`;
+    boardRuntimeStatusBarItem.tooltip = runtimeSummary.summary;
     boardRuntimeStatusBarItem.show();
   } else {
     boardRuntimeStatusBarItem.hide();
@@ -181,6 +175,25 @@ export const getActivePythonType = (): 'MicroPython' | 'CircuitPython' | 'Unknow
 export const getStatusDisplayMode = (): StatusDisplayMode => {
   const value = vscode.workspace.getConfiguration('mekatrol.pyboarddev').get<string>(statusDisplayModeSettingKey, 'statusBar');
   return value === 'extensionView' ? 'extensionView' : 'statusBar';
+};
+
+export const formatBoardRuntimeSummary = (
+  connectedBoards: readonly ConnectedBoardSnapshot[],
+  maxShortLength = 60
+): { summary: string; shortText: string } | undefined => {
+  if (connectedBoards.length === 0) {
+    return undefined;
+  }
+
+  const summary = connectedBoards
+    .map((board) => {
+      const runtime = board.runtimeInfo ? `${board.runtimeInfo.runtimeName} ${board.runtimeInfo.version}` : 'probing';
+      const executing = board.executionCount > 0 ? ` exec:${board.executionCount}` : '';
+      return `${board.deviceId} (${runtime}${executing})`;
+    })
+    .join(' | ');
+  const shortText = summary.length > maxShortLength ? `${summary.slice(0, Math.max(0, maxShortLength - 3))}...` : summary;
+  return { summary, shortText };
 };
 
 const selectSerialDevice = async (): Promise<void> => {
