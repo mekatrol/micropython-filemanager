@@ -1,6 +1,6 @@
-# Mekatrol Pyboard Dev
+# Mekatrol Pydevice
 
-Mekatrol Pyboard Dev is a VS Code extension for developing against MicroPython devices with a synced computer workspace, sync tooling, and side-by-side device/computer workflows.
+Mekatrol Pydevice is a VS Code extension for developing against MicroPython devices with a synced computer workspace, sync tooling, and side-by-side device/computer workflows.
 
 ## Core Functions (Quick Summary)
 
@@ -149,7 +149,7 @@ The REPL view provides an interactive command console for connected boards.
 
 ### REPL capabilities
 
-- Open REPL from the Pyboard panel and run commands interactively.
+- Open REPL from the Pydevice panel and run commands interactively.
 - Maintain per-device REPL output lines and command history.
 - Switch between connected devices in the REPL UI.
 - Clear REPL output and clear REPL history with dedicated commands/actions.
@@ -171,13 +171,13 @@ The REPL view provides an interactive command console for connected boards.
 
 This extension contributes these main settings:
 
-- `mekatrol.pyboarddev.autoReconnectLastDevice`: Reconnect previously connected device on startup.
-- `mekatrol.pyboarddev.verboseReplTransportLogs`: Enable low-level REPL transport logging.
-- `mekatrol.pyboarddev.deviceFileOpenWaitForConnectionMs`: Wait time before device file open/save fails.
-- `mekatrol.pyboarddev.mountHostInWorkspaceExplorer`: Mount host sync in native VS Code Explorer.
-- `mekatrol.pyboarddev.mountDeviceInWorkspaceExplorer`: Mount device filesystem in native Explorer.
-- `mekatrol.pyboarddev.replHistoryLimit`: Per-device REPL history length.
-- `mekatrol.pyboarddev.statusDisplayMode`: Show status in status bar or extension view.
+- `mekatrol.pydevice.autoReconnectLastDevice`: Reconnect previously connected device on startup.
+- `mekatrol.pydevice.verboseReplTransportLogs`: Enable low-level REPL transport logging.
+- `mekatrol.pydevice.deviceFileOpenWaitForConnectionMs`: Wait time before device file open/save fails.
+- `mekatrol.pydevice.mountHostInWorkspaceExplorer`: Mount host sync in native VS Code Explorer.
+- `mekatrol.pydevice.mountDeviceInWorkspaceExplorer`: Mount device filesystem in native Explorer.
+- `mekatrol.pydevice.replHistoryLimit`: Per-device REPL history length.
+- `mekatrol.pydevice.statusDisplayMode`: Show status in status bar or extension view.
 
 ## Known Issues
 

@@ -1,6 +1,6 @@
 /**
  * Module overview:
- * This file is part of the Pyboard extension runtime and contains
+ * This file is part of the Pydevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
 import * as vscode from 'vscode';
@@ -11,8 +11,8 @@ import {
 } from './commands/connect-board-command';
 import { getStatusDisplayMode, onStatusDataChanged } from './status-bar';
 
-const statusViewId = 'mekatrol.pyboarddev.statusView';
-const softRebootCommandId = 'mekatrol.pyboarddev.softreboot';
+const statusViewId = 'mekatrol.pydevice.statusView';
+const softRebootCommandId = 'mekatrol.pydevice.softreboot';
 
 class ExtensionStatusNode extends vscode.TreeItem {
   constructor(
@@ -78,7 +78,7 @@ export const initExtensionStatusView = (context: vscode.ExtensionContext): void 
   context.subscriptions.push(onStatusDataChanged(() => provider.refresh()));
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration('mekatrol.pyboarddev.statusDisplayMode')) {
+      if (event.affectsConfiguration('mekatrol.pydevice.statusDisplayMode')) {
         provider.refresh();
       }
     })

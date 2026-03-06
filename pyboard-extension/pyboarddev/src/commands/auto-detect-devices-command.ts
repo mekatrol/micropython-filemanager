@@ -1,6 +1,6 @@
 /**
  * Module overview:
- * This file is part of the Pyboard extension runtime and contains
+ * This file is part of the Pydevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
 import * as vscode from 'vscode';
@@ -9,7 +9,7 @@ import { listAllSerialPorts, PortInfo } from '../utils/serial-port';
 import { getConnectedBoardByPortPath } from './connect-board-command';
 import { ProbedSerialDevice, SerialDeviceProber } from '../devices/serial-device-prober';
 
-const autoDetectDevicesCommandId = 'mekatrol.pyboarddev.autodetectdevices';
+const autoDetectDevicesCommandId = 'mekatrol.pydevice.autodetectdevices';
 const defaultBaudRate = 115200;
 
 type DetectedDevice = ProbedSerialDevice;
@@ -31,7 +31,7 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
       detectedDevices = await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
-          title: 'Pyboard Dev: Detecting serial devices...',
+          title: 'Pydevice: Detecting serial devices...',
           cancellable: false
         },
         async (progress) => {
@@ -94,7 +94,7 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
       return;
     }
 
-    await vscode.commands.executeCommand('mekatrol.pyboarddev.connectboard', { devicePath: selected.device.port.path });
+    await vscode.commands.executeCommand('mekatrol.pydevice.connectboard', { devicePath: selected.device.port.path });
   });
 
   context.subscriptions.push(command);

@@ -66,7 +66,7 @@ suite('device-filesystem utils', () => {
 
   test('scanComputerSyncEntries returns file and directory metadata', async () => {
     // Arrange: create isolated temporary root to avoid touching workspace files.
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'pyboarddev-test-'));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'pydevice-test-'));
 
     try {
       // Arrange: create directory and two files (one nested).

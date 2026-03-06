@@ -1,9 +1,9 @@
 /**
  * Module overview:
- * This file is part of the Pyboard extension runtime and contains
+ * This file is part of the Pydevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
-import { BoardRuntimeInfo, Pyboard } from '../utils/pyboard';
+import { BoardRuntimeInfo, Pydevice } from '../utils/pydevice';
 
 /**
  * Tracks all active board connections and provides query/update helpers.
@@ -13,7 +13,7 @@ import { BoardRuntimeInfo, Pyboard } from '../utils/pyboard';
  */
 export interface ConnectedBoardState {
   deviceId: string;
-  board: Pyboard;
+  board: Pydevice;
   runtimeInfo: BoardRuntimeInfo | undefined;
   executionCount: number;
 }

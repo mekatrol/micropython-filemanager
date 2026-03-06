@@ -1,6 +1,6 @@
 /**
  * Module overview:
- * This file is part of the Pyboard extension runtime and contains
+ * This file is part of the Pydevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
 import * as vscode from 'vscode';
@@ -10,9 +10,9 @@ import {
   onBoardConnectionStateChanged,
   onConnectedBoardRuntimeInfoChanged
 } from './commands/connect-board-command';
-import { Pyboard } from './utils/pyboard';
+import { Pydevice } from './utils/pydevice';
 
-const openReplCommandId = 'mekatrol.pyboarddev.openrepl';
+const openReplCommandId = 'mekatrol.pydevice.openrepl';
 const replPrompt = '>>> ';
 const promptFallbackDelayMs = 1200;
 const statusDisplayModeSettingKey = 'statusDisplayMode';
@@ -20,7 +20,7 @@ const formatForTerminal = (text: string): string => text.replace(/\n/g, '\r\n');
 const formatInputForEcho = (text: string): string => text.replace(/\r/g, '\r\n');
 
 const getDisconnectedHint = (): string => {
-  const statusDisplayMode = vscode.workspace.getConfiguration('mekatrol.pyboarddev').get<string>(statusDisplayModeSettingKey, 'statusBar');
+  const statusDisplayMode = vscode.workspace.getConfiguration('mekatrol.pydevice').get<string>(statusDisplayModeSettingKey, 'statusBar');
   if (statusDisplayMode === 'extensionView') {
     return '\r\n[device not connected; scan from status view in side panel]\r\n';
   }
@@ -46,7 +46,7 @@ class ReplTerminalManager implements vscode.Disposable {
       onDidClose: this.closeEmitter.event,
       open: () => {
         this.isPtyOpen = true;
-        this.writeEmitter.fire('Pyboard Dev REPL\r\n');
+        this.writeEmitter.fire('Pydevice REPL\r\n');
         this.renderConnectionStatus();
       },
       close: () => {
@@ -132,7 +132,7 @@ class ReplTerminalManager implements vscode.Disposable {
 
   show(): void {
     if (!this.terminal) {
-      this.terminal = vscode.window.createTerminal({ name: 'Pyboard Dev REPL', pty: this.pty });
+      this.terminal = vscode.window.createTerminal({ name: 'Pydevice REPL', pty: this.pty });
     }
 
     this.terminal.show(true);

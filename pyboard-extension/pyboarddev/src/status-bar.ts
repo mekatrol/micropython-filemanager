@@ -1,6 +1,6 @@
 /**
  * Module overview:
- * This file is part of the Pyboard extension runtime and contains
+ * This file is part of the Pydevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
 import * as vscode from 'vscode';
@@ -15,11 +15,11 @@ import { configurationFileName } from './utils/configuration';
 import { listSerialDevices } from './utils/serial-port';
 import { logChannelOutput } from './output-channel';
 
-const statusBarSelectCommunicationId = 'mekatrol.pyboarddev.selectdevice';
-const statusBarToggleBoardConnectionId = 'mekatrol.pyboarddev.toggleboardconnection';
-const statusBarSoftRebootId = 'mekatrol.pyboarddev.softreboot';
+const statusBarSelectCommunicationId = 'mekatrol.pydevice.selectdevice';
+const statusBarToggleBoardConnectionId = 'mekatrol.pydevice.toggleboardconnection';
+const statusBarSoftRebootId = 'mekatrol.pydevice.softreboot';
 const statusDisplayModeSettingKey = 'statusDisplayMode';
-const extensionStatusViewContextKey = 'mekatrol.pyboarddev.showExtensionStatusView';
+const extensionStatusViewContextKey = 'mekatrol.pydevice.showExtensionStatusView';
 const defaultBaudRate = 115200;
 export type StatusDisplayMode = 'statusBar' | 'extensionView';
 const statusDataChangedEmitter = new vscode.EventEmitter<void>();
@@ -45,7 +45,7 @@ export const initStatusBar = async (context: vscode.ExtensionContext): Promise<v
   context.subscriptions.push(watcher);
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration(`mekatrol.pyboarddev.${statusDisplayModeSettingKey}`)) {
+      if (event.affectsConfiguration(`mekatrol.pydevice.${statusDisplayModeSettingKey}`)) {
         void updateStatusBarItem();
       }
     })
@@ -173,7 +173,7 @@ export const getActivePythonType = (): 'MicroPython' | 'UnknownPython' => {
 };
 
 export const getStatusDisplayMode = (): StatusDisplayMode => {
-  const value = vscode.workspace.getConfiguration('mekatrol.pyboarddev').get<string>(statusDisplayModeSettingKey, 'statusBar');
+  const value = vscode.workspace.getConfiguration('mekatrol.pydevice').get<string>(statusDisplayModeSettingKey, 'statusBar');
   return value === 'extensionView' ? 'extensionView' : 'statusBar';
 };
 
@@ -230,7 +230,7 @@ const selectSerialDevice = async (): Promise<void> => {
   });
 
   const selected = await vscode.window.showQuickPick(items, {
-    placeHolder: 'Select a serial port for Pyboard Dev',
+    placeHolder: 'Select a serial port for Pydevice',
     canPickMany: false,
     ignoreFocusOut: true
   });
@@ -239,7 +239,7 @@ const selectSerialDevice = async (): Promise<void> => {
     return;
   }
 
-  await vscode.commands.executeCommand('mekatrol.pyboarddev.connectboard', { devicePath: selected.label });
+  await vscode.commands.executeCommand('mekatrol.pydevice.connectboard', { devicePath: selected.label });
 
   const msg = `Selected serial device: ${selected.label}`;
   logChannelOutput(msg, true);

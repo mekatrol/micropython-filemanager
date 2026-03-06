@@ -1,6 +1,6 @@
 /**
  * Module overview:
- * This file is part of the Pyboard extension runtime and contains
+ * This file is part of the Pydevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
 import { Buffer } from 'buffer';
@@ -8,10 +8,10 @@ import { createHash } from 'crypto';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { Pyboard } from './pyboard';
+import { Pydevice } from './pydevice';
 
-const beginMarker = '__PYBOARDDEV_BEGIN__';
-const endMarker = '__PYBOARDDEV_END__';
+const beginMarker = '__PYDEVICE_BEGIN__';
+const endMarker = '__PYDEVICE_END__';
 
 export interface FileEntry {
   relativePath: string;
@@ -46,7 +46,7 @@ const extractMarkedBlock = (stdout: string): string => {
   return stdout.slice(start + beginMarker.length, end).trim();
 };
 
-const runDeviceScript = async (board: Pyboard, body: string): Promise<string> => {
+const runDeviceScript = async (board: Pydevice, body: string): Promise<string> => {
   const wrapped = wrapScript(body);
   const { stdout, stderr } = await board.execRawCapture(wrapped);
 
@@ -57,7 +57,7 @@ const runDeviceScript = async (board: Pyboard, body: string): Promise<string> =>
   return stdout;
 };
 
-export const listDeviceEntries = async (board: Pyboard): Promise<FileEntry[]> => {
+export const listDeviceEntries = async (board: Pydevice): Promise<FileEntry[]> => {
   const script = `
 import os
 try:
@@ -143,7 +143,7 @@ print(END)
   }));
 };
 
-export const readDeviceFile = async (board: Pyboard, relativePath: string): Promise<Buffer> => {
+export const readDeviceFile = async (board: Pydevice, relativePath: string): Promise<Buffer> => {
   const absolutePath = toDeviceAbsolutePath(relativePath);
   const script = `
 import ubinascii
@@ -161,7 +161,7 @@ print(END)
   return Buffer.from(base64, 'base64');
 };
 
-export const writeDeviceFile = async (board: Pyboard, relativePath: string, content: Buffer): Promise<void> => {
+export const writeDeviceFile = async (board: Pydevice, relativePath: string, content: Buffer): Promise<void> => {
   const absolutePath = toDeviceAbsolutePath(relativePath);
   const base64Payload = content.toString('base64');
 
@@ -194,7 +194,7 @@ print('${endMarker}')
   await runDeviceScript(board, script);
 };
 
-export const createDeviceDirectory = async (board: Pyboard, relativePath: string): Promise<void> => {
+export const createDeviceDirectory = async (board: Pydevice, relativePath: string): Promise<void> => {
   const absolutePath = toDeviceAbsolutePath(relativePath);
   const script = `
 import os
@@ -220,7 +220,7 @@ print('${endMarker}')
   await runDeviceScript(board, script);
 };
 
-export const renameDevicePath = async (board: Pyboard, fromRelativePath: string, toRelativePath: string): Promise<void> => {
+export const renameDevicePath = async (board: Pydevice, fromRelativePath: string, toRelativePath: string): Promise<void> => {
   const fromAbsolutePath = toDeviceAbsolutePath(fromRelativePath);
   const toAbsolutePath = toDeviceAbsolutePath(toRelativePath);
   const script = `
@@ -262,7 +262,7 @@ print('${endMarker}')
   await runDeviceScript(board, script);
 };
 
-export const deleteDevicePath = async (board: Pyboard, relativePath: string): Promise<void> => {
+export const deleteDevicePath = async (board: Pydevice, relativePath: string): Promise<void> => {
   const absolutePath = toDeviceAbsolutePath(relativePath);
   const script = `
 import os

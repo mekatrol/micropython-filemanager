@@ -1,6 +1,6 @@
 /**
  * Module overview:
- * This file is part of the Pyboard extension runtime and contains
+ * This file is part of the Pydevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
 import * as vscode from 'vscode';
@@ -19,7 +19,7 @@ import {
   tryReconnectBoardOnStartup
 } from './commands/connect-board-command';
 import { initDeviceSyncExplorer } from './device-sync-explorer';
-import { initPyboardDebug } from './pyboard-debug';
+import { initPydeviceDebug } from './pydevice-debug';
 import { initReplView } from './repl-view';
 import { initExtensionStatusView } from './extension-status-view';
 import { initialiseWorkspaceCache } from './utils/workspace-cache';
@@ -29,7 +29,7 @@ import { initialiseWorkspaceCache } from './utils/workspace-cache';
 export const activate = async (context: vscode.ExtensionContext) => {
   // Initialise output channel for logging
   initOutputChannel();
-  logChannelOutput('Mekatrol Pyboard Dev activated...', false);
+  logChannelOutput('Mekatrol Pydevice activated...', false);
   await initialiseWorkspaceCache();
 
   // Create commands
@@ -52,14 +52,14 @@ export const activate = async (context: vscode.ExtensionContext) => {
   await initDeviceSyncExplorer(context);
 
   // Init Run/Debug integration
-  initPyboardDebug(context);
+  initPydeviceDebug(context);
 
 };
 
 // This method is called when your extension is deactivated
 export async function deactivate() {
   const hasDirtyDeviceDocuments = vscode.workspace.textDocuments.some(
-    (document) => document.uri.scheme === 'pyboarddev-device' && document.isDirty
+    (document) => document.uri.scheme === 'pydevice-device' && document.isDirty
   );
 
   if (hasDirtyDeviceDocuments) {

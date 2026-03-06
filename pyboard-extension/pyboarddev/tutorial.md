@@ -4,7 +4,13 @@ The following tutorial helps understand the variaous functions within this vscod
 
 ## How it works
 
-The Mekatrol pyboard extension works by 
+The Mekatrol pydevice extension works by linking Python embedded devices to a folder on the host computer. Files and folders can then be synced between the device and the computer. The allows keeping a copy of the files on the computer without needing to copy and paste beween the computer and the device.
+
+Addtitonally individual files can be excluded from synchronisation if you do not want to sync those files. For example, if files on a device contain passwords or secretts and you do not want those synced to the host computer.
+
+Further, a device can map to library folders on the host computer so that you can keep 
+
+
 
 ## Open a workspace
 

@@ -1,19 +1,19 @@
 /**
  * Module overview:
- * This file is part of the Pyboard extension runtime and contains
+ * This file is part of the Pydevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConnectedBoard, getConnectedBoards, onBoardConnectionsChanged } from './commands/connect-board-command';
-import { configurationFileName, getDeviceNames, loadConfiguration, onPyboardDevConfigurationUpdated } from './utils/configuration';
+import { configurationFileName, getDeviceNames, loadConfiguration, onPydeviceConfigurationUpdated } from './utils/configuration';
 import { getWorkspaceCacheValue, setWorkspaceCacheValue } from './utils/workspace-cache';
 
-const openReplCommandId = 'mekatrol.pyboarddev.openrepl';
-const clearReplCommandId = 'mekatrol.pyboarddev.clearrepl';
-const clearReplHistoryCommandId = 'mekatrol.pyboarddev.clearreplhistory';
-const replPanelContainerId = 'mekatrol-pyboarddev-panel';
-const replViewId = 'mekatrol.pyboarddev.replView';
+const openReplCommandId = 'mekatrol.pydevice.openrepl';
+const clearReplCommandId = 'mekatrol.pydevice.clearrepl';
+const clearReplHistoryCommandId = 'mekatrol.pydevice.clearreplhistory';
+const replPanelContainerId = 'mekatrol-pydevice-panel';
+const replViewId = 'mekatrol.pydevice.replView';
 const replPrompt = '>>> ';
 const promptFallbackDelayMs = 1200;
 const maxRetainedLinesPerDevice = 2000;
@@ -64,7 +64,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       this.reconcileConnectedDevices(snapshots);
       this.postState();
     });
-    this.configurationUpdatedDisposable = onPyboardDevConfigurationUpdated((configuration) => {
+    this.configurationUpdatedDisposable = onPydeviceConfigurationUpdated((configuration) => {
       this.deviceNames = getDeviceNames(configuration);
       this.postState();
     });
@@ -351,7 +351,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
 
   private getHistoryLimit(): number {
     const configured = vscode.workspace
-      .getConfiguration('mekatrol.pyboarddev')
+      .getConfiguration('mekatrol.pydevice')
       .get<number>(replHistoryLimitSettingKey, defaultReplHistoryLimit);
     if (!Number.isFinite(configured) || configured < 0) {
       return defaultReplHistoryLimit;

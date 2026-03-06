@@ -1,13 +1,13 @@
 /**
  * Module overview:
- * This file is part of the Pyboard extension runtime and contains
+ * This file is part of the Pydevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
 import * as vscode from 'vscode';
 import { posix } from 'path';
 import { configurationFileName } from './configuration';
 
-export const workspaceCacheFileName = '.pyboard-cache';
+export const workspaceCacheFileName = '.pydevice-cache';
 
 type WorkspaceCache = Record<string, unknown>;
 

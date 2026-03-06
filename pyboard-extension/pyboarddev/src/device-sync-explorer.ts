@@ -1,6 +1,6 @@
 /**
  * Module overview:
- * This file is part of the Pyboard extension runtime and contains
+ * This file is part of the Pydevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
 import { Buffer } from 'buffer';
@@ -11,7 +11,7 @@ import { closeAllConnectedBoards, getConnectedBoard, getConnectedBoards, onBoard
 import { logChannelOutput } from './output-channel';
 import {
   createDefaultConfiguration,
-  PyboardDevConfigurationResult,
+  PydeviceConfigurationResult,
   configurationFileName,
   getDeviceLibraryFolderMappings,
   getDeviceNames,
@@ -39,46 +39,46 @@ import {
   writeDeviceFile
 } from './utils/device-filesystem';
 
-const syncViewId = 'mekatrol.pyboarddev.syncExplorer';
-const commandRefreshId = 'mekatrol.pyboarddev.refreshsyncview';
-const commandSyncFromDeviceId = 'mekatrol.pyboarddev.syncfromdevice';
-const commandSyncToDeviceId = 'mekatrol.pyboarddev.synctodevice';
-const commandSyncNodeFromDeviceId = 'mekatrol.pyboarddev.syncnodefromdevice';
-const commandSyncNodeToDeviceId = 'mekatrol.pyboarddev.syncnodetodevice';
-const commandOpenComputerItemId = 'mekatrol.pyboarddev.opencomputersyncitem';
-const commandPullAndOpenDeviceItemId = 'mekatrol.pyboarddev.pullandopendeviceitem';
-const commandOpenDeviceFileId = 'mekatrol.pyboarddev.opendevicefile';
-const commandOpenComputerItemFromTreeId = 'mekatrol.pyboarddev._opencomputersyncitemfromtree';
-const commandOpenDeviceFileFromTreeId = 'mekatrol.pyboarddev._opendevicefilefromtree';
-const commandCompareDeviceWithComputerId = 'mekatrol.pyboarddev.comparedevicewithcomputer';
-const commandCreateSyncFileId = 'mekatrol.pyboarddev.createsyncfile';
-const commandCreateSyncFolderId = 'mekatrol.pyboarddev.createsyncfolder';
-const commandRenameSyncPathId = 'mekatrol.pyboarddev.renamesyncpath';
-const commandDeleteSyncPathId = 'mekatrol.pyboarddev.deletesyncpath';
-const commandLinkDeviceHostFolderId = 'mekatrol.pyboarddev.linkdevicehostfolder';
-const commandUnlinkDeviceHostFolderId = 'mekatrol.pyboarddev.unlinkdevicehostfolder';
-const commandAddDeviceLibraryFolderId = 'mekatrol.pyboarddev.adddevicelibraryfolder';
-const commandRemoveDeviceLibraryFolderId = 'mekatrol.pyboarddev.removedevicelibraryfolder';
-const commandSetDeviceNameId = 'mekatrol.pyboarddev.setdevicename';
-const commandExcludeDeviceFileFromSyncId = 'mekatrol.pyboarddev.excludedevicefilefromsync';
-const commandRemoveDeviceFileFromSyncExclusionId = 'mekatrol.pyboarddev.removedevicefilefromsyncexclusion';
-const commandCloseDeviceConnectionId = 'mekatrol.pyboarddev.closedeviceconnection';
-const commandCloseAllDeviceConnectionsId = 'mekatrol.pyboarddev.closealldeviceconnections';
-const commandConnectBoardWithPickerId = 'mekatrol.pyboarddev.connectboardwithpicker';
-const commandExplorerPrerequisitesHintId = 'mekatrol.pyboarddev.explorerprerequisiteshint';
-const commandExplorerInitialiseWorkspaceId = 'mekatrol.pyboarddev.explorerinitialiseworkspace';
-const deviceDocumentScheme = 'pyboarddev-device';
+const syncViewId = 'mekatrol.pydevice.syncExplorer';
+const commandRefreshId = 'mekatrol.pydevice.refreshsyncview';
+const commandSyncFromDeviceId = 'mekatrol.pydevice.syncfromdevice';
+const commandSyncToDeviceId = 'mekatrol.pydevice.synctodevice';
+const commandSyncNodeFromDeviceId = 'mekatrol.pydevice.syncnodefromdevice';
+const commandSyncNodeToDeviceId = 'mekatrol.pydevice.syncnodetodevice';
+const commandOpenComputerItemId = 'mekatrol.pydevice.opencomputersyncitem';
+const commandPullAndOpenDeviceItemId = 'mekatrol.pydevice.pullandopendeviceitem';
+const commandOpenDeviceFileId = 'mekatrol.pydevice.opendevicefile';
+const commandOpenComputerItemFromTreeId = 'mekatrol.pydevice._opencomputersyncitemfromtree';
+const commandOpenDeviceFileFromTreeId = 'mekatrol.pydevice._opendevicefilefromtree';
+const commandCompareDeviceWithComputerId = 'mekatrol.pydevice.comparedevicewithcomputer';
+const commandCreateSyncFileId = 'mekatrol.pydevice.createsyncfile';
+const commandCreateSyncFolderId = 'mekatrol.pydevice.createsyncfolder';
+const commandRenameSyncPathId = 'mekatrol.pydevice.renamesyncpath';
+const commandDeleteSyncPathId = 'mekatrol.pydevice.deletesyncpath';
+const commandLinkDeviceHostFolderId = 'mekatrol.pydevice.linkdevicehostfolder';
+const commandUnlinkDeviceHostFolderId = 'mekatrol.pydevice.unlinkdevicehostfolder';
+const commandAddDeviceLibraryFolderId = 'mekatrol.pydevice.adddevicelibraryfolder';
+const commandRemoveDeviceLibraryFolderId = 'mekatrol.pydevice.removedevicelibraryfolder';
+const commandSetDeviceNameId = 'mekatrol.pydevice.setdevicename';
+const commandExcludeDeviceFileFromSyncId = 'mekatrol.pydevice.excludedevicefilefromsync';
+const commandRemoveDeviceFileFromSyncExclusionId = 'mekatrol.pydevice.removedevicefilefromsyncexclusion';
+const commandCloseDeviceConnectionId = 'mekatrol.pydevice.closedeviceconnection';
+const commandCloseAllDeviceConnectionsId = 'mekatrol.pydevice.closealldeviceconnections';
+const commandConnectBoardWithPickerId = 'mekatrol.pydevice.connectboardwithpicker';
+const commandExplorerPrerequisitesHintId = 'mekatrol.pydevice.explorerprerequisiteshint';
+const commandExplorerInitialiseWorkspaceId = 'mekatrol.pydevice.explorerinitialiseworkspace';
+const deviceDocumentScheme = 'pydevice-device';
 const defaultBaudRate = 115200;
 const deviceExplorerAutoRefreshIntervalMs = 5000;
 const deviceCreateConfirmTimeoutMs = 6000;
 const deviceCreateConfirmPollIntervalMs = 150;
-const hasHostSyncChildFoldersContextKey = 'mekatrol.pyboarddev.hasHostSyncChildFolders';
-const hasLinkedHostMappingsContextKey = 'mekatrol.pyboarddev.hasLinkedHostMappings';
-const explorerHasWorkspaceContextKey = 'mekatrol.pyboarddev.explorerHasWorkspace';
-const explorerHasConfigurationContextKey = 'mekatrol.pyboarddev.explorerHasConfiguration';
-const explorerHasSyncFolderContextKey = 'mekatrol.pyboarddev.explorerHasSyncFolder';
-const explorerReadyContextKey = 'mekatrol.pyboarddev.explorerReady';
-const nameHistoryStateKey = 'mekatrol.pyboarddev.nameHistoryByLower';
+const hasHostSyncChildFoldersContextKey = 'mekatrol.pydevice.hasHostSyncChildFolders';
+const hasLinkedHostMappingsContextKey = 'mekatrol.pydevice.hasLinkedHostMappings';
+const explorerHasWorkspaceContextKey = 'mekatrol.pydevice.explorerHasWorkspace';
+const explorerHasConfigurationContextKey = 'mekatrol.pydevice.explorerHasConfiguration';
+const explorerHasSyncFolderContextKey = 'mekatrol.pydevice.explorerHasSyncFolder';
+const explorerReadyContextKey = 'mekatrol.pydevice.explorerReady';
+const nameHistoryStateKey = 'mekatrol.pydevice.nameHistoryByLower';
 
 type NodeSide = 'device' | 'computer';
 
@@ -256,7 +256,7 @@ class DeviceSyncModel {
 
     if (!hasWorkspace) {
       if (!this.hasWarnedNoWorkspaceFolder) {
-        const message = 'Open a workspace folder to show devices in Pyboard Explorer.';
+        const message = 'Open a workspace folder to show devices in Pydevice Explorer.';
         this.hasWarnedNoWorkspaceFolder = true;
         vscode.window.showWarningMessage(message);
         logChannelOutput(message, true);
@@ -366,7 +366,7 @@ class DeviceSyncModel {
       logChannelOutput(`Sync refresh failed: ${message}`, true);
       if (this.lastRefreshError !== message) {
         this.lastRefreshError = message;
-        vscode.window.showErrorMessage(`Pyboard Explorer refresh failed: ${message}`);
+        vscode.window.showErrorMessage(`Pydevice Explorer refresh failed: ${message}`);
       }
     }
   }
@@ -1778,7 +1778,7 @@ class DeviceSyncModel {
       }));
 
     const panel = vscode.window.createWebviewPanel(
-      'pyboarddev.syncPreview',
+      'pydevice.syncPreview',
       title,
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true }
@@ -3635,7 +3635,7 @@ class DeviceSyncModel {
       return;
     }
 
-    await vscode.commands.executeCommand('mekatrol.pyboarddev.disconnectboard', { deviceId });
+    await vscode.commands.executeCommand('mekatrol.pydevice.disconnectboard', { deviceId });
   }
 
   async closeAllDeviceConnections(): Promise<void> {
@@ -4285,7 +4285,7 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
     }
 
     const configuredWait = vscode.workspace
-      .getConfiguration('mekatrol.pyboarddev')
+      .getConfiguration('mekatrol.pydevice')
       .get<number>(
         DeviceDeviceFileSystemProvider.waitForConnectionSettingKey,
         DeviceDeviceFileSystemProvider.defaultWaitForConnectionMs
@@ -4484,7 +4484,7 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
     element.tooltip = undefined;
 
     if (data.isRoot) {
-      element.contextValue = data.side === 'computer' ? 'pyboarddev.hostRoot' : 'pyboarddev.deviceRoot';
+      element.contextValue = data.side === 'computer' ? 'pydevice.hostRoot' : 'pydevice.deviceRoot';
       element.iconPath = data.side === 'computer' ? new vscode.ThemeIcon('desktop-download') : new vscode.ThemeIcon('device-mobile');
       if (data.side === 'device') {
         const count = this.model.getConnectedDeviceIds().length;
@@ -4500,22 +4500,22 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
     }
 
     if (data.isIndicator) {
-      element.contextValue = 'pyboarddev.deviceIndicator';
+      element.contextValue = 'pydevice.deviceIndicator';
       element.iconPath = new vscode.ThemeIcon('files');
       element.description = 'setup required';
       element.tooltip = 'Click to open Explorer view and complete setup.';
       element.command = this.model.hasWorkspaceFolder()
-        ? { command: commandExplorerInitialiseWorkspaceId, title: 'Initialize Pyboard Workspace' }
-        : { command: commandExplorerPrerequisitesHintId, title: 'Setup Pyboard Explorer' };
+        ? { command: commandExplorerInitialiseWorkspaceId, title: 'Initialize Pydevice Workspace' }
+        : { command: commandExplorerPrerequisitesHintId, title: 'Setup Pydevice Explorer' };
       return element;
     }
 
     if (data.isDeviceIdNode) {
       const mappedFolder = data.deviceId ? this.model.getMappedHostFolder(data.deviceId) : undefined;
       if (data.side === 'device') {
-        element.contextValue = mappedFolder ? 'pyboarddev.deviceIdNodeLinked' : 'pyboarddev.deviceIdNode';
+        element.contextValue = mappedFolder ? 'pydevice.deviceIdNodeLinked' : 'pydevice.deviceIdNode';
       } else {
-        element.contextValue = 'pyboarddev.hostDeviceMappingNode';
+        element.contextValue = 'pydevice.hostDeviceMappingNode';
       }
       element.iconPath = new vscode.ThemeIcon('device-mobile');
       if (data.deviceId) {
@@ -4538,7 +4538,7 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
     }
 
     if (data.isLibraryNode) {
-      element.contextValue = data.isLibraryMissing ? 'pyboarddev.deviceLibraryNodeMissing' : 'pyboarddev.deviceLibraryNode';
+      element.contextValue = data.isLibraryMissing ? 'pydevice.deviceLibraryNodeMissing' : 'pydevice.deviceLibraryNode';
       element.iconPath = data.isLibraryMissing ? new vscode.ThemeIcon('warning') : new vscode.ThemeIcon('library');
       if (data.libraryHostFolder) {
         element.description = data.isLibraryMissing ? `missing | ${data.libraryHostFolder}` : data.libraryHostFolder;
@@ -4552,25 +4552,25 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
     let compareAvailability: DeviceFileCompareAvailability = 'available';
     if (data.side === 'device') {
       if (data.isDirectory) {
-        element.contextValue = isExcludedFromSync ? 'pyboarddev.deviceFolderExcluded' : 'pyboarddev.deviceFolder';
+        element.contextValue = isExcludedFromSync ? 'pydevice.deviceFolderExcluded' : 'pydevice.deviceFolder';
       } else {
         compareAvailability = this.model.getDeviceFileCompareAvailability(data);
         if (isExcludedFromSync) {
           element.contextValue = compareAvailability === 'unlinked'
-            ? 'pyboarddev.deviceFileExcludedUnlinked'
-            : (compareAvailability === 'hostMissing' ? 'pyboarddev.deviceFileExcludedHostMissing' : 'pyboarddev.deviceFileExcludedLinked');
+            ? 'pydevice.deviceFileExcludedUnlinked'
+            : (compareAvailability === 'hostMissing' ? 'pydevice.deviceFileExcludedHostMissing' : 'pydevice.deviceFileExcludedLinked');
         } else {
           element.contextValue = compareAvailability === 'unlinked'
-            ? 'pyboarddev.deviceFileUnlinked'
-            : (compareAvailability === 'hostMissing' ? 'pyboarddev.deviceFileHostMissing' : 'pyboarddev.deviceFileLinked');
+            ? 'pydevice.deviceFileUnlinked'
+            : (compareAvailability === 'hostMissing' ? 'pydevice.deviceFileHostMissing' : 'pydevice.deviceFileLinked');
         }
       }
       element.command = data.isDirectory ? undefined : { command: commandOpenDeviceFileFromTreeId, title: 'Open', arguments: [element] };
     } else {
       if (data.isDirectory) {
-        element.contextValue = isExcludedFromSync ? 'pyboarddev.hostFolderExcluded' : 'pyboarddev.hostFolder';
+        element.contextValue = isExcludedFromSync ? 'pydevice.hostFolderExcluded' : 'pydevice.hostFolder';
       } else {
-        element.contextValue = isExcludedFromSync ? 'pyboarddev.hostFileExcluded' : 'pyboarddev.hostFile';
+        element.contextValue = isExcludedFromSync ? 'pydevice.hostFileExcluded' : 'pydevice.hostFile';
       }
       element.command = data.isDirectory ? undefined : { command: commandOpenComputerItemFromTreeId, title: 'Open', arguments: [element] };
     }
@@ -4616,7 +4616,7 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
 
   getChildren(element?: SyncNode): SyncNode[] {
     if (!this.model.isExplorerReady()) {
-      let label = 'Open a folder in Explorer to enable Pyboard Explorer';
+      let label = 'Open a folder in Explorer to enable Pydevice Explorer';
       if (this.model.hasWorkspaceFolder()) {
         const missing: string[] = [];
         if (!this.model.hasConfigurationFolder()) {
@@ -4624,7 +4624,7 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
         }
         label = missing.length > 0
           ? `Initialize ${missing.join(', ')}`
-          : 'Complete Pyboard Explorer setup';
+          : 'Complete Pydevice Explorer setup';
       }
       return [
         new SyncNode(
@@ -4819,7 +4819,7 @@ const mountDeviceWorkspaceFolderSettingKey = 'mountDeviceInWorkspaceExplorer';
 const ensureNativeExplorerRoots = async (model: DeviceSyncModel): Promise<void> => {
   const syncRootPath = model.getSyncRootPath();
   const deviceUri = vscode.Uri.parse(`${deviceDocumentScheme}:/`);
-  const configuration = vscode.workspace.getConfiguration('mekatrol.pyboarddev');
+  const configuration = vscode.workspace.getConfiguration('mekatrol.pydevice');
   const mountHostWorkspaceFolder = configuration.get<boolean>(mountHostWorkspaceFolderSettingKey, false);
   const mountDeviceWorkspaceFolder = configuration.get<boolean>(mountDeviceWorkspaceFolderSettingKey, false);
   const existing = vscode.workspace.workspaceFolders ?? [];
@@ -4992,14 +4992,14 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): 
   context.subscriptions.push(vscode.commands.registerCommand(commandCloseDeviceConnectionId, async (node?: SyncNode) => model.closeDeviceConnection(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandCloseAllDeviceConnectionsId, async () => model.closeAllDeviceConnections()));
   context.subscriptions.push(vscode.commands.registerCommand(commandConnectBoardWithPickerId, async () => {
-    await vscode.commands.executeCommand('mekatrol.pyboarddev.connectboard', { forcePickPort: true });
+    await vscode.commands.executeCommand('mekatrol.pydevice.connectboard', { forcePickPort: true });
   }));
   context.subscriptions.push(vscode.commands.registerCommand(commandExplorerPrerequisitesHintId, async () => {
     await vscode.commands.executeCommand('workbench.view.explorer');
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
       const action = await vscode.window.showWarningMessage(
-        'Open a workspace folder first to enable Pyboard Explorer.',
+        'Open a workspace folder first to enable Pydevice Explorer.',
         'Open Folder'
       );
       if (action === 'Open Folder') {
@@ -5015,22 +5015,22 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): 
       await vscode.workspace.fs.stat(configUri);
     } catch {
       const action = await vscode.window.showWarningMessage(
-        `${configurationFileName} was not found in this workspace. Create it to enable Pyboard Explorer.`,
+        `${configurationFileName} was not found in this workspace. Create it to enable Pydevice Explorer.`,
         `Create ${configurationFileName}`
       );
       if (action === `Create ${configurationFileName}`) {
-        await vscode.commands.executeCommand('mekatrol.pyboarddev.initconfig');
+        await vscode.commands.executeCommand('mekatrol.pydevice.initconfig');
       }
       return;
     }
 
-    vscode.window.showInformationMessage('Pyboard Explorer is ready.');
+    vscode.window.showInformationMessage('Pydevice Explorer is ready.');
   }));
   context.subscriptions.push(vscode.commands.registerCommand(commandExplorerInitialiseWorkspaceId, async () => {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
       const action = await vscode.window.showWarningMessage(
-        'Open a workspace folder first to initialize Pyboard Explorer.',
+        'Open a workspace folder first to initialize Pydevice Explorer.',
         'Open Folder'
       );
       if (action === 'Open Folder') {
@@ -5043,7 +5043,7 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): 
     const existingItems: string[] = [];
 
     const [configResult] = await createDefaultConfiguration();
-    if (configResult === PyboardDevConfigurationResult.Created) {
+    if (configResult === PydeviceConfigurationResult.Created) {
       createdItems.push(configurationFileName);
     } else {
       existingItems.push(configurationFileName);
@@ -5060,7 +5060,7 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): 
       createdItems.length > 0 ? `Created: ${createdItems.join(', ')}` : undefined,
       existingItems.length > 0 ? `Already existed: ${existingItems.join(', ')}` : undefined
     ].filter((item): item is string => !!item).join(' | ');
-    const message = summary.length > 0 ? `Pyboard workspace initialized. ${summary}` : 'Pyboard workspace initialized.';
+    const message = summary.length > 0 ? `Pydevice workspace initialized. ${summary}` : 'Pydevice workspace initialized.';
     vscode.window.showInformationMessage(message);
     logChannelOutput(message, true);
     await model.refresh(true);

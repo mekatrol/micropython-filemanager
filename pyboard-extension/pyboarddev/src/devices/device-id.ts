@@ -1,9 +1,9 @@
 /**
  * Module overview:
- * This file is part of the Pyboard extension runtime and contains
+ * This file is part of the Pydevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
-import { BoardRuntimeInfo } from '../utils/pyboard';
+import { BoardRuntimeInfo } from '../utils/pydevice';
 
 /**
  * Normalises device identifiers so they are safe and stable for keys/paths.

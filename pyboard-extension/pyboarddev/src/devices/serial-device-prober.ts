@@ -1,9 +1,9 @@
 /**
  * Module overview:
- * This file is part of the Pyboard extension runtime and contains
+ * This file is part of the Pydevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
-import { BoardRuntimeInfo, Pyboard } from '../utils/pyboard';
+import { BoardRuntimeInfo, Pydevice } from '../utils/pydevice';
 import { PortInfo } from '../utils/serial-port';
 
 /**
@@ -15,14 +15,14 @@ export interface ProbedSerialDevice {
 }
 
 /**
- * Small adapter around Pyboard probing so command code remains focused on UI
+ * Small adapter around Pydevice probing so command code remains focused on UI
  * flow and can inject mock probing behavior in tests.
  */
 export class SerialDeviceProber {
   constructor(private readonly baudRate: number) {}
 
   async probePort(port: PortInfo): Promise<ProbedSerialDevice | undefined> {
-    const board = new Pyboard(port.path, this.baudRate, false);
+    const board = new Pydevice(port.path, this.baudRate, false);
     try {
       await board.open();
     } catch {
