@@ -164,10 +164,10 @@ export const getActiveBaudRate = (): number => {
   return getConnectedBoards()[0]?.baudRate ?? defaultBaudRate;
 };
 
-export const getActivePythonType = (): 'MicroPython' | 'CircuitPython' | 'Unknown' => {
+export const getActivePythonType = (): 'MicroPython' | 'UnknownPython' => {
   const active = getConnectedBoards()[0];
   if (!active?.runtimeInfo) {
-    return 'Unknown';
+    return 'UnknownPython';
   }
   return active.runtimeInfo.runtimeName;
 };

@@ -1,71 +1,206 @@
-# pyboarddev README
+# Mekatrol Pyboard Dev
 
-This is the README for your extension "pyboarddev". After writing up a brief description, we recommend including the following sections.
+Mekatrol Pyboard Dev is a VS Code extension for developing against MicroPython devices with a mirrored computer workspace, sync tooling, and side-by-side device/computer workflows.
 
-## Features
+## Core Functions (Quick Summary)
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+| Core Function | What It Does | Details |
+|---|---|---|
+| File / Folder Synchronisation | Syncs files and folders between connected device storage and your computer mirror, in both directions with preview and selection. | [File / Folder Synchronisation](#file--folder-synchronisation-device--computer) |
+| Library Mapping | Maps device library roots to dedicated computer folders so library code can be managed independently from a device’s main linked folder. | [Library Mapping](#library-mapping-computer-folder--device-library-root) |
+| File Difference Comparison | Compares a device file against its computer mirror file using VS Code diff view. | [File Difference Comparison](#file-difference-comparison) |
+| Excluding Files | Excludes selected device paths from sync operations to protect **passwords** and **secrets** stored on a device. | [Exclude Files From Sync](#exclude-files-from-sync) |
+| Computer / Device Explorer View | Shows a dual-tree explorer (COMPUTER + DEVICE) with context actions for open, sync, compare, and mapping. | [Computer / Device Explorer View](#computer--device-explorer-view) |
+| Multi-Device Connections | Connects and manages multiple boards at the same time, with per-device status and operations. | [Multi-Device Connections](#multi-device-connections) |
+| REPL Window | Provides an interactive REPL panel with per-device command history and quick switching between connected devices. | [REPL Window](#repl-window) |
 
-For example if there is an image subfolder under your extension project workspace:
+## Scenarios
 
-\!\[feature X\]\(images/feature-x.png\)
+The following scenarios help understand the purpose of this extension and how it solves the problem I have when writing code for MicroPython devices.
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+### File synchronisation and change comparison
+
+As a long term professional developer (aka I develop for my day job), I found it frustrating to develop on my hobby MicroPython devices and not have a way of easily tracking changes and synchronising files to my computer. This extension was born from that need.
+
+I also often have Python logic that I use on multiple devices and all that changes are things like the names for MQTT or the wifi passwords. This mean I needed to keep copying files between devices and my development computer.
+
+For example, I have many devices connected to my home automation that turns on and off lights at different times for various scenarios. On my host computer I have a folder structure similar to the following:
+
+-- Switch
+   -- mqtt
+      __init__.py
+      mqtt_client
+   -- wifi
+   main.py
+
+
+
+## Screenshots
+
+Real feature screenshots are not yet included in this repository. The extension currently ships icons only under `images/`.
+
+Recommended screenshot slots (add captures to these paths):
+
+- `images/screenshot-explorer-overview.png` (Computer/Device tree)
+- `images/screenshot-sync-preview.png` (sync preview dialog)
+- `images/screenshot-library-mapping.png` (device library mapping node)
+- `images/screenshot-diff-view.png` (device vs computer compare)
+- `images/screenshot-exclusion.png` (excluded path state)
+
+When you add them, embed like this:
+
+```md
+![Explorer Overview](images/screenshot-explorer-overview.png)
+![Sync Preview](images/screenshot-sync-preview.png)
+![Library Mapping](images/screenshot-library-mapping.png)
+![Diff View](images/screenshot-diff-view.png)
+![Sync Exclusion](images/screenshot-exclusion.png)
+```
+
+## File / Folder Synchronisation (Device <-> Computer)
+
+The extension supports two-way sync between device storage and computer mirror files.
+
+### Sync directions
+
+- **Device -> Computer**: Pull device content to the linked/mapped computer folders.
+- **Computer -> Device**: Push local computer changes to the connected device.
+
+### How sync works
+
+- Compares source and destination file sets and computes create/modify/delete operations.
+- Opens a sync preview so operations can be reviewed and selectively unchecked.
+- Honors sync exclusions for protected paths.
+- Supports syncing from root or from a selected node/path.
+
+### Why this matters
+
+- Keeps device and local project trees aligned.
+- Reduces manual copy/upload steps.
+- Makes it practical to treat device code like normal project code.
+
+## Library Mapping (Computer Folder -> Device Library Root)
+
+Library mapping lets you maintain reusable libraries in dedicated computer folders while mapping each folder to a device library root.
+
+### Key behavior
+
+- A device can have library folders mapped from computer to device library roots.
+- Library-mapped paths are handled separately from the device’s primary linked folder.
+- Device-node sync preview includes mapped library operations and allows selective syncing.
+
+### Why this matters
+
+- Separates app code from shared library code.
+- Prevents library content from being mixed into unrelated linked-folder sync paths.
+- Supports cleaner project structure and better reuse.
+
+## File Difference Comparison
+
+You can compare a device file with its computer mirror file directly in VS Code diff.
+
+### Compare behavior
+
+- Opens `Computer <-> Device` diff for selected file.
+- For device files:
+  - Compare action is hidden if the device path is not linked.
+  - Compare action is disabled when linked but host file is missing.
+
+### Why this matters
+
+- Quickly inspect drift between device runtime files and local source files.
+- Validate sync results before/after changes.
+
+## Exclude Files From Sync
+
+Paths can be excluded from synchronization to avoid overwriting/deleting specific files/folders.
+
+### Supported operations
+
+- Exclude selected file/folder from sync.
+- Remove exclusion from previously excluded file/folder.
+- Exclusions affect sync preview and execution.
+
+### Typical use cases
+
+- Temporary/generated files.
+- Device-specific runtime artifacts.
+- Paths managed externally.
+
+## Computer / Device Explorer View
+
+The extension provides a dual explorer model with **COMPUTER** and **DEVICE** roots.
+
+### Explorer capabilities
+
+- Browse host mirror and device filesystem in one view.
+- Open computer files and pull/open device files.
+- Run per-node actions: sync, compare, exclude, create, rename, delete.
+- Manage device links and library mappings from context menus.
+
+### Why this matters
+
+- Single operational surface for day-to-day workflow.
+- Faster navigation and fewer command palette round-trips.
+
+## Multi-Device Connections
+
+The extension supports connecting to multiple devices simultaneously.
+
+### Key behavior
+
+- Multiple boards can be connected in parallel from the same VS Code session.
+- Connection state is tracked per device ID and serial port.
+- You can connect another board without disconnecting the current one.
+- Device-level operations (sync, reboot, close connection, REPL activity) are scoped to the selected/active device.
+
+### Why this matters
+
+- Develop and validate across multiple boards in one workspace.
+- Compare behavior between devices without repeatedly reconnecting.
+- Keep separate device sessions active while troubleshooting.
+
+## REPL Window
+
+The REPL view provides an interactive command console for connected boards.
+
+### REPL capabilities
+
+- Open REPL from the Pyboard panel and run commands interactively.
+- Maintain per-device REPL output lines and command history.
+- Switch between connected devices in the REPL UI.
+- Clear REPL output and clear REPL history with dedicated commands/actions.
+- Persist command history (bounded by the configured history limit).
+
+### Why this matters
+
+- Fast ad-hoc inspection and debugging without leaving VS Code.
+- Device-specific interactive sessions with command history reuse.
+- Practical workflow for iterative testing of small MicroPython snippets.
 
 ## Requirements
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+- VS Code `^1.98.0`
+- Node environment compatible with extension dependencies
+- Serial access permissions to your board/device
 
 ## Extension Settings
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+This extension contributes these main settings:
 
-For example:
-
-This extension contributes the following settings:
-
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+- `mekatrol.pyboarddev.autoReconnectLastDevice`: Reconnect previously connected device on startup.
+- `mekatrol.pyboarddev.verboseReplTransportLogs`: Enable low-level REPL transport logging.
+- `mekatrol.pyboarddev.deviceFileOpenWaitForConnectionMs`: Wait time before device file open/save fails.
+- `mekatrol.pyboarddev.mountHostInWorkspaceExplorer`: Mount host mirror in native VS Code Explorer.
+- `mekatrol.pyboarddev.mountDeviceInWorkspaceExplorer`: Mount device filesystem in native Explorer.
+- `mekatrol.pyboarddev.replHistoryLimit`: Per-device REPL history length.
+- `mekatrol.pyboarddev.statusDisplayMode`: Show status in status bar or extension view.
 
 ## Known Issues
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+- Real screenshots are not yet committed; add captures using the screenshot slots above.
+- Device connectivity and throughput depend on board firmware, USB drivers, and serial reliability.
 
 ## Release Notes
 
-Users appreciate release notes as you update your extension.
-
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+See `CHANGELOG.md` for version-by-version changes.

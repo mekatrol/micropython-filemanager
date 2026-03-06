@@ -18,7 +18,7 @@ export interface PyboardIOEvent {
 }
 
 export interface BoardRuntimeInfo {
-  runtimeName: 'MicroPython' | 'CircuitPython';
+  runtimeName: 'MicroPython' | 'UnknownPython';
   version: string;
   machine: string;
   uniqueId?: string;
@@ -493,7 +493,7 @@ export class Pyboard {
     }
 
     const loweredVersion = version.toLowerCase();
-    const runtimeName: 'MicroPython' | 'CircuitPython' = loweredVersion.includes('circuitpython') ? 'CircuitPython' : 'MicroPython';
+    const runtimeName: 'MicroPython' | 'UnknownPython' = loweredVersion.includes('micropython') ? 'MicroPython' : 'UnknownPython';
     const banner = `${runtimeName} ${version}; ${machine}`;
 
     return {
