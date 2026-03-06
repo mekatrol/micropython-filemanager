@@ -275,7 +275,10 @@ class DeviceMirrorModel {
       }
 
       this.deviceEntriesByDeviceId.set(deviceId, deviceEntries);
-      this.syncStatesByDeviceId.set(deviceId, buildSyncStateMap(computerEntries, deviceEntries));
+      this.syncStatesByDeviceId.set(
+        deviceId,
+        buildSyncStateMap(this.filterSyncableEntries(computerEntries), this.filterSyncableEntries(deviceEntries))
+      );
     }
 
     if (!this.activeDeviceId || !this.knownDeviceIds.has(this.activeDeviceId)) {
@@ -460,13 +463,15 @@ class DeviceMirrorModel {
       await this.pruneMissingDeviceSyncExclusions(this.activeDeviceId, deviceEntries);
     }
     const computerEntries = await scanComputerMirrorEntries(this.mirrorRootPath);
-    const deviceEntryMap = new Map(deviceEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
-    const computerEntryMap = new Map(computerEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
-    const protectedComputerPaths = this.getProtectedSyncPaths(computerEntries, this.activeDeviceId);
-    const desiredDevicePaths = new Set(deviceEntries.map((entry) => toRelativePath(entry.relativePath)));
+    const syncableDeviceEntries = this.filterSyncableEntries(deviceEntries);
+    const syncableComputerEntries = this.filterSyncableEntries(computerEntries);
+    const deviceEntryMap = new Map(syncableDeviceEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
+    const computerEntryMap = new Map(syncableComputerEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
+    const protectedComputerPaths = this.getProtectedSyncPaths(syncableComputerEntries, this.activeDeviceId);
+    const desiredDevicePaths = new Set(syncableDeviceEntries.map((entry) => toRelativePath(entry.relativePath)));
     const syncOperations: SyncOperation[] = [];
 
-    for (const entry of deviceEntries) {
+    for (const entry of syncableDeviceEntries) {
       const relativePath = toRelativePath(entry.relativePath);
       if (!relativePath) {
         continue;
@@ -512,7 +517,7 @@ class DeviceMirrorModel {
       }
     }
 
-    for (const entry of computerEntries) {
+    for (const entry of syncableComputerEntries) {
       const relativePath = toRelativePath(entry.relativePath);
       if (!relativePath) {
         continue;
@@ -627,7 +632,7 @@ class DeviceMirrorModel {
 
     this.deviceEntries = deviceEntries;
     this.computerEntries = await scanComputerMirrorEntries(this.mirrorRootPath);
-    this.syncStates = buildSyncStateMap(this.computerEntries, this.deviceEntries);
+    this.syncStates = buildSyncStateMap(this.filterSyncableEntries(this.computerEntries), this.filterSyncableEntries(this.deviceEntries));
     this.onDidChangeDataEmitter.fire();
     if (this.notifyDeviceFilesChanged) {
       await this.notifyDeviceFilesChanged(updatedDeviceFiles);
@@ -663,13 +668,15 @@ class DeviceMirrorModel {
     if (this.activeDeviceId) {
       await this.pruneMissingDeviceSyncExclusions(this.activeDeviceId, deviceEntries);
     }
-    const computerEntryMap = new Map(computerEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
-    const deviceEntryMap = new Map(deviceEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
-    const protectedDevicePaths = this.getProtectedSyncPaths(deviceEntries, this.activeDeviceId);
-    const desiredComputerPaths = new Set(computerEntries.map((entry) => toRelativePath(entry.relativePath)));
+    const syncableComputerEntries = this.filterSyncableEntries(computerEntries);
+    const syncableDeviceEntries = this.filterSyncableEntries(deviceEntries);
+    const computerEntryMap = new Map(syncableComputerEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
+    const deviceEntryMap = new Map(syncableDeviceEntries.map((entry) => [toRelativePath(entry.relativePath), entry]));
+    const protectedDevicePaths = this.getProtectedSyncPaths(syncableDeviceEntries, this.activeDeviceId);
+    const desiredComputerPaths = new Set(syncableComputerEntries.map((entry) => toRelativePath(entry.relativePath)));
     const syncOperations: SyncOperation[] = [];
 
-    for (const entry of computerEntries) {
+    for (const entry of syncableComputerEntries) {
       const relativePath = toRelativePath(entry.relativePath);
       if (!relativePath) {
         continue;
@@ -714,7 +721,7 @@ class DeviceMirrorModel {
       }
     }
 
-    for (const entry of deviceEntries) {
+    for (const entry of syncableDeviceEntries) {
       const relativePath = toRelativePath(entry.relativePath);
       if (!relativePath) {
         continue;
@@ -816,7 +823,7 @@ class DeviceMirrorModel {
 
     this.computerEntries = computerEntries;
     this.deviceEntries = await listDeviceEntries(board);
-    this.syncStates = buildSyncStateMap(this.computerEntries, this.deviceEntries);
+    this.syncStates = buildSyncStateMap(this.filterSyncableEntries(this.computerEntries), this.filterSyncableEntries(this.deviceEntries));
     this.onDidChangeDataEmitter.fire();
     if (this.notifyDeviceFilesChanged) {
       await this.notifyDeviceFilesChanged(writtenDeviceFiles);
@@ -1232,7 +1239,7 @@ class DeviceMirrorModel {
       return;
     }
 
-    const currentPath = this.toNodeScopedComputerRelativePath(node);
+    const currentPath = toRelativePath(node.data.relativePath);
     const currentName = path.posix.basename(currentPath);
     const parentPath = path.posix.dirname(currentPath) === '.' ? '' : path.posix.dirname(currentPath);
     const nextName = await vscode.window.showInputBox({
@@ -1277,7 +1284,7 @@ class DeviceMirrorModel {
       return;
     }
 
-    const targetPath = this.toNodeScopedComputerRelativePath(node);
+    const targetPath = toRelativePath(node.data.relativePath);
     const action = await vscode.window.showWarningMessage(
       `Delete device ${node.data.isDirectory ? 'folder' : 'file'} "/${targetPath}"?`,
       { modal: true },
@@ -1287,7 +1294,18 @@ class DeviceMirrorModel {
       return;
     }
 
-    await deleteDevicePath(board, targetPath);
+    try {
+      await deleteDevicePath(board, targetPath);
+    } catch (error) {
+      if (this.isDevicePathNotFoundError(error)) {
+        await this.refresh(true);
+        const msg = `Device path already missing: /${targetPath}`;
+        vscode.window.showInformationMessage(msg);
+        logChannelOutput(msg, true);
+        return;
+      }
+      throw error;
+    }
     if (this.activeDeviceId) {
       await this.removeSyncExclusionsForDeletedDevicePath(this.activeDeviceId, targetPath, node.data.isDirectory);
     }
@@ -1665,6 +1683,26 @@ class DeviceMirrorModel {
     return String(error);
   }
 
+  private isDevicePathNotFoundError(error: unknown): boolean {
+    const message = this.toErrorMessage(error).toLocaleLowerCase();
+    return message.includes('path not found')
+      || message.includes('no such file')
+      || message.includes('enoent')
+      || message.includes('not found');
+  }
+
+  private isIgnoredSyncPath(relativePath: string): boolean {
+    const normalised = toRelativePath(relativePath);
+    if (!normalised) {
+      return false;
+    }
+    return normalised.split('/').includes('__pycache__');
+  }
+
+  private filterSyncableEntries(entries: FileEntry[]): FileEntry[] {
+    return entries.filter((entry) => !this.isIgnoredSyncPath(entry.relativePath));
+  }
+
   private getDeviceSyncExclusionSet(deviceId?: string): Set<string> {
     if (!deviceId) {
       return new Set();
@@ -1935,7 +1973,8 @@ class DeviceMirrorModel {
     }
 
     const deviceEntries = await listDeviceEntries(board);
-    const scopedEntries = deviceEntries
+    const syncableDeviceEntries = this.filterSyncableEntries(deviceEntries);
+    const scopedEntries = syncableDeviceEntries
       .map((entry) => {
         const scopedRelativePath = libraryDeviceRoot
           ? this.stripLibraryDeviceRoot(entry.relativePath, libraryDeviceRoot)
@@ -1958,7 +1997,7 @@ class DeviceMirrorModel {
       );
     const desiredPaths = new Set(scopedEntries.map((entry) => entry.relativePath));
 
-    const existingComputerEntries = await scanComputerMirrorEntries(computerRootPath);
+    const existingComputerEntries = this.filterSyncableEntries(await scanComputerMirrorEntries(computerRootPath));
     const staleComputerEntries = existingComputerEntries
       .filter(
         (entry) =>
@@ -2001,7 +2040,7 @@ class DeviceMirrorModel {
 
     this.deviceEntries = deviceEntries;
     this.computerEntries = await scanComputerMirrorEntries(computerRootPath);
-    this.syncStates = buildSyncStateMap(this.computerEntries, this.deviceEntries);
+    this.syncStates = buildSyncStateMap(this.filterSyncableEntries(this.computerEntries), this.filterSyncableEntries(this.deviceEntries));
     this.onDidChangeDataEmitter.fire();
 
     const targetLabel = scopedTarget ? `/${scopedTarget}` : '/';
@@ -2044,10 +2083,12 @@ class DeviceMirrorModel {
 
     const computerEntries = await scanComputerMirrorEntries(computerRootPath);
     const deviceEntries = await listDeviceEntries(board);
-    const scopedEntries = computerEntries.filter(
+    const syncableComputerEntries = this.filterSyncableEntries(computerEntries);
+    const syncableDeviceEntries = this.filterSyncableEntries(deviceEntries);
+    const scopedEntries = syncableComputerEntries.filter(
       (entry) => entry.relativePath.length > 0 && this.matchesTarget(entry.relativePath, scopedTarget, includeDescendants)
     );
-    const scopedDeviceEntries = deviceEntries
+    const scopedDeviceEntries = syncableDeviceEntries
       .map((entry) => {
         const scopedRelativePath = libraryDeviceRoot
           ? this.stripLibraryDeviceRoot(entry.relativePath, libraryDeviceRoot)
@@ -2120,7 +2161,7 @@ class DeviceMirrorModel {
 
     this.computerEntries = computerEntries;
     this.deviceEntries = await listDeviceEntries(board);
-    this.syncStates = buildSyncStateMap(this.computerEntries, this.deviceEntries);
+    this.syncStates = buildSyncStateMap(this.filterSyncableEntries(this.computerEntries), this.filterSyncableEntries(this.deviceEntries));
     this.onDidChangeDataEmitter.fire();
     if (this.notifyDeviceFilesChanged) {
       await this.notifyDeviceFilesChanged(writtenDeviceFiles);
