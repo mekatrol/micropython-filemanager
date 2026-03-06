@@ -93,7 +93,6 @@ suite('configuration DeviceConfiguration', () => {
 
     // Arrange: compose full configuration payload.
     const config: PydeviceConfiguration = {
-      syncFolder: '',
       devices: {
         a: full,
         b: empty

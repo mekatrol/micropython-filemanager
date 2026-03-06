@@ -159,7 +159,6 @@ export class DeviceConfiguration {
 }
 
 export interface PydeviceConfiguration {
-  syncFolder: string;
   devices: Record<string, DeviceConfiguration>;
 }
 
@@ -173,7 +172,6 @@ export interface PydeviceConfigurationWithMeta extends PydeviceConfiguration {
 }
 
 export const defaultConfiguration: PydeviceConfiguration = {
-  syncFolder: '',
   devices: {}
 };
 
@@ -344,13 +342,9 @@ export const loadConfiguration = async (): Promise<PydeviceConfiguration> => {
     const fileContent = await vscode.workspace.fs.readFile(fileUri);
     const json = Buffer.from(fileContent).toString('utf8');
     const newConfiguration = JSON.parse(json) as Partial<PydeviceConfiguration> & LegacyPydeviceConfiguration;
-    const syncFolder = typeof newConfiguration.syncFolder === 'string'
-      ? newConfiguration.syncFolder
-      : configuration.syncFolder;
 
     configuration = {
       ...configuration,
-      syncFolder,
       devices: parseDevices(newConfiguration)
     };
 
@@ -395,12 +389,8 @@ export const saveConfiguration = async (configuration: PydeviceConfiguration): P
     const json = Buffer.from(fileContent).toString('utf8');
     const parsed = JSON.parse(json) as Partial<PydeviceConfigurationWithMeta> & LegacyPydeviceConfiguration;
     const meta = parsed.meta ?? existing.meta;
-    const syncFolder = typeof parsed.syncFolder === 'string'
-      ? parsed.syncFolder
-      : existing.syncFolder;
     existing = {
       meta,
-      syncFolder,
       devices: parseDevices(parsed)
     };
   } catch {
@@ -646,4 +636,3 @@ const clampNumber = (value: number, min: number, max: number | undefined = undef
 
   return value;
 };
-
