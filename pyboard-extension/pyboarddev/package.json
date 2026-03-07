@@ -23,10 +23,6 @@
         "title": "Reset config"
       },
       {
-        "command": "mekatrol.pydevice.selectdevice",
-        "title": "Pydevice: Select serial port"
-      },
-      {
         "command": "mekatrol.pydevice.autodetectdevices",
         "title": "Auto detect serial devices",
         "icon": "$(search)"
@@ -237,8 +233,7 @@
         },
         {
           "id": "mekatrol.pydevice.statusView",
-          "name": "PYDEVICE",
-          "when": "mekatrol.pydevice.showExtensionStatusView"
+          "name": "PYDEVICE"
         }
       ],
       "mekatrol-pydevice-panel": [
@@ -254,10 +249,6 @@
         {
           "command": "mekatrol.pydevice.initconfig",
           "when": "true"
-        },
-        {
-          "command": "mekatrol.pydevice.selectdevice",
-          "when": "false"
         },
         {
           "command": "mekatrol.pydevice.autodetectdevices",
@@ -616,19 +607,6 @@
           "default": 100,
           "minimum": 0,
           "description": "Maximum number of REPL history commands retained per device. Oldest entries are removed when limit is exceeded. Set to 0 to disable history retention."
-        },
-        "mekatrol.pydevice.statusDisplayMode": {
-          "type": "string",
-          "default": "extensionView",
-          "enum": [
-            "statusBar",
-            "extensionView"
-          ],
-          "markdownEnumDescriptions": [
-            "Show Pydevice status controls in the VS Code status bar.",
-            "Show Pydevice status controls in the Pydevice sidebar view."
-          ],
-          "description": "Where to display Pydevice status controls."
         }
       }
     },

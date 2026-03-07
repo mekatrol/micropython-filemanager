@@ -177,7 +177,6 @@ This extension contributes these main settings:
 - `mekatrol.pydevice.mountHostInWorkspaceExplorer`: Mount host sync in native VS Code Explorer.
 - `mekatrol.pydevice.mountDeviceInWorkspaceExplorer`: Mount device filesystem in native Explorer.
 - `mekatrol.pydevice.replHistoryLimit`: Per-device REPL history length.
-- `mekatrol.pydevice.statusDisplayMode`: Show status in status bar or extension view.
 
 ## Known Issues
 

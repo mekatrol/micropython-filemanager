@@ -4,7 +4,6 @@
  * feature-specific logic isolated for maintainability and unit testing.
  */
 import * as vscode from 'vscode';
-import { initStatusBar } from './status-bar';
 import { initOutputChannel, logChannelOutput as logChannelOutput } from './output-channel';
 import { initCreateConfigCommand } from './commands/create-config-command';
 import { initAutoDetectDevicesCommand } from './commands/auto-detect-devices-command';
@@ -23,6 +22,7 @@ import { initPydeviceDebug } from './pydevice-debug';
 import { initReplView } from './repl-view';
 import { initExtensionStatusView } from './extension-status-view';
 import { initialiseWorkspaceCache } from './utils/workspace-cache';
+import { initialisePyDeviceController, stopPyDeviceController } from './devices/py-device-controller-singleton';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -31,6 +31,16 @@ export const activate = async (context: vscode.ExtensionContext) => {
   initOutputChannel();
   logChannelOutput('Mekatrol Pydevice activated...', false);
   await initialiseWorkspaceCache();
+  try {
+    await initialisePyDeviceController();
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    logChannelOutput(`PyDeviceController startup failed: ${reason}`, true);
+  }
+
+  context.subscriptions.push({
+    dispose: () => stopPyDeviceController()
+  });
 
   // Create commands
   initCreateConfigCommand(context);
@@ -44,8 +54,6 @@ export const activate = async (context: vscode.ExtensionContext) => {
   initReplView(context);
   await tryReconnectBoardOnStartup(context);
 
-  // Init status bar
-  await initStatusBar(context);
   initExtensionStatusView(context);
 
   // Init device sync explorer
@@ -58,6 +66,8 @@ export const activate = async (context: vscode.ExtensionContext) => {
 
 // This method is called when your extension is deactivated
 export async function deactivate() {
+  stopPyDeviceController();
+
   const hasDirtyDeviceDocuments = vscode.workspace.textDocuments.some(
     (document) => document.uri.scheme === 'pydevice-device' && document.isDirty
   );

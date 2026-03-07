@@ -15,17 +15,11 @@ import { Pydevice } from './utils/pydevice';
 const openReplCommandId = 'mekatrol.pydevice.openrepl';
 const replPrompt = '>>> ';
 const promptFallbackDelayMs = 1200;
-const statusDisplayModeSettingKey = 'statusDisplayMode';
 const formatForTerminal = (text: string): string => text.replace(/\n/g, '\r\n');
 const formatInputForEcho = (text: string): string => text.replace(/\r/g, '\r\n');
 
 const getDisconnectedHint = (): string => {
-  const statusDisplayMode = vscode.workspace.getConfiguration('mekatrol.pydevice').get<string>(statusDisplayModeSettingKey, 'statusBar');
-  if (statusDisplayMode === 'extensionView') {
-    return '\r\n[device not connected; scan from status view in side panel]\r\n';
-  }
-
-  return '\r\n[device not connected; connect from status bar]\r\n';
+  return '\r\n[device not connected; use the Pydevice side panel to scan/connect]\r\n';
 };
 
 class ReplTerminalManager implements vscode.Disposable {

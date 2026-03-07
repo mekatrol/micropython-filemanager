@@ -5,6 +5,7 @@
  */
 import { BoardRuntimeInfo, Pydevice } from '../utils/pydevice';
 import { PortInfo } from '../utils/serial-port';
+import { DeviceSerialPort } from './device-serial-port';
 
 /**
  * Result of probing a serial port for MicroPython runtime details.
@@ -22,24 +23,13 @@ export class SerialDeviceProber {
   constructor(private readonly baudRate: number) {}
 
   async probePort(port: PortInfo): Promise<ProbedSerialDevice | undefined> {
-    const board = new Pydevice(port.path, this.baudRate, false);
-    try {
-      await board.open();
-    } catch {
-      return undefined;
-    }
-
-    try {
-      const runtimeInfo = await board.probeBoardRuntimeInfo();
-      return { port, runtimeInfo };
-    } catch {
-      return undefined;
-    } finally {
-      try {
-        await board.close();
-      } catch {
-        // Ignore close errors during probing.
-      }
-    }
+    const serialPort = new DeviceSerialPort(
+      port.path,
+      this.baudRate,
+      false,
+      (devicePath, baudRate) => new Pydevice(devicePath, baudRate, false)
+    );
+    const runtimeInfo = await serialPort.probeRuntimeInfo();
+    return runtimeInfo ? { port, runtimeInfo } : undefined;
   }
 }

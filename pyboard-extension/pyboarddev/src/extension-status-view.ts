@@ -9,7 +9,6 @@ import {
   onBoardConnectionStateChanged,
   onBoardConnectionsChanged
 } from './commands/connect-board-command';
-import { getStatusDisplayMode, onStatusDataChanged } from './status-bar';
 
 const statusViewId = 'mekatrol.pydevice.statusView';
 const softRebootCommandId = 'mekatrol.pydevice.softreboot';
@@ -41,10 +40,6 @@ class ExtensionStatusViewProvider implements vscode.TreeDataProvider<ExtensionSt
   }
 
   async getChildren(): Promise<ExtensionStatusNode[]> {
-    if (getStatusDisplayMode() !== 'extensionView') {
-      return [];
-    }
-
     const connections = getConnectedBoards();
 
     const items: ExtensionStatusNode[] = [];
@@ -75,12 +70,4 @@ export const initExtensionStatusView = (context: vscode.ExtensionContext): void 
   context.subscriptions.push(view);
   context.subscriptions.push(onBoardConnectionStateChanged(() => provider.refresh()));
   context.subscriptions.push(onBoardConnectionsChanged(() => provider.refresh()));
-  context.subscriptions.push(onStatusDataChanged(() => provider.refresh()));
-  context.subscriptions.push(
-    vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration('mekatrol.pydevice.statusDisplayMode')) {
-        provider.refresh();
-      }
-    })
-  );
 };
