@@ -1041,7 +1041,11 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
           }
 
           const cachedCandidate = configuredDeviceIds.find((deviceId) =>
-            !seenConfiguredDeviceIds.has(deviceId) && lastKnownDevicePortById[deviceId] === port.path
+            !seenConfiguredDeviceIds.has(deviceId)
+            // If a configured device is already connected, do not let another
+            // unresolved port claim that same configured identity row.
+            && !boardRegistry.getByDeviceId(deviceId)
+            && lastKnownDevicePortById[deviceId] === port.path
           );
           if (cachedCandidate) {
             claimedConfiguredIdByPort.set(port.path, cachedCandidate);
@@ -1085,11 +1089,15 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
           let status: RecoveryReconnectStatus;
           if (connectedState) {
             status = 'connected';
-          } else if (existing?.status === 'connecting') {
+          } else if (connectingPaths.has(port.path)) {
             status = 'connecting';
           } else if (existing?.status === 'error') {
             status = 'error';
           } else if (resolvedDeviceId) {
+            status = 'ready';
+          } else if (claimedConfiguredId) {
+            // We already have a configured identity + remembered port match.
+            // Show this as connectable instead of indefinite "Fetching ID...".
             status = 'ready';
           } else {
             status = 'resolving';
@@ -1111,11 +1119,11 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
           const needsReprobe = !connectedState
             && !probingPaths.has(port.path)
             && !connectingPaths.has(port.path)
-            && existing?.status !== 'connecting'
-            && (
-              !resolvedDeviceId
-              || (claimedConfiguredId !== undefined)
-            );
+            // Re-probe only while unresolved; resolved IDs are invalidated on
+            // port reappearance/disconnect earlier in reconcileRows.
+            && !resolvedDeviceId
+            // Claimed configured rows are verified at connect time.
+            && !claimedConfiguredId;
           if (needsReprobe) {
             probingPaths.add(port.path);
             void (async () => {
