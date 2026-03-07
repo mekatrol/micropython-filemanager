@@ -8,7 +8,7 @@ import { createHash } from 'crypto';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { Pydevice } from './pydevice';
+import { Pydevice } from '../devices/py-device';
 
 const beginMarker = '__PYDEVICE_BEGIN__';
 const endMarker = '__PYDEVICE_END__';

@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { BoardRuntimeInfo } from '../../utils/pydevice';
+import { PyDeviceRuntimeInfo } from '../../devices/py-device';
 import { DeviceSerialPort, PydeviceTransport } from '../../devices/device-serial-port';
 
 class FakeTransport implements PydeviceTransport {
@@ -8,7 +8,7 @@ class FakeTransport implements PydeviceTransport {
   constructor(
     public readonly device: string,
     public readonly baudrate: number,
-    private readonly runtimeInfo: BoardRuntimeInfo | undefined = undefined
+    private readonly runtimeInfo: PyDeviceRuntimeInfo | undefined = undefined
   ) {}
 
   async open(): Promise<void> {
@@ -19,11 +19,11 @@ class FakeTransport implements PydeviceTransport {
     this.opened = false;
   }
 
-  async probeBoardRuntimeInfo(): Promise<BoardRuntimeInfo | undefined> {
+  async probeBoardRuntimeInfo(): Promise<PyDeviceRuntimeInfo | undefined> {
     return this.runtimeInfo;
   }
 
-  async getBoardRuntimeInfo(): Promise<BoardRuntimeInfo | undefined> {
+  async getBoardRuntimeInfo(): Promise<PyDeviceRuntimeInfo | undefined> {
     return this.runtimeInfo;
   }
 
@@ -50,7 +50,7 @@ suite('DeviceSerialPort', () => {
   });
 
   test('can probe runtime info through transient transport', async () => {
-    const runtimeInfo: BoardRuntimeInfo = {
+    const runtimeInfo: PyDeviceRuntimeInfo = {
       runtimeName: 'MicroPython',
       version: '1.23.0',
       machine: 'ESP32',

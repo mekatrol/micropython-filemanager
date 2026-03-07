@@ -3,7 +3,7 @@
  * This file is part of the Pydevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
-import { BoardRuntimeInfo, Pydevice } from '../utils/pydevice';
+import { PyDeviceRuntimeInfo, Pydevice } from './py-device';
 
 export interface Disposable {
   dispose(): void;
@@ -14,15 +14,15 @@ export interface PydeviceTransport {
   baudrate: number;
   open(): Promise<void>;
   close(): Promise<void>;
-  probeBoardRuntimeInfo(timeoutMs?: number): Promise<BoardRuntimeInfo | undefined>;
-  getBoardRuntimeInfo(timeoutMs?: number): Promise<BoardRuntimeInfo | undefined>;
+  probeBoardRuntimeInfo(timeoutMs?: number): Promise<PyDeviceRuntimeInfo | undefined>;
+  getBoardRuntimeInfo(timeoutMs?: number): Promise<PyDeviceRuntimeInfo | undefined>;
   softReboot(): Promise<void>;
 }
 
 export type DeviceSerialPortEvent =
   | { type: 'connected'; path: string }
   | { type: 'disconnected'; path: string }
-  | { type: 'runtimeInfo'; path: string; runtimeInfo: BoardRuntimeInfo | undefined }
+  | { type: 'runtimeInfo'; path: string; runtimeInfo: PyDeviceRuntimeInfo | undefined }
   | { type: 'error'; path: string; error: unknown };
 
 type DeviceSerialPortListener = (event: DeviceSerialPortEvent) => void;
@@ -89,7 +89,7 @@ export class DeviceSerialPort {
     }
   }
 
-  async probeRuntimeInfo(timeoutMs?: number): Promise<BoardRuntimeInfo | undefined> {
+  async probeRuntimeInfo(timeoutMs?: number): Promise<PyDeviceRuntimeInfo | undefined> {
     if (this.transport) {
       const runtimeInfo = await this.transport.probeBoardRuntimeInfo(timeoutMs);
       this.emit({ type: 'runtimeInfo', path: this.path, runtimeInfo });
@@ -114,7 +114,7 @@ export class DeviceSerialPort {
     }
   }
 
-  async getRuntimeInfo(timeoutMs?: number): Promise<BoardRuntimeInfo | undefined> {
+  async getRuntimeInfo(timeoutMs?: number): Promise<PyDeviceRuntimeInfo | undefined> {
     if (!this.transport) {
       throw new Error(`Serial port is not connected: ${this.path}`);
     }

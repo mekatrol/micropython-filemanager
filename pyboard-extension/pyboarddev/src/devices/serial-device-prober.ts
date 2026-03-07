@@ -3,7 +3,7 @@
  * This file is part of the Pydevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
-import { BoardRuntimeInfo, Pydevice } from '../utils/pydevice';
+import { PyDeviceRuntimeInfo, Pydevice } from './py-device';
 import { PortInfo } from '../utils/serial-port';
 import { DeviceSerialPort } from './device-serial-port';
 
@@ -12,7 +12,7 @@ import { DeviceSerialPort } from './device-serial-port';
  */
 export interface ProbedSerialDevice {
   port: PortInfo;
-  runtimeInfo?: BoardRuntimeInfo;
+  runtimeInfo?: PyDeviceRuntimeInfo;
 }
 
 /**

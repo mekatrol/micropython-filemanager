@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import { DeviceSerialPort } from '../../devices/device-serial-port';
 import { PyDeviceController } from '../../devices/py-device-controller';
-import { BoardRuntimeInfo } from '../../utils/pydevice';
+import { PyDeviceRuntimeInfo } from '../../devices/py-device';
 
 suite('PyDeviceController', () => {
   test('remaps same serial port to a different probed device ID', async () => {
@@ -40,7 +40,7 @@ suite('PyDeviceController', () => {
   });
 
   test('keeps configured device metadata and attaches matching port by device ID', async () => {
-    const runtimeByPath = new Map<string, BoardRuntimeInfo>([
+    const runtimeByPath = new Map<string, PyDeviceRuntimeInfo>([
       ['/dev/ttyUSB2', {
         runtimeName: 'MicroPython',
         version: '1.23.0',

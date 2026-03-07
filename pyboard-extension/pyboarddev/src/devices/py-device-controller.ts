@@ -5,9 +5,8 @@
  */
 import { toDeviceId } from './device-id';
 import { DeviceSerialPort, Disposable } from './device-serial-port';
-import { PyDevice, PyDeviceState } from './py-device';
+import { PyDeviceRuntimeInfo, PyDevice, PyDeviceState } from './py-device';
 import { PortInfo } from '../utils/serial-port';
-import { BoardRuntimeInfo } from '../utils/pydevice';
 
 export interface PyDeviceControllerEvent {
   type: 'devicesChanged' | 'deviceUpdated';
@@ -21,7 +20,7 @@ export interface PyDeviceControllerOptions {
   baudRate?: number;
   monitorIntervalMs?: number;
   listPorts: () => Promise<PortInfo[]>;
-  probeRuntimeInfo: (serialPort: DeviceSerialPort) => Promise<BoardRuntimeInfo | undefined>;
+  probeRuntimeInfo: (serialPort: DeviceSerialPort) => Promise<PyDeviceRuntimeInfo | undefined>;
   readConfiguredState: () => Promise<Record<string, Omit<PyDeviceState, 'deviceId' | 'connectedSerialPortPath' | 'runtimeInfo'>>>;
   createSerialPort?: (path: string, baudRate: number) => DeviceSerialPort;
 }

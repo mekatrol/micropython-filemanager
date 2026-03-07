@@ -3,7 +3,7 @@
  * This file is part of the Pydevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
-import { BoardRuntimeInfo } from '../utils/pydevice';
+import { PyDeviceRuntimeInfo } from './py-device';
 
 /**
  * Normalises device identifiers so they are safe and stable for keys/paths.
@@ -21,7 +21,7 @@ export const normaliseDeviceId = (value: string): string => {
  * Derives a logical device id from runtime UID when available, otherwise from
  * the serial port path.
  */
-export const toDeviceId = (devicePath: string, runtimeInfo?: BoardRuntimeInfo): string => {
+export const toDeviceId = (devicePath: string, runtimeInfo?: PyDeviceRuntimeInfo): string => {
   if (runtimeInfo?.uniqueId && runtimeInfo.uniqueId.trim().length > 0) {
     return normaliseDeviceId(runtimeInfo.uniqueId);
   }

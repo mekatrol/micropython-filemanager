@@ -10,7 +10,6 @@ import {
   onBoardConnectionStateChanged,
   onConnectedBoardRuntimeInfoChanged
 } from './commands/connect-board-command';
-import { Pydevice } from './utils/pydevice';
 
 const openReplCommandId = 'mekatrol.pydevice.openrepl';
 const replPrompt = '>>> ';

@@ -3,7 +3,7 @@
  * This file is part of the Pydevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
-import { BoardRuntimeInfo, Pydevice } from '../utils/pydevice';
+import { PyDeviceRuntimeInfo, Pydevice } from './py-device';
 
 /**
  * Tracks all active board connections and provides query/update helpers.
@@ -14,7 +14,7 @@ import { BoardRuntimeInfo, Pydevice } from '../utils/pydevice';
 export interface ConnectedBoardState {
   deviceId: string;
   board: Pydevice;
-  runtimeInfo: BoardRuntimeInfo | undefined;
+  runtimeInfo: PyDeviceRuntimeInfo | undefined;
   executionCount: number;
 }
 
@@ -25,7 +25,7 @@ export interface ConnectedBoardSnapshot {
   deviceId: string;
   devicePath: string;
   baudRate: number;
-  runtimeInfo: BoardRuntimeInfo | undefined;
+  runtimeInfo: PyDeviceRuntimeInfo | undefined;
   executionCount: number;
 }
 
@@ -104,7 +104,7 @@ export class ConnectedBoardRegistry {
     return (this.connectedBoards.get(deviceId)?.executionCount ?? 0) > 0;
   }
 
-  setRuntimeInfo(deviceId: string, runtimeInfo: BoardRuntimeInfo | undefined): boolean {
+  setRuntimeInfo(deviceId: string, runtimeInfo: PyDeviceRuntimeInfo | undefined): boolean {
     const state = this.connectedBoards.get(deviceId);
     if (!state) {
       return false;

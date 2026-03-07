@@ -6,7 +6,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { logChannelOutput } from '../output-channel';
-import { BoardRuntimeInfo, Pydevice } from '../utils/pydevice';
+import { PyDeviceRuntimeInfo, Pydevice } from '../devices/py-device';
 import { listSerialDevices } from '../utils/serial-port';
 import { getWorkspaceCacheValue, setWorkspaceCacheValue } from '../utils/workspace-cache';
 import { ConnectedBoardRegistry, ConnectedBoardState, ConnectedBoardSnapshot } from '../devices/connected-board-registry';
@@ -35,7 +35,7 @@ export type { ConnectedBoardSnapshot } from '../devices/connected-board-registry
 const boardRegistry = new ConnectedBoardRegistry();
 const boardConnectionStateEmitter = new vscode.EventEmitter<boolean>();
 const boardConnectionsChangedEmitter = new vscode.EventEmitter<ConnectedBoardSnapshot[]>();
-const boardRuntimeInfoChangedEmitter = new vscode.EventEmitter<BoardRuntimeInfo | undefined>();
+const boardRuntimeInfoChangedEmitter = new vscode.EventEmitter<PyDeviceRuntimeInfo | undefined>();
 const boardExecutionStateChangedEmitter = new vscode.EventEmitter<ConnectedBoardSnapshot[]>();
 
 export const onBoardConnectionStateChanged = boardConnectionStateEmitter.event;
@@ -125,7 +125,7 @@ const readBoardRuntimeInfoWithRetries = async (
   devicePath: string,
   attempts: number,
   delayMs: number
-): Promise<BoardRuntimeInfo | undefined> => {
+): Promise<PyDeviceRuntimeInfo | undefined> => {
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
@@ -148,7 +148,7 @@ const readBoardRuntimeInfoWithRetries = async (
 const readBoardRuntimeInfoWithRecovery = async (
   board: Pydevice,
   devicePath: string
-): Promise<BoardRuntimeInfo | undefined> => {
+): Promise<PyDeviceRuntimeInfo | undefined> => {
   let lastError: unknown;
 
   // Probe-first: this path repeatedly issues Ctrl-C and enters raw REPL without soft reboot.
@@ -311,7 +311,7 @@ export const getConnectedBoardByPortPath = (devicePath: string): Pydevice | unde
   return getConnectedBoardStateByPortPath(devicePath)?.board;
 };
 
-export const getConnectedBoardRuntimeInfo = (deviceId?: string): BoardRuntimeInfo | undefined => {
+export const getConnectedBoardRuntimeInfo = (deviceId?: string): PyDeviceRuntimeInfo | undefined => {
   return boardRegistry.getByDeviceId(deviceId)?.runtimeInfo;
 };
 
