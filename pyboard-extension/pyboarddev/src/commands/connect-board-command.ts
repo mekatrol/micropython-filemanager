@@ -34,6 +34,7 @@ const runtimeInfoRecoveryRebootAttempts = 2;
 const runtimeInfoRecoveryRebootDelayMs = 500;
 const connectionStateMonitorIntervalMs = 2000;
 const recoveryConnectAttemptTimeoutMs = 25000;
+const recoveryPreflightProbeTimeoutMs = 6000;
 const deviceDocumentScheme = 'pydevice-device';
 const pydeviceDebugType = 'pydevice';
 
@@ -1112,7 +1113,15 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
       try {
         const initialRow = getLatestRow();
         if (initialRow.id.startsWith('config:')) {
-          const probedId = await probeRecoveryDeviceId(initialRow.devicePath);
+          const probedId = await withTimeout(
+            probeRecoveryDeviceId(initialRow.devicePath),
+            recoveryPreflightProbeTimeoutMs,
+            `Recovery preflight probe for ${initialRow.devicePath}`
+          ).catch((error) => {
+            const reason = error instanceof Error ? error.message : String(error);
+            logChannelOutput(`Recovery preflight probe skipped for ${initialRow.devicePath}: ${reason}`, false);
+            return undefined;
+          });
           if (probedId && probedId !== initialRow.deviceId) {
             resolvedDeviceIdByPath.set(initialRow.devicePath, probedId);
             const latestRow = getLatestRow();

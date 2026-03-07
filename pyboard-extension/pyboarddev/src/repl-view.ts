@@ -22,6 +22,7 @@ const replHistoryLimitSettingKey = 'replHistoryLimit';
 const defaultReplHistoryLimit = 100;
 
 interface DeviceReplState {
+  devicePath: string;
   lines: string[];
   history: string[];
   hasRenderedConnectedIntro: boolean;
@@ -249,6 +250,39 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
 
   private reconcileConnectedDevices(snapshots: ReturnType<typeof getConnectedPyDevices>): void {
     const connectedIds = new Set(snapshots.map((snapshot) => snapshot.deviceId));
+    const snapshotById = new Map(snapshots.map((snapshot) => [snapshot.deviceId, snapshot]));
+
+    // If a device ID was promoted for the same serial port path, preserve REPL state/history
+    // by moving the existing state entry to the new device ID key.
+    for (const snapshot of snapshots) {
+      if (this.devicesById.has(snapshot.deviceId)) {
+        continue;
+      }
+
+      const previousEntry = [...this.devicesById.entries()].find(([existingId, state]) =>
+        !connectedIds.has(existingId)
+        && state.devicePath === snapshot.devicePath
+        && !snapshotById.has(existingId)
+      );
+      if (!previousEntry) {
+        continue;
+      }
+
+      const [previousDeviceId, previousState] = previousEntry;
+      this.devicesById.delete(previousDeviceId);
+      previousState.devicePath = snapshot.devicePath;
+      this.devicesById.set(snapshot.deviceId, previousState);
+
+      const persistedHistory = this.persistedHistoryByDevice.get(previousDeviceId);
+      if (persistedHistory) {
+        this.persistedHistoryByDevice.delete(previousDeviceId);
+        this.persistedHistoryByDevice.set(snapshot.deviceId, persistedHistory);
+      }
+
+      if (this.activeDeviceId === previousDeviceId) {
+        this.activeDeviceId = snapshot.deviceId;
+      }
+    }
 
     for (const existingId of this.devicesById.keys()) {
       if (!connectedIds.has(existingId)) {
@@ -264,12 +298,18 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       if (!this.devicesById.has(snapshot.deviceId)) {
         const persistedHistory = this.getPersistedHistoryForDevice(snapshot.deviceId);
         this.devicesById.set(snapshot.deviceId, {
+          devicePath: snapshot.devicePath,
           lines: [],
           history: persistedHistory,
           hasRenderedConnectedIntro: false,
           promptFallbackTimer: undefined,
           pendingExecution: Promise.resolve()
         });
+      } else {
+        const state = this.devicesById.get(snapshot.deviceId);
+        if (state) {
+          state.devicePath = snapshot.devicePath;
+        }
       }
 
       this.renderConnectedIntroForDevice(snapshot.deviceId);
