@@ -193,7 +193,7 @@
       },
       {
         "command": "mekatrol.pydevice.closealldeviceconnections",
-        "title": "Close All Connections",
+        "title": "Disconnect All Connections",
         "icon": "$(debug-disconnect)"
       },
       {

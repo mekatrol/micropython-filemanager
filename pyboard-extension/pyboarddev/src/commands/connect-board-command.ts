@@ -32,6 +32,8 @@ const runtimeInfoRecoveryProbeAttempts = 5;
 const runtimeInfoRecoveryProbeDelayMs = 300;
 const runtimeInfoRecoveryRebootAttempts = 2;
 const runtimeInfoRecoveryRebootDelayMs = 500;
+const connectionStateMonitorIntervalMs = 2000;
+const recoveryConnectAttemptTimeoutMs = 25000;
 const deviceDocumentScheme = 'pydevice-device';
 const pydeviceDebugType = 'pydevice';
 
@@ -119,6 +121,25 @@ const getDistinctConfiguredDeviceNames = (namesByDeviceId: Record<string, string
 
 const wait = async (ms: number): Promise<void> => {
   await new Promise((resolve) => setTimeout(resolve, ms));
+};
+
+const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> => {
+  return await new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    void promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
 };
 
 const getConnectedPyDeviceStateByPortPath = (devicePath: string): ConnectedPyDeviceState | undefined =>
@@ -288,6 +309,43 @@ const closeOpenDeviceTabsAfterDisconnect = async (deviceId?: string): Promise<vo
   if (!closed) {
     logChannelOutput('Disconnected, but some device tabs could not be closed.', true);
   }
+};
+
+const pruneStaleConnectedDevices = async (
+  knownPorts?: Awaited<ReturnType<typeof listSerialDevices>>
+): Promise<void> => {
+  let activePorts = knownPorts;
+  if (!activePorts) {
+    try {
+      activePorts = await listSerialDevices();
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      logChannelOutput(`Skipping stale connection pruning: unable to list serial devices. ${reason}`, false);
+      return;
+    }
+  }
+
+  const currentPortPaths = new Set(activePorts.map((port) => port.path));
+  const staleSnapshots = boardRegistry.getSnapshots().filter((snapshot) => !currentPortPaths.has(snapshot.devicePath));
+  if (staleSnapshots.length === 0) {
+    return;
+  }
+
+  for (const snapshot of staleSnapshots) {
+    const removed = boardRegistry.remove(snapshot.deviceId);
+    if (!removed) {
+      continue;
+    }
+    void removed.board.close().catch(() => {
+      // Ignore close failures for already-disconnected/unplugged devices.
+    });
+    logChannelOutput(
+      `Dropped stale connection state for ${snapshot.deviceId} on ${snapshot.devicePath} after serial port disappeared.`,
+      false
+    );
+  }
+
+  notifyStateChanged();
 };
 
 const notifyStateChanged = (): void => {
@@ -769,7 +827,7 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true }
     );
-    panel.webview.html = renderConnectHtml([]);
+    panel.webview.html = renderConnectHtml([], recoveryConnectAttemptTimeoutMs);
 
     let rowsById = new Map<string, ConnectRow>();
     const resolvedDeviceIdByPath = new Map<string, string>();
@@ -818,6 +876,9 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
           }
         }
         const currentPortPaths = new Set(activePorts.map((port) => port.path));
+
+        await pruneStaleConnectedDevices(activePorts);
+
         for (const devicePath of [...resolvedDeviceIdByPath.keys()]) {
           if (!currentPortPaths.has(devicePath)) {
             resolvedDeviceIdByPath.delete(devicePath);
@@ -984,6 +1045,9 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
     };
 
     const connectRow = async (row: ConnectRow): Promise<void> => {
+      const rowId = row.id;
+      const getLatestRow = (): ConnectRow => rowsById.get(rowId) ?? row;
+
       if (!row.devicePath) {
         return;
       }
@@ -992,23 +1056,29 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
       }
       const currentlyConnected = getConnectedPyDeviceByPortPath(row.devicePath);
       if (currentlyConnected) {
-        row.status = ConnectStatus.Connected;
-        updateRow(row);
+        const latestRow = getLatestRow();
+        latestRow.status = ConnectStatus.Connected;
+        updateRow(latestRow);
         return;
       }
 
       connectingPaths.add(row.devicePath);
-      row.status = ConnectStatus.Connecting;
-      row.errorText = undefined;
-      updateRow(row);
+      {
+        const latestRow = getLatestRow();
+        latestRow.status = ConnectStatus.Connecting;
+        latestRow.errorText = undefined;
+        updateRow(latestRow);
+      }
 
       try {
-        if (row.id.startsWith('config:')) {
-          const probedId = await probeRecoveryDeviceId(row.devicePath);
-          if (probedId && probedId !== row.deviceId) {
-            resolvedDeviceIdByPath.set(row.devicePath, probedId);
-            row.status = ConnectStatus.Ready;
-            row.errorText = undefined;
+        const initialRow = getLatestRow();
+        if (initialRow.id.startsWith('config:')) {
+          const probedId = await probeRecoveryDeviceId(initialRow.devicePath);
+          if (probedId && probedId !== initialRow.deviceId) {
+            resolvedDeviceIdByPath.set(initialRow.devicePath, probedId);
+            const latestRow = getLatestRow();
+            latestRow.status = ConnectStatus.Ready;
+            latestRow.errorText = undefined;
             await reconcileRows();
             return;
           }
@@ -1016,7 +1086,11 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
 
         let state: ConnectedPyDeviceState | undefined;
         try {
-          state = await connectBoardForPath(row.devicePath, defaultBaudRate, true, true);
+          state = await withTimeout(
+            connectBoardForPath(initialRow.devicePath, defaultBaudRate, true, true),
+            recoveryConnectAttemptTimeoutMs,
+            `Connect attempt for ${initialRow.devicePath}`
+          );
         } catch (error) {
           const message = error instanceof Error ? error.message.toLocaleLowerCase() : String(error).toLocaleLowerCase();
           const transientLock = message.includes('cannot lock port') || message.includes('resource temporarily unavailable');
@@ -1024,16 +1098,25 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
             throw error;
           }
           await wait(350);
-          state = await connectBoardForPath(row.devicePath, defaultBaudRate, true, true);
+          state = await withTimeout(
+            connectBoardForPath(initialRow.devicePath, defaultBaudRate, true, true),
+            recoveryConnectAttemptTimeoutMs,
+            `Retry connect attempt for ${initialRow.devicePath}`
+          );
         }
-        const nextDeviceId = state?.deviceId ?? row.deviceId;
-        resolvedDeviceIdByPath.set(row.devicePath, nextDeviceId);
-        void updateLastKnownDevicePort(nextDeviceId, row.devicePath);
+        const latestRow = getLatestRow();
+        const nextDeviceId = state?.deviceId ?? latestRow.deviceId;
+        resolvedDeviceIdByPath.set(latestRow.devicePath, nextDeviceId);
+        void updateLastKnownDevicePort(nextDeviceId, latestRow.devicePath);
         await reconcileRows();
       } catch (error) {
-        row.status = ConnectStatus.Error;
-        row.errorText = error instanceof Error ? error.message : String(error);
-        updateRow(row);
+        const latestRow = getLatestRow();
+        latestRow.status = ConnectStatus.Error;
+        const rawMessage = error instanceof Error ? error.message : String(error);
+        latestRow.errorText = rawMessage.includes('timed out after')
+          ? 'Connect timed out. Device may not be running MicroPython/raw REPL.'
+          : rawMessage;
+        updateRow(latestRow);
       } finally {
         connectingPaths.delete(row.devicePath);
       }
@@ -1115,7 +1198,7 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
         return;
       }
       void reconcileRows();
-    }, 2000);
+    }, connectionStateMonitorIntervalMs);
     const boardChangeDisposable = onBoardConnectionsChanged(() => {
       if (disposed) {
         return;
@@ -1192,6 +1275,16 @@ export const initToggleBoardConnectionCommand = (context: vscode.ExtensionContex
   });
 
   context.subscriptions.push(command);
+};
+
+export const initConnectionStateMonitor = (context: vscode.ExtensionContext): void => {
+  const timer = setInterval(() => {
+    void pruneStaleConnectedDevices();
+  }, connectionStateMonitorIntervalMs);
+
+  context.subscriptions.push({
+    dispose: () => clearInterval(timer)
+  });
 };
 
 export const tryReconnectBoardOnStartup = async (_context: vscode.ExtensionContext): Promise<void> => {

@@ -476,6 +476,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     const historyCursorByDevice = new Map();
     const historyDraftByDevice = new Map();
     const pendingEchoByDevice = new Map();
+    let deferredState;
 
     const getActiveDevice = () => currentState.devices.find((item) => item.deviceId === currentState.activeDeviceId);
 
@@ -530,13 +531,50 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       return lines;
     };
 
+    const hasActiveSelectionInConsole = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+        return false;
+      }
+      const anchor = selection.getRangeAt(0).commonAncestorContainer;
+      return contentEl.contains(anchor);
+    };
+
+    const applyState = (nextState) => {
+      currentState = nextState;
+      if (!currentState.activeDeviceId && currentState.devices.length > 0) {
+        currentState.activeDeviceId = currentState.devices[0].deviceId;
+      }
+      for (const device of currentState.devices) {
+        const pending = pendingEchoByDevice.get(device.deviceId);
+        if (typeof pending !== 'string' || pending.length === 0) {
+          continue;
+        }
+        const commandLine = '>>> ' + pending;
+        if (Array.isArray(device.lines) && device.lines.includes(commandLine)) {
+          pendingEchoByDevice.delete(device.deviceId);
+        }
+      }
+      const active = getActiveDevice();
+      if (active) {
+        const cursor = historyCursorByDevice.get(active.deviceId);
+        const maxCursor = active.history.length;
+        if (typeof cursor === 'number' && cursor > maxCursor) {
+          historyCursorByDevice.set(active.deviceId, maxCursor);
+        }
+      }
+      render();
+    };
+
     const render = () => {
       tabsEl.innerHTML = '';
       if (currentState.devices.length === 0) {
         outputEl.textContent = 'No connected devices.';
         promptRowEl.classList.add('disabled');
         inputEl.disabled = true;
-        contentEl.scrollTop = contentEl.scrollHeight;
+        if (!hasActiveSelectionInConsole()) {
+          contentEl.scrollTop = contentEl.scrollHeight;
+        }
         return;
       }
 
@@ -569,8 +607,10 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       }
 
       outputEl.textContent = getRenderLines(active).join('\\n');
-      contentEl.scrollTop = contentEl.scrollHeight;
-      if (document.activeElement !== inputEl) {
+      if (!hasActiveSelectionInConsole()) {
+        contentEl.scrollTop = contentEl.scrollHeight;
+      }
+      if (!hasActiveSelectionInConsole() && document.activeElement !== inputEl) {
         inputEl.focus();
       }
     };
@@ -667,30 +707,21 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     window.addEventListener('message', (event) => {
       const message = event.data;
       if (message?.type === 'state') {
-        currentState = message.value;
-        if (!currentState.activeDeviceId && currentState.devices.length > 0) {
-          currentState.activeDeviceId = currentState.devices[0].deviceId;
+        if (hasActiveSelectionInConsole()) {
+          deferredState = message.value;
+          return;
         }
-        for (const device of currentState.devices) {
-          const pending = pendingEchoByDevice.get(device.deviceId);
-          if (typeof pending !== 'string' || pending.length === 0) {
-            continue;
-          }
-          const commandLine = '>>> ' + pending;
-          if (Array.isArray(device.lines) && device.lines.includes(commandLine)) {
-            pendingEchoByDevice.delete(device.deviceId);
-          }
-        }
-        const active = getActiveDevice();
-        if (active) {
-          const cursor = historyCursorByDevice.get(active.deviceId);
-          const maxCursor = active.history.length;
-          if (typeof cursor === 'number' && cursor > maxCursor) {
-            historyCursorByDevice.set(active.deviceId, maxCursor);
-          }
-        }
-        render();
+        applyState(message.value);
       }
+    });
+
+    document.addEventListener('selectionchange', () => {
+      if (!deferredState || hasActiveSelectionInConsole()) {
+        return;
+      }
+      const nextState = deferredState;
+      deferredState = undefined;
+      applyState(nextState);
     });
   </script>
 </body>

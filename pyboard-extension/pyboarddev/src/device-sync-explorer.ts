@@ -1913,7 +1913,7 @@ class DeviceSyncModel {
     }
     .hint { margin: 0 0 12px; opacity: 0.9; }
     table { width: 100%; border-collapse: collapse; border: 1px solid var(--vscode-editorWidget-border); table-layout: fixed; }
-    th, td { padding: 8px 10px; border-bottom: 1px solid var(--vscode-editorWidget-border); vertical-align: middle; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid var(--vscode-editorWidget-border); vertical-align: middle; user-select: text; }
     th { text-align: left; font-weight: 600; }
     th.check, td.check { width: 48px; text-align: center; }
     th.action, td.action { width: 90px; text-align: center; }
@@ -3743,16 +3743,16 @@ class DeviceSyncModel {
   async closeAllDeviceConnections(): Promise<void> {
     const connected = this.getConnectedDeviceIds();
     if (connected.length === 0) {
-      vscode.window.showInformationMessage('No active board connections to close.');
+      vscode.window.showInformationMessage('No active board connections to disconnect.');
       return;
     }
 
     const action = await vscode.window.showWarningMessage(
-      `Close all ${connected.length} active board connection(s)?`,
+      `Disconnect all ${connected.length} active board connection(s)?`,
       { modal: true },
-      'Close All'
+      'Disconnect All'
     );
-    if (action !== 'Close All') {
+    if (action !== 'Disconnect All') {
       return;
     }
 
@@ -3764,7 +3764,7 @@ class DeviceSyncModel {
     );
     if (closed) {
       await this.refresh(false);
-      vscode.window.showInformationMessage(`Closed ${connected.length} board connection(s).`);
+      vscode.window.showInformationMessage(`Disconnected ${connected.length} board connection(s).`);
     }
   }
 
@@ -4056,7 +4056,7 @@ class DeviceSyncModel {
     h2 { margin: 0 0 10px; font-size: 16px; }
     .hint { margin: 0 0 12px; opacity: 0.9; }
     table { width: 100%; border-collapse: collapse; border: 1px solid var(--vscode-editorWidget-border); table-layout: fixed; }
-    th, td { padding: 8px 10px; border-bottom: 1px solid var(--vscode-editorWidget-border); vertical-align: middle; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid var(--vscode-editorWidget-border); vertical-align: middle; user-select: text; }
     th { text-align: left; font-weight: 600; }
     th.status, td.status { width: 180px; }
     th.scope, td.scope { width: 220px; }

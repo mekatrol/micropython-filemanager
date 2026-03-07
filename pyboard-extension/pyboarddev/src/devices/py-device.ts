@@ -42,6 +42,7 @@ export class PyDeviceConnection {
   readonly onDidIO = this.ioEmitter.event;
   private execQueue: Promise<void> = Promise.resolve();
   private static readonly transportLogSettingKey = 'verboseReplTransportLogs';
+  private static readonly writeAckTimeoutMs = 2000;
   private readonly reportErrorsToUser: boolean;
 
   constructor(
@@ -244,8 +245,9 @@ export class PyDeviceConnection {
     return response.slice(-str.length) === str;
   }
 
-  async write(data: string): Promise<void> {
+  async write(data: string, options?: { drain?: boolean }): Promise<void> {
     this.assertPortOpen();
+    const drain = options?.drain !== false;
 
     const buffer = new Uint8Array(data.length);
     for (let i = 0; i < data.length; i++) {
@@ -253,20 +255,49 @@ export class PyDeviceConnection {
     }
     this.emitIO('tx', Buffer.from(buffer));
 
+    if (!drain) {
+      // Fire-and-forget for control bytes. Some USB-serial bridges never invoke
+      // write callbacks for these sequences, which can deadlock command flows.
+      this.serialPort!.write(buffer);
+      return;
+    }
+
     await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const settleReject = (error: Error): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timeout);
+        reject(error);
+      };
+      const settleResolve = (): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timeout);
+        resolve();
+      };
+
+      const timeout = setTimeout(() => {
+        settleReject(this.reportError('Timed out waiting for serial write acknowledgement', new Error(`Timeout after ${PyDeviceConnection.writeAckTimeoutMs}ms`)));
+      }, PyDeviceConnection.writeAckTimeoutMs);
+
       this.serialPort!.write(buffer, undefined, (err) => {
         if (err) {
-          reject(this.reportError('Failed to write to serial port', err));
+          settleReject(this.reportError('Failed to write to serial port', err));
           return;
         }
 
         this.serialPort!.drain((drainError) => {
           if (drainError) {
-            reject(this.reportError('Failed to flush serial write buffer', drainError));
+            settleReject(this.reportError('Failed to flush serial write buffer', drainError));
             return;
           }
 
-          resolve();
+          settleResolve();
         });
       });
     });
@@ -279,20 +310,14 @@ export class PyDeviceConnection {
   private async execRawCaptureUnlocked(command: string, timeoutMs: number = 10000): Promise<{ stdout: string; stderr: string }> {
     this.assertPortOpen();
 
-    const rawPromptText = Buffer.from('raw REPL; CTRL-B to exit');
-
-    await this.write('\r\x03\x03');
-    await this.readUntilIdle(120, 600);
-
-    await this.write('\r\x01');
-    await this.waitForDataContains([rawPromptText], timeoutMs);
+    await this.enterRawReplUnlocked(timeoutMs);
 
     await this.write(command);
     await this.write('\x04');
 
     const response = await this.waitForDataEndingWith(Buffer.from([0x04, 0x3e]), timeoutMs);
 
-    await this.write('\r\x02');
+    await this.write('\r\x02', { drain: false });
     await this.readUntilIdle(100, 600);
 
     let payload = response;
@@ -473,20 +498,54 @@ export class PyDeviceConnection {
   }
 
   private async softRebootRawUnlocked(timeoutMs: number): Promise<void> {
+    await this.enterRawReplUnlocked(timeoutMs);
+
     const rawPromptText = Buffer.from('raw REPL; CTRL-B to exit');
     const softRebootText = Buffer.from('soft reboot');
-
-    await this.write('\r\x03\x03');
-    await this.readUntilIdle(120, 800);
-
-    await this.write('\r\x01');
-    await this.waitForDataContains([rawPromptText], timeoutMs);
 
     await this.write('\x04');
     await this.waitForDataContains([softRebootText, rawPromptText], timeoutMs);
 
-    await this.write('\r\x02');
+    await this.write('\r\x02', { drain: false });
     await this.readUntilIdle(120, 800);
+  }
+
+  private async enterRawReplUnlocked(timeoutMs: number): Promise<void> {
+    const rawPromptText = Buffer.from('raw REPL; CTRL-B to exit');
+    const rawPromptPrefix = Buffer.from('raw REPL');
+    const rawPromptTail = Buffer.from('\r\n>');
+    const attempts = timeoutMs < 5000 ? 2 : 3;
+    const startedAt = Date.now();
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      const elapsedMs = Date.now() - startedAt;
+      const remainingMs = Math.max(0, timeoutMs - elapsedMs);
+      if (remainingMs <= 0) {
+        break;
+      }
+      const attemptsLeft = attempts - attempt + 1;
+      const promptTimeoutMs = Math.min(remainingMs, Math.max(1500, Math.floor(remainingMs / attemptsLeft)));
+
+      try {
+        await this.write('\r\x03\x03', { drain: false });
+        await this.readUntilIdle(120, 800);
+
+        await this.write('\r\x01', { drain: false });
+        await this.waitForDataContains([rawPromptText, rawPromptPrefix, rawPromptTail], promptTimeoutMs);
+        return;
+      } catch (error) {
+        lastError = error;
+        await this.readUntilIdle(120, 600);
+        if (attempt < attempts) {
+          await this.delay(120);
+        }
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : this.reportError('Failed to enter raw REPL', new Error(String(lastError)));
   }
 
   private async waitForDataContains(patterns: Buffer[], timeoutMs: number): Promise<number[]> {
@@ -645,11 +704,20 @@ export class PyDeviceConnection {
   private reportError(context: string, error: unknown): Error {
     const detail = error instanceof Error ? error.message : String(error);
     const message = `${context}: ${detail}`;
-    if (this.reportErrorsToUser) {
+    if (this.reportErrorsToUser && this.shouldSurfaceErrorToUser(message)) {
       vscode.window.showErrorMessage(message);
-      logChannelOutput(message, true);
     }
+    logChannelOutput(message, true);
     return new Error(message);
+  }
+
+  private shouldSurfaceErrorToUser(message: string): boolean {
+    // These transport timeouts are expected during probing/retries and should
+    // be surfaced in row status instead of repeated global pop-up errors.
+    if (message.includes('Timed out waiting for serial response containing')) {
+      return false;
+    }
+    return true;
   }
 
   private emitIO(direction: 'tx' | 'rx', data: Buffer): void {

@@ -10,6 +10,7 @@ import { initAutoDetectDevicesCommand } from './commands/auto-detect-devices-com
 import {
   closeAllConnectedPyDevices,
   initConnectBoardCommand,
+  initConnectionStateMonitor,
   initRecoveryConnectCommand,
   initDisconnectBoardCommand,
   initSoftRebootBoardCommand,
@@ -51,6 +52,7 @@ export const activate = async (context: vscode.ExtensionContext) => {
   initSoftRebootBoardCommand(context);
   initSetAutoReconnectCommand(context);
   initToggleBoardConnectionCommand(context);
+  initConnectionStateMonitor(context);
   initReplView(context);
   await tryReconnectBoardOnStartup(context);
 
@@ -78,4 +80,3 @@ export async function deactivate() {
 
   await closeAllConnectedPyDevices(false, true, false, false);
 }
-
