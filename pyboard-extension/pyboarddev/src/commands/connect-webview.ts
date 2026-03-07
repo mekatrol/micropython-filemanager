@@ -120,8 +120,8 @@ export const renderConnectHtml = (rows: ConnectRow[], connectAttemptTimeoutMs: n
       </table>
     </div>
     <div class="buttons">
-      <button id="connectAll">Connect all</button>
-      <button id="disconnectAll" class="secondary">Disconnect all</button>
+      <button id="connectAll" style="display:none;">Connect all</button>
+      <button id="disconnectAll" class="secondary" style="display:none;">Disconnect all</button>
       <button id="close" class="secondary">Close</button>
     </div>
   </div>

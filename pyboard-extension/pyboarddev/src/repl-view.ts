@@ -647,7 +647,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       <button id="ctrlCButton" class="toolbar-button" type="button" aria-label="Send Ctrl-C to device">Ctrl-C Interrupt</button>
       <button id="ctrlDButton" class="toolbar-button" type="button" aria-label="Send Ctrl-D to device">Ctrl-D Soft reset</button>
       <button id="ctrlEButton" class="toolbar-button" type="button" aria-label="Send Ctrl-E to device">Ctrl-E Paste mode</button>
-      <button id="reopenPortButton" class="toolbar-button" type="button" aria-label="Close and reopen serial port">Reopen Port</button>
+      <button id="reopenPortButton" class="toolbar-button" type="button" aria-label="Close and reopen serial port" style="display:none;">Reopen Port</button>
     </div>
     <div id="content" class="console">
       <pre id="output" class="output"></pre>
