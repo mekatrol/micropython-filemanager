@@ -19,7 +19,6 @@ export interface PyDeviceIOEvent {
 }
 
 export interface PyDeviceRuntimeInfo {
-  runtimeName: 'MicroPython' | 'UnknownPython';
   version: string;
   machine: string;
   uniqueId?: string;
@@ -452,12 +451,9 @@ export class PyDeviceConnection {
       throw new Error(`Incomplete runtime info response: ${stdout}`);
     }
 
-    const loweredVersion = version.toLowerCase();
-    const runtimeName: 'MicroPython' | 'UnknownPython' = loweredVersion.includes('micropython') ? 'MicroPython' : 'UnknownPython';
-    const banner = `${runtimeName} ${version}; ${machine}`;
+    const banner = `${version}; ${machine}`;
 
     return {
-      runtimeName,
       version,
       machine,
       banner

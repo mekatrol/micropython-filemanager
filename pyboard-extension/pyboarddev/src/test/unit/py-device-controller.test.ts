@@ -11,11 +11,10 @@ suite('PyDeviceController', () => {
     const controller = new PyDeviceController({
       listPorts: async () => currentPortList,
       probeRuntimeInfo: async () => ({
-        runtimeName: 'MicroPython',
         version: '1.23.0',
         machine: 'ESP32',
         uniqueId: currentUniqueId,
-        banner: 'MicroPython'
+        banner: '1.23.0; ESP32'
       }),
       readConfiguredState: async () => ({})
     });
@@ -42,11 +41,10 @@ suite('PyDeviceController', () => {
   test('keeps configured device metadata and attaches matching port by device ID', async () => {
     const runtimeByPath = new Map<string, PyDeviceRuntimeInfo>([
       ['/dev/ttyUSB2', {
-        runtimeName: 'MicroPython',
         version: '1.23.0',
         machine: 'ESP32',
         uniqueId: 'configured-1',
-        banner: 'MicroPython'
+        banner: '1.23.0; ESP32'
       }]
     ]);
 
@@ -72,4 +70,3 @@ suite('PyDeviceController', () => {
     assert.strictEqual(device?.lastKnownSerialPortPath, '/dev/ttyUSB2');
   });
 });
-

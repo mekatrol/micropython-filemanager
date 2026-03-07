@@ -8,7 +8,7 @@ import { PortInfo } from '../utils/serial-port';
 import { DeviceSerialPort } from './device-serial-port';
 
 /**
- * Result of probing a serial port for MicroPython runtime details.
+ * Result of probing a serial port for runtime details.
  */
 export interface ProbedSerialDevice {
   port: PortInfo;

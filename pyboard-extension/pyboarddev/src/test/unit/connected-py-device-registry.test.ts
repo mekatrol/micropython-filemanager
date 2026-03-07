@@ -99,10 +99,9 @@ suite('ConnectedPyDeviceRegistry', () => {
 
     // Act: set runtime info for one device.
     const changed = registry.setRuntimeInfo('a', {
-      runtimeName: 'MicroPython',
       version: '1.23.0',
       machine: 'ESP32',
-      banner: 'MicroPython'
+      banner: '1.23.0; ESP32'
     });
 
     // Assert: update succeeds for existing device and fails for missing device.

@@ -51,11 +51,10 @@ suite('DeviceSerialPort', () => {
 
   test('can probe runtime info through transient transport', async () => {
     const runtimeInfo: PyDeviceRuntimeInfo = {
-      runtimeName: 'MicroPython',
       version: '1.23.0',
       machine: 'ESP32',
       uniqueId: 'abc123',
-      banner: 'MicroPython'
+      banner: '1.23.0; ESP32'
     };
     const serialPort = new DeviceSerialPort(
       '/dev/ttyUSB0',
@@ -69,4 +68,3 @@ suite('DeviceSerialPort', () => {
     assert.strictEqual(serialPort.isConnected, false);
   });
 });
-

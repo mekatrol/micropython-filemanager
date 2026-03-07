@@ -44,9 +44,10 @@ interface ReplWebviewState {
 }
 
 interface WebviewMessage {
-  type: 'submit' | 'switchTab' | 'interrupt';
+  type: 'submit' | 'switchTab' | 'interrupt' | 'sendControl';
   deviceId?: string;
   command?: string;
+  control?: 'interrupt' | 'softReset' | 'pasteMode';
 }
 
 class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -154,7 +155,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       return;
     }
 
-    if (message.type === 'interrupt') {
+    if (message.type === 'interrupt' || message.type === 'sendControl') {
       const deviceId = message.deviceId;
       if (!deviceId || !this.devicesById.has(deviceId)) {
         return;
@@ -167,12 +168,23 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
         return;
       }
 
+      const control = message.type === 'interrupt' ? 'interrupt' : message.control;
+      const controlMap: Record<NonNullable<WebviewMessage['control']>, { byte: string; label: string }> = {
+        interrupt: { byte: '\x03', label: 'Ctrl-C' },
+        softReset: { byte: '\x04', label: 'Ctrl-D' },
+        pasteMode: { byte: '\x05', label: 'Ctrl-E' }
+      };
+      const controlSpec = control ? controlMap[control] : undefined;
+      if (!controlSpec) {
+        return;
+      }
+
       try {
-        await board.write('\x03', { drain: false });
-        this.appendLine(deviceId, '[sent Ctrl-C]');
+        await board.write(controlSpec.byte, { drain: false });
+        this.appendLine(deviceId, `[sent ${controlSpec.label}]`);
       } catch (error) {
         const messageText = error instanceof Error ? error.message : String(error);
-        this.appendLine(deviceId, `[interrupt failed] ${messageText}`);
+        this.appendLine(deviceId, `[${controlSpec.label} failed] ${messageText}`);
       }
       this.postState();
     }
@@ -515,25 +527,31 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     .prompt-row.disabled { opacity: 0.6; }
     .prompt-label { color: var(--vscode-editor-foreground); user-select: none; }
     .input { flex: 1; border: none; outline: none; background: transparent; color: var(--vscode-editor-foreground); padding: 0; font-family: inherit; font-size: inherit; }
-    .interrupt-button {
+    .toolbar { display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--vscode-panel-border); padding: 6px 8px; }
+    .toolbar-button {
       border: 1px solid var(--vscode-button-border, transparent);
       background: var(--vscode-button-secondaryBackground);
       color: var(--vscode-button-secondaryForeground);
-      padding: 2px 8px;
+      padding: 2px 10px;
       cursor: pointer;
       font-size: 11px;
     }
+    .toolbar-button:disabled { opacity: 0.6; cursor: default; }
   </style>
 </head>
 <body>
   <div class="layout">
     <div id="tabs" class="tabs"></div>
+    <div id="toolbar" class="toolbar">
+      <button id="ctrlCButton" class="toolbar-button" type="button" aria-label="Send Ctrl-C to device">Ctrl-C Interrupt</button>
+      <button id="ctrlDButton" class="toolbar-button" type="button" aria-label="Send Ctrl-D to device">Ctrl-D Soft reset</button>
+      <button id="ctrlEButton" class="toolbar-button" type="button" aria-label="Send Ctrl-E to device">Ctrl-E Paste mode</button>
+    </div>
     <div id="content" class="console">
       <pre id="output" class="output"></pre>
       <div id="promptRow" class="prompt-row">
         <span class="prompt-label">>>> </span>
         <input id="commandInput" class="input" type="text" spellcheck="false" aria-label="REPL command input" />
-        <button id="interruptButton" class="interrupt-button" type="button" aria-label="Send Ctrl-C to device">Send Ctrl-C</button>
       </div>
     </div>
   </div>
@@ -546,7 +564,9 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     const outputEl = document.getElementById('output');
     const promptRowEl = document.getElementById('promptRow');
     const inputEl = document.getElementById('commandInput');
-    const interruptButtonEl = document.getElementById('interruptButton');
+    const ctrlCButtonEl = document.getElementById('ctrlCButton');
+    const ctrlDButtonEl = document.getElementById('ctrlDButton');
+    const ctrlEButtonEl = document.getElementById('ctrlEButton');
     const historyCursorByDevice = new Map();
     const historyDraftByDevice = new Map();
     const pendingEchoByDevice = new Map();
@@ -646,7 +666,9 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
         outputEl.textContent = 'No connected devices.';
         promptRowEl.classList.add('disabled');
         inputEl.disabled = true;
-        interruptButtonEl.disabled = true;
+        ctrlCButtonEl.disabled = true;
+        ctrlDButtonEl.disabled = true;
+        ctrlEButtonEl.disabled = true;
         if (!hasActiveSelectionInConsole()) {
           contentEl.scrollTop = contentEl.scrollHeight;
         }
@@ -655,7 +677,9 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
 
       promptRowEl.classList.remove('disabled');
       inputEl.disabled = false;
-      interruptButtonEl.disabled = false;
+      ctrlCButtonEl.disabled = false;
+      ctrlDButtonEl.disabled = false;
+      ctrlEButtonEl.disabled = false;
 
       for (const device of currentState.devices) {
         const tab = document.createElement('button');
@@ -679,7 +703,9 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
         outputEl.textContent = 'No active device.';
         promptRowEl.classList.add('disabled');
         inputEl.disabled = true;
-        interruptButtonEl.disabled = true;
+        ctrlCButtonEl.disabled = true;
+        ctrlDButtonEl.disabled = true;
+        ctrlEButtonEl.disabled = true;
         return;
       }
 
@@ -792,13 +818,17 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       }
     });
 
-    interruptButtonEl.addEventListener('click', () => {
+    const sendControl = (control) => {
       const active = getActiveDevice();
       if (!active) {
         return;
       }
-      vscode.postMessage({ type: 'interrupt', deviceId: active.deviceId });
-    });
+      vscode.postMessage({ type: 'sendControl', deviceId: active.deviceId, control });
+    };
+
+    ctrlCButtonEl.addEventListener('click', () => sendControl('interrupt'));
+    ctrlDButtonEl.addEventListener('click', () => sendControl('softReset'));
+    ctrlEButtonEl.addEventListener('click', () => sendControl('pasteMode'));
 
     window.addEventListener('message', (event) => {
       const message = event.data;

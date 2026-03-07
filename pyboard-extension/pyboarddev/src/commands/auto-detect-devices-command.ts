@@ -78,7 +78,7 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
       label: device.port.path,
       description: device.runtimeInfo
         ? `${device.runtimeInfo.banner}${device.runtimeInfo.uniqueId ? ` | UID:${device.runtimeInfo.uniqueId}` : ''}`
-        : 'MicroPython device',
+        : 'Detected device',
       detail: `${buildDeviceDetails(device)}${device.runtimeInfo?.uniqueId ? ` | Unique ID: ${device.runtimeInfo.uniqueId}` : ''}`,
       picked: false,
       device

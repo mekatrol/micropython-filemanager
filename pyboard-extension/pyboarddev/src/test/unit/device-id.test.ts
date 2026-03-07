@@ -45,11 +45,10 @@ suite('device-id', () => {
     // The helper should prioritise this over the serial port path so IDs remain
     // stable across port changes.
     const runtimeInfo = {
-      runtimeName: 'MicroPython' as const,
       version: '1.22.0',
       machine: 'ESP32',
       uniqueId: ' chip 123 ',
-      banner: 'MicroPython v1.22'
+      banner: 'v1.22; ESP32'
     };
 
     // Execute ID derivation with runtime info available.

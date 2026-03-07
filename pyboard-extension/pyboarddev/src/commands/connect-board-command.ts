@@ -1162,7 +1162,7 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
         latestRow.status = ConnectStatus.Error;
         const rawMessage = error instanceof Error ? error.message : String(error);
         latestRow.errorText = rawMessage.includes('timed out after')
-          ? 'Connect timed out. Device may not be running MicroPython/raw REPL.'
+          ? 'Connect timed out. Device may not be running raw REPL.'
           : rawMessage;
         updateRow(latestRow);
       } finally {
