@@ -1,7 +1,7 @@
 /**
  * Module overview:
- * This file is part of the PyDevice extension runtime and contains
- * feature-specific logic isolated for maintainability and unit testing.
+ * Implements the PyDevice Explorer tree, sync actions, and virtual
+ * filesystem integration for connected devices.
  */
 import { Buffer } from 'buffer';
 import { promises as fs } from 'fs';

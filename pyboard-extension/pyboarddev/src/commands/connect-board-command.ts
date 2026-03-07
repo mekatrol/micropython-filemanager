@@ -1,7 +1,7 @@
 /**
  * Module overview:
- * This file is part of the PyDevice extension runtime and contains
- * feature-specific logic isolated for maintainability and unit testing.
+ * Implements connect/disconnect/reconnect command flows and manages
+ * runtime state for currently connected devices.
  */
 import * as vscode from 'vscode';
 import * as path from 'path';

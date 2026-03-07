@@ -1,7 +1,7 @@
 /**
  * Module overview:
- * This file is part of the PyDevice extension runtime and contains
- * feature-specific logic isolated for maintainability and unit testing.
+ * Provides the sidebar status tree that shows connection summary and
+ * exposes quick status actions.
  */
 import * as vscode from 'vscode';
 import {

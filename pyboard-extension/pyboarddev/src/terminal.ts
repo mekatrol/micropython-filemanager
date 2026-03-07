@@ -1,7 +1,7 @@
 /**
  * Module overview:
- * This file is part of the PyDevice extension runtime and contains
- * feature-specific logic isolated for maintainability and unit testing.
+ * Implements the REPL pseudo-terminal integration and handles terminal
+ * interaction based on current device connection state.
  */
 import * as vscode from 'vscode';
 import {

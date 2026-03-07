@@ -1,7 +1,7 @@
 /**
  * Module overview:
- * This file is part of the PyDevice extension runtime and contains
- * feature-specific logic isolated for maintainability and unit testing.
+ * Implements read/write/list/rename/delete filesystem helpers over the
+ * active device REPL transport.
  */
 import { Buffer } from 'buffer';
 import { createHash } from 'crypto';

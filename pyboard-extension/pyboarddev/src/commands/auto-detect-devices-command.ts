@@ -1,7 +1,7 @@
 /**
  * Module overview:
- * This file is part of the PyDevice extension runtime and contains
- * feature-specific logic isolated for maintainability and unit testing.
+ * Implements serial auto-detection: scans ports, probes runtime info,
+ * and starts a connection for the selected detected device.
  */
 import * as vscode from 'vscode';
 import { logChannelOutput } from '../output-channel';

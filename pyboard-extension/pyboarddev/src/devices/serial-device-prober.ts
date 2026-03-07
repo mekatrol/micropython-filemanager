@@ -1,7 +1,7 @@
 /**
  * Module overview:
- * This file is part of the PyDevice extension runtime and contains
- * feature-specific logic isolated for maintainability and unit testing.
+ * Probes serial ports and returns runtime metadata for ports that respond
+ * as supported Python devices.
  */
 import { PyDeviceConnection, PyDeviceRuntimeInfo } from './py-device';
 import { PortInfo } from '../utils/serial-port';

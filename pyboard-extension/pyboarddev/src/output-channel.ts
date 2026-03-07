@@ -1,7 +1,7 @@
 /**
  * Module overview:
- * This file is part of the PyDevice extension runtime and contains
- * feature-specific logic isolated for maintainability and unit testing.
+ * Creates and writes to the extension output channel used for diagnostics
+ * and user-visible runtime logs.
  */
 import * as vscode from 'vscode';
 

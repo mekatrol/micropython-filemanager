@@ -1,7 +1,7 @@
 /**
  * Module overview:
- * This file is part of the PyDevice extension runtime and contains
- * feature-specific logic isolated for maintainability and unit testing.
+ * Wraps a serial transport with connect/disconnect/runtime operations and
+ * emits serial-port lifecycle events.
  */
 import { PyDeviceConnection, PyDeviceRuntimeInfo } from './py-device';
 
@@ -136,4 +136,3 @@ export class DeviceSerialPort {
     }
   }
 }
-

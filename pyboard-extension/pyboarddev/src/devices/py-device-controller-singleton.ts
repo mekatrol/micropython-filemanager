@@ -1,7 +1,7 @@
 /**
  * Module overview:
- * This file is part of the PyDevice extension runtime and contains
- * feature-specific logic isolated for maintainability and unit testing.
+ * Owns creation, startup, access, and shutdown of the singleton
+ * `PyDeviceController` instance.
  */
 import { loadConfiguration } from '../utils/configuration';
 import { listAllSerialPorts } from '../utils/serial-port';

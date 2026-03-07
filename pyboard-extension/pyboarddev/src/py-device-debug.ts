@@ -1,7 +1,7 @@
 /**
  * Module overview:
- * This file is part of the PyDevice extension runtime and contains
- * feature-specific logic isolated for maintainability and unit testing.
+ * Implements the custom PyDevice debug adapter plus debug configuration
+ * resolution for launching code on connected devices.
  */
 import * as path from 'path';
 import * as vscode from 'vscode';

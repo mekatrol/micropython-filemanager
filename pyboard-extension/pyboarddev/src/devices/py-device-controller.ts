@@ -1,7 +1,7 @@
 /**
  * Module overview:
- * This file is part of the PyDevice extension runtime and contains
- * feature-specific logic isolated for maintainability and unit testing.
+ * Discovers available ports, maps them to logical devices, and publishes
+ * device list/state change events.
  */
 import { toDeviceId } from './device-id';
 import { DeviceSerialPort, Disposable } from './device-serial-port';

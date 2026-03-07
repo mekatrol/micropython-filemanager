@@ -1,7 +1,7 @@
 /**
  * Module overview:
- * This file is part of the PyDevice extension runtime and contains
- * feature-specific logic isolated for maintainability and unit testing.
+ * Generates stable, normalised device identifiers from runtime metadata
+ * and fallback serial-port details.
  */
 import { PyDeviceRuntimeInfo } from './py-device';
 

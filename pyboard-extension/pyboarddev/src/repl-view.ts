@@ -1,7 +1,7 @@
 /**
  * Module overview:
- * This file is part of the PyDevice extension runtime and contains
- * feature-specific logic isolated for maintainability and unit testing.
+ * Implements the REPL webview panel, including per-device session state,
+ * command execution, and command history.
  */
 import * as path from 'path';
 import * as vscode from 'vscode';

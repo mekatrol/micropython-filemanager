@@ -1,7 +1,7 @@
 /**
  * Module overview:
- * This file is part of the PyDevice extension runtime and contains
- * feature-specific logic isolated for maintainability and unit testing.
+ * Provides lightweight output-channel logging helpers for pyboard-related
+ * debug output.
  */
 import * as vscode from 'vscode';
 

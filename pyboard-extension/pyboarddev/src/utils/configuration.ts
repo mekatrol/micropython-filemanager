@@ -1,7 +1,7 @@
 /**
  * Module overview:
- * This file is part of the PyDevice extension runtime and contains
- * feature-specific logic isolated for maintainability and unit testing.
+ * Loads, normalises, validates, and persists workspace PyDevice
+ * configuration from `.pydevice-config`.
  */
 import * as vscode from 'vscode';
 import { posix } from 'path';

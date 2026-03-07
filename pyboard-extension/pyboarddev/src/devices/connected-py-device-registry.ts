@@ -1,7 +1,7 @@
 /**
  * Module overview:
- * This file is part of the PyDevice extension runtime and contains
- * feature-specific logic isolated for maintainability and unit testing.
+ * Stores active connected-device state and exposes lookup/snapshot helpers
+ * keyed by device ID and port path.
  */
 import { PyDeviceConnection, PyDeviceRuntimeInfo } from './py-device';
 

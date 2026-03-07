@@ -1,7 +1,7 @@
 /**
  * Module overview:
- * This file is part of the PyDevice extension runtime and contains
- * feature-specific logic isolated for maintainability and unit testing.
+ * Provides filesystem operations against a connected device by running
+ * helper scripts over the active PyDevice connection.
  */
 import { Buffer } from 'buffer';
 import { createHash } from 'crypto';
