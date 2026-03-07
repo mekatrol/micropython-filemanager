@@ -6,7 +6,7 @@
 import * as vscode from 'vscode';
 import { logChannelOutput } from '../output-channel';
 import { listAllSerialPorts } from '../utils/serial-port';
-import { getConnectedBoardByPortPath } from './connect-board-command';
+import { getConnectedPyDeviceByPortPath } from './connect-board-command';
 import { ProbedSerialDevice, SerialDeviceProber } from '../devices/serial-device-prober';
 
 const autoDetectDevicesCommandId = 'mekatrol.pydevice.autodetectdevices';
@@ -40,7 +40,7 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
             return [];
           }
 
-          const availablePorts = ports.filter((port) => !getConnectedBoardByPortPath(port.path));
+          const availablePorts = ports.filter((port) => !getConnectedPyDeviceByPortPath(port.path));
           if (availablePorts.length === 0) {
             return [];
           }

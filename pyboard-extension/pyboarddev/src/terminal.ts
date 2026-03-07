@@ -5,10 +5,10 @@
  */
 import * as vscode from 'vscode';
 import {
-  getConnectedBoard,
-  getConnectedBoardRuntimeInfo,
+  getConnectedPyDevice,
+  getConnectedPyDeviceRuntimeInfo,
   onBoardConnectionStateChanged,
-  onConnectedBoardRuntimeInfoChanged
+  onConnectedPyDeviceRuntimeInfoChanged
 } from './commands/connect-board-command';
 
 const openReplCommandId = 'mekatrol.pydevice.openrepl';
@@ -46,7 +46,7 @@ class ReplTerminalManager implements vscode.Disposable {
         this.isPtyOpen = false;
       },
       handleInput: async (data: string) => {
-        const board = getConnectedBoard();
+        const board = getConnectedPyDevice();
         if (!board) {
           return;
         }
@@ -110,7 +110,7 @@ class ReplTerminalManager implements vscode.Disposable {
       this.renderConnectionStatus();
     });
 
-    this.boardRuntimeInfoDisposable = onConnectedBoardRuntimeInfoChanged(() => {
+    this.boardRuntimeInfoDisposable = onConnectedPyDeviceRuntimeInfoChanged(() => {
       this.renderConnectionStatus();
     });
   }
@@ -136,13 +136,13 @@ class ReplTerminalManager implements vscode.Disposable {
       return;
     }
 
-    const board = getConnectedBoard();
+    const board = getConnectedPyDevice();
     if (board) {
       if (this.hasRenderedConnectedIntro) {
         return;
       }
 
-      const runtimeInfo = getConnectedBoardRuntimeInfo();
+      const runtimeInfo = getConnectedPyDeviceRuntimeInfo();
       if (runtimeInfo) {
         this.clearPromptFallbackTimer();
         this.writeEmitter.fire(`\r\n${runtimeInfo.banner}\r\n`);
@@ -168,7 +168,7 @@ class ReplTerminalManager implements vscode.Disposable {
 
     this.promptFallbackTimer = setTimeout(() => {
       this.promptFallbackTimer = undefined;
-      if (!this.isPtyOpen || !getConnectedBoard() || this.hasRenderedConnectedIntro) {
+      if (!this.isPtyOpen || !getConnectedPyDevice() || this.hasRenderedConnectedIntro) {
         return;
       }
 

@@ -5,7 +5,7 @@
  */
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { getConnectedBoard, getConnectedBoards, onBoardConnectionsChanged } from './commands/connect-board-command';
+import { getConnectedPyDevice, getConnectedPyDevices, onBoardConnectionsChanged } from './commands/connect-board-command';
 import { configurationFileName, getDeviceNames, loadConfiguration, onPyDeviceConfigurationUpdated } from './utils/configuration';
 import { getWorkspaceCacheValue, setWorkspaceCacheValue } from './utils/workspace-cache';
 
@@ -74,7 +74,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       }
       void this.reloadDeviceNames();
     });
-    this.reconcileConnectedDevices(getConnectedBoards());
+    this.reconcileConnectedDevices(getConnectedPyDevices());
     void this.reloadDeviceNames();
   }
 
@@ -166,7 +166,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     }
     this.appendHistory(deviceId, command);
 
-    const board = getConnectedBoard(deviceId);
+    const board = getConnectedPyDevice(deviceId);
     if (!board) {
       this.appendLine(deviceId, '[device not connected]');
       this.postState();
@@ -223,7 +223,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     this.postState();
   }
 
-  private reconcileConnectedDevices(snapshots: ReturnType<typeof getConnectedBoards>): void {
+  private reconcileConnectedDevices(snapshots: ReturnType<typeof getConnectedPyDevices>): void {
     const connectedIds = new Set(snapshots.map((snapshot) => snapshot.deviceId));
 
     for (const existingId of this.devicesById.keys()) {
@@ -262,7 +262,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
 
   private renderConnectedIntroForDevice(deviceId: string): void {
     const state = this.devicesById.get(deviceId);
-    const snapshot = getConnectedBoards().find((item) => item.deviceId === deviceId);
+    const snapshot = getConnectedPyDevices().find((item) => item.deviceId === deviceId);
     if (!state || !snapshot) {
       return;
     }
@@ -288,7 +288,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       if (!this.devicesById.has(deviceId)) {
         return;
       }
-      const latestSnapshot = getConnectedBoards().find((item) => item.deviceId === deviceId);
+      const latestSnapshot = getConnectedPyDevices().find((item) => item.deviceId === deviceId);
       if (!latestSnapshot || state.hasRenderedConnectedIntro) {
         return;
       }
@@ -411,7 +411,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       return;
     }
 
-    const snapshots = getConnectedBoards();
+    const snapshots = getConnectedPyDevices();
     const state: ReplWebviewState = {
       devices: snapshots.map((snapshot) => ({
         deviceId: snapshot.deviceId,

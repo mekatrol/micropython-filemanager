@@ -1,7 +1,6 @@
 /**
  * Module overview:
- * This file is part of the PyDevice extension runtime and contains
- * feature-specific logic isolated for maintainability and unit testing.
+ * Utility class to allow listing serial ports.
  */
 export interface PortInfo {
     path: string;

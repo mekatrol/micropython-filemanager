@@ -8,8 +8,8 @@ import * as vscode from 'vscode';
 import {
   beginBoardExecution,
   endBoardExecution,
-  getConnectedBoard,
-  getConnectedBoards
+  getConnectedPyDevice,
+  getConnectedPyDevices
 } from './commands/connect-board-command';
 import { logChannelOutput } from './output-channel';
 import { getDeviceHostFolderMappings, loadConfiguration } from './utils/configuration';
@@ -121,7 +121,7 @@ class PyDeviceDebugAdapter implements vscode.DebugAdapter {
       }
 
       const targetDeviceId = await this.resolveTargetDeviceId(targetUri);
-      const board = getConnectedBoard(targetDeviceId);
+      const board = getConnectedPyDevice(targetDeviceId);
       if (!board || !targetDeviceId) {
         throw new Error('No matching connected board for the active file. Connect the owning device and run again.');
       }
@@ -170,7 +170,7 @@ class PyDeviceDebugAdapter implements vscode.DebugAdapter {
       }
 
       if (this.terminateRequested && this.launchDeviceId) {
-        await softRebootConnectedBoard(
+        await softRebootConnectedPyDevice(
           this.launchDeviceId,
           `Device ${this.launchDeviceId} soft rebooted after debug session stop.`,
           `Failed to soft reboot device ${this.launchDeviceId} after debug session stop`
@@ -262,7 +262,7 @@ class PyDeviceDebugAdapter implements vscode.DebugAdapter {
         }
       }
 
-      return getConnectedBoards()[0]?.deviceId;
+      return getConnectedPyDevices()[0]?.deviceId;
     }
 
     if (targetUri.scheme === 'file') {
@@ -282,7 +282,7 @@ class PyDeviceDebugAdapter implements vscode.DebugAdapter {
           }
 
           if (mappedMatches.length > 1) {
-            const connectedById = new Map(getConnectedBoards().map((item) => [item.deviceId, item]));
+            const connectedById = new Map(getConnectedPyDevices().map((item) => [item.deviceId, item]));
             const options = mappedMatches
               .map((item) => connectedById.get(item.deviceId))
               .filter((item): item is NonNullable<typeof item> => Boolean(item));
@@ -310,7 +310,7 @@ class PyDeviceDebugAdapter implements vscode.DebugAdapter {
       }
     }
 
-    return getConnectedBoards()[0]?.deviceId;
+    return getConnectedPyDevices()[0]?.deviceId;
   }
 
   private displayPath(uri: vscode.Uri): string {
@@ -339,8 +339,8 @@ class PyDeviceDebugAdapter implements vscode.DebugAdapter {
   }
 }
 
-const softRebootConnectedBoard = async (deviceId: string, successMessage: string, failurePrefix: string): Promise<void> => {
-  const board = getConnectedBoard(deviceId);
+const softRebootConnectedPyDevice = async (deviceId: string, successMessage: string, failurePrefix: string): Promise<void> => {
+  const board = getConnectedPyDevice(deviceId);
   if (!board) {
     return;
   }

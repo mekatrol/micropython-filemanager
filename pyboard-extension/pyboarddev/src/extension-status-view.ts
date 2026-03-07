@@ -5,7 +5,7 @@
  */
 import * as vscode from 'vscode';
 import {
-  getConnectedBoards,
+  getConnectedPyDevices,
   onBoardConnectionStateChanged,
   onBoardConnectionsChanged
 } from './commands/connect-board-command';
@@ -40,7 +40,7 @@ class ExtensionStatusViewProvider implements vscode.TreeDataProvider<ExtensionSt
   }
 
   async getChildren(): Promise<ExtensionStatusNode[]> {
-    const connections = getConnectedBoards();
+    const connections = getConnectedPyDevices();
 
     const items: ExtensionStatusNode[] = [];
     items.push(new ExtensionStatusNode(`Connected Devices: ${connections.length}`, 'circuit-board'));

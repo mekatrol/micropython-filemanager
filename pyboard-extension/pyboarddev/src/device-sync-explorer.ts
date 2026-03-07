@@ -7,7 +7,7 @@ import { Buffer } from 'buffer';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { closeAllConnectedBoards, getConnectedBoard, getConnectedBoards, onBoardConnectionStateChanged, onBoardConnectionsChanged } from './commands/connect-board-command';
+import { closeAllConnectedPyDevices, getConnectedPyDevice, getConnectedPyDevices, onBoardConnectionStateChanged, onBoardConnectionsChanged } from './commands/connect-board-command';
 import { logChannelOutput } from './output-channel';
 import {
   createDefaultConfiguration,
@@ -217,7 +217,7 @@ class DeviceSyncModel {
   }
 
   private async waitForDeviceEntry(
-    board: NonNullable<ReturnType<typeof getConnectedBoard>>,
+    board: NonNullable<ReturnType<typeof getConnectedPyDevice>>,
     relativePath: string,
     isDirectory: boolean
   ): Promise<boolean> {
@@ -325,7 +325,7 @@ class DeviceSyncModel {
       ...Object.keys(this.deviceNames)
     ]);
 
-    const connected = getConnectedBoards();
+    const connected = getConnectedPyDevices();
     connected.forEach((item) => this.knownDeviceIds.add(item.deviceId));
 
     for (const deviceId of this.knownDeviceIds) {
@@ -344,7 +344,7 @@ class DeviceSyncModel {
 
       let deviceEntries: FileEntry[] = [{ relativePath: '', isDirectory: true }];
       if (fetchDevice) {
-        const board = getConnectedBoard(deviceId);
+        const board = getConnectedPyDevice(deviceId);
         if (board) {
           try {
             deviceEntries = await listDeviceEntries(board);
@@ -487,7 +487,7 @@ class DeviceSyncModel {
       return this.selectedNode.data.deviceId;
     }
 
-    return this.activeDeviceId ?? getConnectedBoards()[0]?.deviceId;
+    return this.activeDeviceId ?? getConnectedPyDevices()[0]?.deviceId;
   }
 
   private async ensureActiveDevice(node?: SyncNode): Promise<string | undefined> {
@@ -539,7 +539,7 @@ class DeviceSyncModel {
       await this.refresh(false);
     }
 
-    const board = getConnectedBoard(this.activeDeviceId);
+    const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
       vscode.window.showWarningMessage('Connect to a board before syncing from device.');
       return;
@@ -753,7 +753,7 @@ class DeviceSyncModel {
       await this.refresh(false);
     }
 
-    const board = getConnectedBoard(this.activeDeviceId);
+    const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
       vscode.window.showWarningMessage('Connect to a board before syncing from device.');
       return;
@@ -1056,7 +1056,7 @@ class DeviceSyncModel {
       await this.refresh(false);
     }
 
-    const board = getConnectedBoard(this.activeDeviceId);
+    const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
       vscode.window.showWarningMessage('Connect to a board before syncing to device.');
       return;
@@ -1437,7 +1437,7 @@ class DeviceSyncModel {
 
   async pullDeviceNodeAndOpen(node: SyncNode, options?: OpenEditorOptions): Promise<void> {
     const deviceId = await this.ensureActiveDevice(node);
-    if (!deviceId || !getConnectedBoard(deviceId)) {
+    if (!deviceId || !getConnectedPyDevice(deviceId)) {
       vscode.window.showWarningMessage('Connect to a board before opening a device file.');
       return;
     }
@@ -1461,7 +1461,7 @@ class DeviceSyncModel {
       return;
     }
 
-    const board = getConnectedBoard(this.activeDeviceId);
+    const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
       vscode.window.showWarningMessage('Connect to a board before opening a device file.');
       return;
@@ -1511,7 +1511,7 @@ class DeviceSyncModel {
       return;
     }
 
-    const board = getConnectedBoard(this.activeDeviceId);
+    const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
       vscode.window.showWarningMessage('Connect to a board before comparing a device file.');
       return;
@@ -1561,7 +1561,7 @@ class DeviceSyncModel {
       return;
     }
 
-    const board = getConnectedBoard(deviceId);
+    const board = getConnectedPyDevice(deviceId);
     if (!board) {
       vscode.window.showWarningMessage('Connect to a board before comparing files.');
       return;
@@ -1646,7 +1646,7 @@ class DeviceSyncModel {
   async createDeviceFile(node?: SyncNode): Promise<void> {
     await this.ensureActiveDevice(node);
     const deviceId = this.activeDeviceId;
-    const board = getConnectedBoard(this.activeDeviceId);
+    const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
       vscode.window.showWarningMessage('Connect to a board before creating a device file.');
       return;
@@ -1699,7 +1699,7 @@ class DeviceSyncModel {
   async createDeviceFolder(node?: SyncNode): Promise<void> {
     await this.ensureActiveDevice(node);
     const deviceId = this.activeDeviceId;
-    const board = getConnectedBoard(this.activeDeviceId);
+    const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
       vscode.window.showWarningMessage('Connect to a board before creating a device folder.');
       return;
@@ -1743,7 +1743,7 @@ class DeviceSyncModel {
       return;
     }
 
-    const board = getConnectedBoard(this.activeDeviceId);
+    const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
       vscode.window.showWarningMessage('Connect to a board before renaming device items.');
       return;
@@ -1788,7 +1788,7 @@ class DeviceSyncModel {
       return;
     }
 
-    const board = getConnectedBoard(this.activeDeviceId);
+    const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
       vscode.window.showWarningMessage('Connect to a board before deleting device items.');
       return;
@@ -2496,7 +2496,7 @@ class DeviceSyncModel {
       await this.refresh(false);
     }
 
-    const board = getConnectedBoard(this.activeDeviceId);
+    const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
       vscode.window.showWarningMessage('Connect to a board before syncing from device.');
       return;
@@ -2605,7 +2605,7 @@ class DeviceSyncModel {
       await this.refresh(false);
     }
 
-    const board = getConnectedBoard(this.activeDeviceId);
+    const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
       vscode.window.showWarningMessage('Connect to a board before syncing to device.');
       return;
@@ -2992,7 +2992,7 @@ class DeviceSyncModel {
   }
 
   isBoardConnected(): boolean {
-    return getConnectedBoards().length > 0;
+    return getConnectedPyDevices().length > 0;
   }
 
   getSyncRootPath(): string | undefined {
@@ -3044,11 +3044,11 @@ class DeviceSyncModel {
   }
 
   getConnectedDeviceIds(): string[] {
-    return getConnectedBoards().map((item) => item.deviceId).sort((a, b) => a.localeCompare(b));
+    return getConnectedPyDevices().map((item) => item.deviceId).sort((a, b) => a.localeCompare(b));
   }
 
-  getConnectedDevice(deviceId: string): ReturnType<typeof getConnectedBoards>[number] | undefined {
-    return getConnectedBoards().find((item) => item.deviceId === deviceId);
+  getConnectedDevice(deviceId: string): ReturnType<typeof getConnectedPyDevices>[number] | undefined {
+    return getConnectedPyDevices().find((item) => item.deviceId === deviceId);
   }
 
   getMappedHostFolder(deviceId: string): string | undefined {
@@ -3160,7 +3160,7 @@ class DeviceSyncModel {
       return undefined;
     }
 
-    if (this.knownDeviceIds.has(decoded) || getConnectedBoards().some((item) => item.deviceId === decoded)) {
+    if (this.knownDeviceIds.has(decoded) || getConnectedPyDevices().some((item) => item.deviceId === decoded)) {
       return decoded;
     }
 
@@ -3757,7 +3757,7 @@ class DeviceSyncModel {
       return;
     }
 
-    const closed = await closeAllConnectedBoards(
+    const closed = await closeAllConnectedPyDevices(
       false,
       false,
       true,
@@ -3864,7 +3864,7 @@ class DeviceSyncModel {
 
   private async openDeviceDiff(node: SyncNode): Promise<void> {
     const deviceId = await this.ensureActiveDevice(node);
-    if (!deviceId || !getConnectedBoard(deviceId)) {
+    if (!deviceId || !getConnectedPyDevice(deviceId)) {
       vscode.window.showWarningMessage('Connect to a board before comparing a device file.');
       return;
     }
@@ -3910,7 +3910,7 @@ class DeviceSyncModel {
 
   private async buildDeviceFileCompareRows(
     deviceId: string,
-    board: NonNullable<ReturnType<typeof getConnectedBoard>>,
+    board: NonNullable<ReturnType<typeof getConnectedPyDevice>>,
     targetRelativePath: string = ''
   ): Promise<DeviceFileCompareRow[]> {
     const scopedTarget = toRelativePath(targetRelativePath);
@@ -4260,7 +4260,7 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
 
   async stat(uri: vscode.Uri): Promise<vscode.FileStat> {
     const { deviceId, relativePath } = this.toDeviceAndRelativeDevicePathOrRoot(uri);
-    const board = await this.getConnectedBoardOrWait(deviceId);
+    const board = await this.getConnectedPyDeviceOrWait(deviceId);
     const entries = await listDeviceEntries(board);
     const entry = entries.find((item) => item.relativePath === relativePath);
     if (!entry) {
@@ -4282,11 +4282,11 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
   async readDirectory(uri: vscode.Uri): Promise<[string, vscode.FileType][]> {
     const { deviceId, relativePath } = this.toDeviceAndRelativeDevicePathOrRoot(uri);
     if (!deviceId) {
-      const roots = getConnectedBoards().map((item) => [encodeURIComponent(this.deviceUriSegmentForId(item.deviceId)), vscode.FileType.Directory] as [string, vscode.FileType]);
+      const roots = getConnectedPyDevices().map((item) => [encodeURIComponent(this.deviceUriSegmentForId(item.deviceId)), vscode.FileType.Directory] as [string, vscode.FileType]);
       return roots.sort((a, b) => a[0].localeCompare(b[0]));
     }
 
-    const board = await this.getConnectedBoardOrWait(deviceId);
+    const board = await this.getConnectedPyDeviceOrWait(deviceId);
     const parentPath = relativePath;
     const entries = await listDeviceEntries(board);
 
@@ -4313,7 +4313,7 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
 
   async createDirectory(uri: vscode.Uri): Promise<void> {
     const { deviceId, relativePath } = this.toDeviceAndRelativeDevicePathOrRoot(uri);
-    const board = await this.getConnectedBoardOrWait(deviceId);
+    const board = await this.getConnectedPyDeviceOrWait(deviceId);
     if (!relativePath) {
       return;
     }
@@ -4327,9 +4327,9 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
   async readFile(uri: vscode.Uri): Promise<Uint8Array> {
     const fallbackFilePath = this.describeDevicePath(uri);
     const { deviceId } = this.toDeviceAndRelativeDevicePathOrRoot(uri);
-    let board: NonNullable<ReturnType<typeof getConnectedBoard>>;
+    let board: NonNullable<ReturnType<typeof getConnectedPyDevice>>;
     try {
-      board = await this.getConnectedBoardOrWait(deviceId);
+      board = await this.getConnectedPyDeviceOrWait(deviceId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const friendlyMessage = `device no longer available for the file. File: ${fallbackFilePath}. ${this.getDeviceDetails()}`;
@@ -4376,7 +4376,7 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
     options: { readonly create: boolean; readonly overwrite: boolean }
   ): Promise<void> {
     const { deviceId } = this.toDeviceAndRelativeDevicePathOrRoot(uri);
-    const board = await this.getConnectedBoardOrWait(deviceId);
+    const board = await this.getConnectedPyDeviceOrWait(deviceId);
     const relativePath = this.toRelativeDevicePath(uri, board);
     const entries = await listDeviceEntries(board);
     const existing = entries.find((entry) => entry.relativePath === relativePath);
@@ -4408,7 +4408,7 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
 
   async delete(uri: vscode.Uri, options: { readonly recursive: boolean }): Promise<void> {
     const { deviceId } = this.toDeviceAndRelativeDevicePathOrRoot(uri);
-    const board = await this.getConnectedBoardOrWait(deviceId);
+    const board = await this.getConnectedPyDeviceOrWait(deviceId);
     const relativePath = this.toRelativeDevicePathOrRoot(uri, board);
     if (!relativePath) {
       throw vscode.FileSystemError.NoPermissions('Deleting the device root is not allowed.');
@@ -4433,7 +4433,7 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
     options: { readonly overwrite: boolean }
   ): Promise<void> {
     const { deviceId } = this.toDeviceAndRelativeDevicePathOrRoot(oldUri);
-    const board = await this.getConnectedBoardOrWait(deviceId);
+    const board = await this.getConnectedPyDeviceOrWait(deviceId);
     const sourcePath = this.toRelativeDevicePath(oldUri, board);
     const targetPath = this.toRelativeDevicePath(newUri, board);
     const entries = await listDeviceEntries(board);
@@ -4496,7 +4496,7 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
     }
 
     const events: vscode.FileChangeEvent[] = [];
-    const targetDeviceId = deviceId ?? getConnectedBoards()[0]?.deviceId ?? '';
+    const targetDeviceId = deviceId ?? getConnectedPyDevices()[0]?.deviceId ?? '';
     for (const relativePath of uniqueRelativePaths) {
       const uri = this.toDeviceUri(targetDeviceId, relativePath);
       this.statCache.delete(uri.toString());
@@ -4553,7 +4553,7 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
     this.onDidChangeFileEmitter.fire(events);
   }
 
-  private toRelativeDevicePath(uri: vscode.Uri, board: NonNullable<ReturnType<typeof getConnectedBoard>>): string {
+  private toRelativeDevicePath(uri: vscode.Uri, board: NonNullable<ReturnType<typeof getConnectedPyDevice>>): string {
     const rawPath = toRelativePath(uri.path.replace(/^\/+/, ''));
     const segments = rawPath
       .split('/')
@@ -4592,7 +4592,7 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
     return relativePath;
   }
 
-  private toRelativeDevicePathOrRoot(uri: vscode.Uri, board: NonNullable<ReturnType<typeof getConnectedBoard>>): string {
+  private toRelativeDevicePathOrRoot(uri: vscode.Uri, board: NonNullable<ReturnType<typeof getConnectedPyDevice>>): string {
     const rawPath = toRelativePath(uri.path.replace(/^\/+/, ''));
     if (!rawPath) {
       return '';
@@ -4701,8 +4701,8 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
     await vscode.workspace.applyEdit(edit);
   }
 
-  private async getConnectedBoardOrWait(deviceId?: string): Promise<NonNullable<ReturnType<typeof getConnectedBoard>>> {
-    const connected = getConnectedBoard(deviceId);
+  private async getConnectedPyDeviceOrWait(deviceId?: string): Promise<NonNullable<ReturnType<typeof getConnectedPyDevice>>> {
+    const connected = getConnectedPyDevice(deviceId);
     if (connected) {
       return connected;
     }
@@ -4720,7 +4720,7 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
     return await new Promise((resolve, reject) => {
       let timeout: NodeJS.Timeout | undefined;
       const disposable = onBoardConnectionStateChanged(() => {
-        const board = getConnectedBoard(deviceId);
+        const board = getConnectedPyDevice(deviceId);
         if (!board) {
           return;
         }
@@ -4773,15 +4773,15 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
     }
   }
 
-  private getDeviceDetails(board?: NonNullable<ReturnType<typeof getConnectedBoard>>): string {
-    const activeBoard = board ?? getConnectedBoard();
+  private getDeviceDetails(board?: NonNullable<ReturnType<typeof getConnectedPyDevice>>): string {
+    const activeBoard = board ?? getConnectedPyDevice();
     const device = activeBoard?.device ?? 'unknown device';
     const baudRate = activeBoard?.baudrate ?? defaultBaudRate;
     const connectionState = activeBoard ? 'connected' : 'disconnected';
     return `Device: ${device} @ ${baudRate} (${connectionState})`;
   }
 
-  private describeDevicePath(uri: vscode.Uri, board?: NonNullable<ReturnType<typeof getConnectedBoard>>): string {
+  private describeDevicePath(uri: vscode.Uri, board?: NonNullable<ReturnType<typeof getConnectedPyDevice>>): string {
     if (board) {
       return this.toRelativeDevicePath(uri, board);
     }
@@ -5283,7 +5283,7 @@ const ensureNativeExplorerRoots = async (model: DeviceSyncModel): Promise<void> 
 
 export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): Promise<void> => {
   const deviceFsProvider = new DeviceDeviceFileSystemProvider(context);
-  let lastConnectedDeviceIds = getConnectedBoards().map((item) => item.deviceId).sort((a, b) => a.localeCompare(b));
+  let lastConnectedDeviceIds = getConnectedPyDevices().map((item) => item.deviceId).sort((a, b) => a.localeCompare(b));
   const model = new DeviceSyncModel(context, async (relativePaths: string[]) => {
     await deviceFsProvider.notifyDeviceFilesChanged(relativePaths, model.getActiveDeviceId());
   }, async (relativePath: string, includeDescendants: boolean) => {

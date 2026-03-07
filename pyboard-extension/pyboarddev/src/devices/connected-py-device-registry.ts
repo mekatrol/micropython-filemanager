@@ -11,7 +11,7 @@ import { PyDeviceConnection, PyDeviceRuntimeInfo } from './py-device';
  * The registry is intentionally isolated from VS Code UI concerns so it can be
  * unit-tested in isolation and reused from command handlers.
  */
-export interface ConnectedBoardState {
+export interface ConnectedPyDeviceState {
   deviceId: string;
   board: PyDeviceConnection;
   runtimeInfo: PyDeviceRuntimeInfo | undefined;
@@ -21,7 +21,7 @@ export interface ConnectedBoardState {
 /**
  * Public immutable projection of active board state used by UI and commands.
  */
-export interface ConnectedBoardSnapshot {
+export interface ConnectedPyDeviceSnapshot {
   deviceId: string;
   devicePath: string;
   baudRate: number;
@@ -32,46 +32,46 @@ export interface ConnectedBoardSnapshot {
 /**
  * In-memory registry for active board connections and port-to-device mappings.
  */
-export class ConnectedBoardRegistry {
-  private readonly connectedBoards = new Map<string, ConnectedBoardState>();
+export class ConnectedPyDeviceRegistry {
+  private readonly connectedPyDevices = new Map<string, ConnectedPyDeviceState>();
   private readonly deviceIdByPortPath = new Map<string, string>();
 
   isConnected(): boolean {
-    return this.connectedBoards.size > 0;
+    return this.connectedPyDevices.size > 0;
   }
 
-  getByDeviceId(deviceId?: string): ConnectedBoardState | undefined {
+  getByDeviceId(deviceId?: string): ConnectedPyDeviceState | undefined {
     if (!deviceId) {
       return this.getActiveBoardState();
     }
-    return this.connectedBoards.get(deviceId);
+    return this.connectedPyDevices.get(deviceId);
   }
 
-  getByPortPath(devicePath: string): ConnectedBoardState | undefined {
+  getByPortPath(devicePath: string): ConnectedPyDeviceState | undefined {
     const existingDeviceId = this.deviceIdByPortPath.get(devicePath);
     if (!existingDeviceId) {
       return undefined;
     }
-    return this.connectedBoards.get(existingDeviceId);
+    return this.connectedPyDevices.get(existingDeviceId);
   }
 
-  add(state: ConnectedBoardState): void {
-    this.connectedBoards.set(state.deviceId, state);
+  add(state: ConnectedPyDeviceState): void {
+    this.connectedPyDevices.set(state.deviceId, state);
     this.deviceIdByPortPath.set(state.board.device, state.deviceId);
   }
 
-  remove(deviceId: string): ConnectedBoardState | undefined {
-    const state = this.connectedBoards.get(deviceId);
+  remove(deviceId: string): ConnectedPyDeviceState | undefined {
+    const state = this.connectedPyDevices.get(deviceId);
     if (!state) {
       return undefined;
     }
-    this.connectedBoards.delete(deviceId);
+    this.connectedPyDevices.delete(deviceId);
     this.deviceIdByPortPath.delete(state.board.device);
     return state;
   }
 
   hasDeviceId(deviceId: string): boolean {
-    return this.connectedBoards.has(deviceId);
+    return this.connectedPyDevices.has(deviceId);
   }
 
   getDeviceIdForPortPath(devicePath: string): string | undefined {
@@ -83,7 +83,7 @@ export class ConnectedBoardRegistry {
   }
 
   beginExecution(deviceId: string): boolean {
-    const state = this.connectedBoards.get(deviceId);
+    const state = this.connectedPyDevices.get(deviceId);
     if (!state) {
       return false;
     }
@@ -92,7 +92,7 @@ export class ConnectedBoardRegistry {
   }
 
   endExecution(deviceId: string): boolean {
-    const state = this.connectedBoards.get(deviceId);
+    const state = this.connectedPyDevices.get(deviceId);
     if (!state) {
       return false;
     }
@@ -101,11 +101,11 @@ export class ConnectedBoardRegistry {
   }
 
   isExecuting(deviceId: string): boolean {
-    return (this.connectedBoards.get(deviceId)?.executionCount ?? 0) > 0;
+    return (this.connectedPyDevices.get(deviceId)?.executionCount ?? 0) > 0;
   }
 
   setRuntimeInfo(deviceId: string, runtimeInfo: PyDeviceRuntimeInfo | undefined): boolean {
-    const state = this.connectedBoards.get(deviceId);
+    const state = this.connectedPyDevices.get(deviceId);
     if (!state) {
       return false;
     }
@@ -113,8 +113,8 @@ export class ConnectedBoardRegistry {
     return true;
   }
 
-  getSnapshots(): ConnectedBoardSnapshot[] {
-    return [...this.connectedBoards.values()]
+  getSnapshots(): ConnectedPyDeviceSnapshot[] {
+    return [...this.connectedPyDevices.values()]
       .map((state) => ({
         deviceId: state.deviceId,
         devicePath: state.board.device,
@@ -125,7 +125,7 @@ export class ConnectedBoardRegistry {
       .sort((a, b) => a.deviceId.localeCompare(b.deviceId));
   }
 
-  private getActiveBoardState(): ConnectedBoardState | undefined {
-    return this.connectedBoards.values().next().value as ConnectedBoardState | undefined;
+  private getActiveBoardState(): ConnectedPyDeviceState | undefined {
+    return this.connectedPyDevices.values().next().value as ConnectedPyDeviceState | undefined;
   }
 }

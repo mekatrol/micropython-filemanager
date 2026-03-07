@@ -5,20 +5,20 @@
  * output ordering so command/UI layers can rely on deterministic state.
  */
 import * as assert from 'assert';
-import { ConnectedBoardRegistry, ConnectedBoardState } from '../../devices/connected-board-registry';
+import { ConnectedPyDeviceRegistry, ConnectedPyDeviceState } from '../../devices/connected-py-device-registry';
 
 // Minimal board stub factory.
 // We only provide properties that registry logic reads (`device`, `baudrate`).
 const toBoardStub = (devicePath: string, baudRate: number) => ({
   device: devicePath,
   baudrate: baudRate
-}) as unknown as ConnectedBoardState['board'];
+}) as unknown as ConnectedPyDeviceState['board'];
 
-suite('ConnectedBoardRegistry', () => {
+suite('ConnectedPyDeviceRegistry', () => {
   test('add/get/remove lifecycle works as expected', () => {
     // Arrange: create fresh registry and one board state.
-    const registry = new ConnectedBoardRegistry();
-    const state: ConnectedBoardState = {
+    const registry = new ConnectedPyDeviceRegistry();
+    const state: ConnectedPyDeviceState = {
       deviceId: 'dev-1',
       board: toBoardStub('/dev/ttyUSB0', 115200),
       runtimeInfo: undefined,
@@ -49,8 +49,8 @@ suite('ConnectedBoardRegistry', () => {
 
   test('execution counters do not go negative', () => {
     // Arrange: initialize registry with a single board.
-    const registry = new ConnectedBoardRegistry();
-    const state: ConnectedBoardState = {
+    const registry = new ConnectedPyDeviceRegistry();
+    const state: ConnectedPyDeviceState = {
       deviceId: 'dev-1',
       board: toBoardStub('/dev/ttyUSB0', 115200),
       runtimeInfo: undefined,
@@ -83,7 +83,7 @@ suite('ConnectedBoardRegistry', () => {
 
   test('snapshots are sorted and include runtime info changes', () => {
     // Arrange: add states out of order by id to verify sort behavior later.
-    const registry = new ConnectedBoardRegistry();
+    const registry = new ConnectedPyDeviceRegistry();
     registry.add({
       deviceId: 'b',
       board: toBoardStub('/dev/ttyUSB1', 9600),

@@ -9,7 +9,7 @@ import { logChannelOutput } from '../output-channel';
 import { PyDeviceConnection, PyDeviceRuntimeInfo } from '../devices/py-device';
 import { listSerialDevices } from '../utils/serial-port';
 import { getWorkspaceCacheValue, setWorkspaceCacheValue } from '../utils/workspace-cache';
-import { ConnectedBoardRegistry, ConnectedBoardState, ConnectedBoardSnapshot } from '../devices/connected-board-registry';
+import { ConnectedPyDeviceRegistry, ConnectedPyDeviceState, ConnectedPyDeviceSnapshot } from '../devices/connected-py-device-registry';
 import { ReconnectStateStore } from '../devices/reconnect-state-store';
 import { toDeviceId } from '../devices/device-id';
 import { getDeviceNames, loadConfiguration, updateDeviceName } from '../utils/configuration';
@@ -30,17 +30,17 @@ const autoReconnectSettingKey = 'autoReconnectLastDevice';
 const deviceDocumentScheme = 'pydevice-device';
 const pydeviceDebugType = 'pydevice';
 
-export type { ConnectedBoardSnapshot } from '../devices/connected-board-registry';
+export type { ConnectedPyDeviceSnapshot } from '../devices/connected-py-device-registry';
 
-const boardRegistry = new ConnectedBoardRegistry();
+const boardRegistry = new ConnectedPyDeviceRegistry();
 const boardConnectionStateEmitter = new vscode.EventEmitter<boolean>();
-const boardConnectionsChangedEmitter = new vscode.EventEmitter<ConnectedBoardSnapshot[]>();
+const boardConnectionsChangedEmitter = new vscode.EventEmitter<ConnectedPyDeviceSnapshot[]>();
 const boardRuntimeInfoChangedEmitter = new vscode.EventEmitter<PyDeviceRuntimeInfo | undefined>();
-const boardExecutionStateChangedEmitter = new vscode.EventEmitter<ConnectedBoardSnapshot[]>();
+const boardExecutionStateChangedEmitter = new vscode.EventEmitter<ConnectedPyDeviceSnapshot[]>();
 
 export const onBoardConnectionStateChanged = boardConnectionStateEmitter.event;
 export const onBoardConnectionsChanged = boardConnectionsChangedEmitter.event;
-export const onConnectedBoardRuntimeInfoChanged = boardRuntimeInfoChangedEmitter.event;
+export const onConnectedPyDeviceRuntimeInfoChanged = boardRuntimeInfoChangedEmitter.event;
 export const onBoardExecutionStateChanged = boardExecutionStateChangedEmitter.event;
 
 const reconnectStateStore = new ReconnectStateStore(
@@ -117,7 +117,7 @@ const wait = async (ms: number): Promise<void> => {
   await new Promise((resolve) => setTimeout(resolve, ms));
 };
 
-const getConnectedBoardStateByPortPath = (devicePath: string): ConnectedBoardState | undefined =>
+const getConnectedPyDeviceStateByPortPath = (devicePath: string): ConnectedPyDeviceState | undefined =>
   boardRegistry.getByPortPath(devicePath);
 
 const readBoardRuntimeInfoWithRetries = async (
@@ -294,33 +294,33 @@ const notifyStateChanged = (): void => {
   const snapshots = boardRegistry.getSnapshots();
   const connected = snapshots.length > 0;
   void vscode.commands.executeCommand('setContext', 'mekatrol.pydevice.boardConnected', connected);
-  void vscode.commands.executeCommand('setContext', 'mekatrol.pydevice.connectedBoardCount', snapshots.length);
+  void vscode.commands.executeCommand('setContext', 'mekatrol.pydevice.connectedPyDeviceCount', snapshots.length);
   boardConnectionStateEmitter.fire(connected);
   boardConnectionsChangedEmitter.fire(snapshots);
-  boardRuntimeInfoChangedEmitter.fire(getConnectedBoardRuntimeInfo());
+  boardRuntimeInfoChangedEmitter.fire(getConnectedPyDeviceRuntimeInfo());
   boardExecutionStateChangedEmitter.fire(snapshots);
 };
 
 export const isBoardConnected = (): boolean => boardRegistry.isConnected();
 
-export const getConnectedBoard = (deviceId?: string): PyDeviceConnection | undefined => {
+export const getConnectedPyDevice = (deviceId?: string): PyDeviceConnection | undefined => {
   return boardRegistry.getByDeviceId(deviceId)?.board;
 };
 
-export const getConnectedBoardByPortPath = (devicePath: string): PyDeviceConnection | undefined => {
-  return getConnectedBoardStateByPortPath(devicePath)?.board;
+export const getConnectedPyDeviceByPortPath = (devicePath: string): PyDeviceConnection | undefined => {
+  return getConnectedPyDeviceStateByPortPath(devicePath)?.board;
 };
 
-export const getConnectedBoardRuntimeInfo = (deviceId?: string): PyDeviceRuntimeInfo | undefined => {
+export const getConnectedPyDeviceRuntimeInfo = (deviceId?: string): PyDeviceRuntimeInfo | undefined => {
   return boardRegistry.getByDeviceId(deviceId)?.runtimeInfo;
 };
 
-export const getConnectedBoards = (): ConnectedBoardSnapshot[] => boardRegistry.getSnapshots();
+export const getConnectedPyDevices = (): ConnectedPyDeviceSnapshot[] => boardRegistry.getSnapshots();
 
 export const getConnectedDeviceIds = (): string[] => boardRegistry.getConnectedDeviceIds();
 
 export const getDeviceIdForPortPath = (devicePath: string): string | undefined => {
-  return getConnectedBoardStateByPortPath(devicePath)?.deviceId;
+  return getConnectedPyDeviceStateByPortPath(devicePath)?.deviceId;
 };
 
 export const beginBoardExecution = (deviceId: string): void => {
@@ -346,8 +346,8 @@ const connectBoardForPath = async (
   baudRate: number,
   showMessages: boolean,
   recoveryMode: boolean = false
-): Promise<ConnectedBoardState | undefined> => {
-  const existingForPath = getConnectedBoardStateByPortPath(devicePath);
+): Promise<ConnectedPyDeviceState | undefined> => {
+  const existingForPath = getConnectedPyDeviceStateByPortPath(devicePath);
   if (existingForPath) {
     if (showMessages) {
       const msg = `Device already connected: ${existingForPath.deviceId} on ${devicePath}.`;
@@ -375,7 +375,7 @@ const connectBoardForPath = async (
     throw new Error(`A board with device ID ${deviceId} is already connected.`);
   }
 
-  const state: ConnectedBoardState = {
+  const state: ConnectedPyDeviceState = {
     deviceId,
     board,
     runtimeInfo,
@@ -426,7 +426,7 @@ const connectBoardForPath = async (
   return state;
 };
 
-export const closeConnectedBoardByDeviceId = async (
+export const closeConnectedPyDeviceByDeviceId = async (
   deviceId: string,
   showSuccessMessage = true,
   preserveReconnectState = false,
@@ -484,7 +484,7 @@ export const closeConnectedBoardByDeviceId = async (
   return true;
 };
 
-export const closeConnectedBoard = async (
+export const closeConnectedPyDevice = async (
   showSuccessMessage = true,
   preserveReconnectState = false,
   promptToSaveDirtyDeviceFiles = true,
@@ -500,7 +500,7 @@ export const closeConnectedBoard = async (
     return true;
   }
 
-  return closeConnectedBoardByDeviceId(
+  return closeConnectedPyDeviceByDeviceId(
     active.deviceId,
     showSuccessMessage,
     preserveReconnectState,
@@ -509,7 +509,7 @@ export const closeConnectedBoard = async (
   );
 };
 
-export const closeAllConnectedBoards = async (
+export const closeAllConnectedPyDevices = async (
   showSuccessMessage = false,
   preserveReconnectState = false,
   promptToSaveDirtyDeviceFiles = false,
@@ -517,7 +517,7 @@ export const closeAllConnectedBoards = async (
 ): Promise<boolean> => {
   const deviceIds = getConnectedDeviceIds();
   for (const deviceId of deviceIds) {
-    const closed = await closeConnectedBoardByDeviceId(
+    const closed = await closeConnectedPyDeviceByDeviceId(
       deviceId,
       showSuccessMessage,
       preserveReconnectState,
@@ -869,7 +869,7 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
       logChannelOutput(workspaceWarning, true);
     }
 
-    if (getConnectedBoardByPortPath(devicePath)) {
+    if (getConnectedPyDeviceByPortPath(devicePath)) {
       const msg = `Device on ${devicePath} is already connected. Choose another serial port.`;
       vscode.window.showWarningMessage(msg);
       logChannelOutput(msg, true);
@@ -1026,7 +1026,7 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
           }
           wasPresentByPath.set(port.path, true);
 
-          const connectedNow = !!getConnectedBoardStateByPortPath(port.path);
+          const connectedNow = !!getConnectedPyDeviceStateByPortPath(port.path);
           const connectedBefore = wasConnectedByPath.get(port.path) ?? false;
           if (connectedBefore && !connectedNow) {
             // This path disconnected; require a fresh probe before trusting identity again.
@@ -1034,7 +1034,7 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
           }
           wasConnectedByPath.set(port.path, connectedNow);
 
-          const connectedState = getConnectedBoardStateByPortPath(port.path);
+          const connectedState = getConnectedPyDeviceStateByPortPath(port.path);
           const connectedDeviceId = connectedState?.deviceId;
           if (connectedDeviceId && configuredDeviceIdSet.has(connectedDeviceId)) {
             claimedConfiguredIdByPort.set(port.path, connectedDeviceId);
@@ -1057,7 +1057,7 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
           let rowId = initialRowId;
           let existing = rowsById.get(rowId);
           const serialPortName = path.basename(port.path);
-          const connectedState = getConnectedBoardStateByPortPath(port.path);
+          const connectedState = getConnectedPyDeviceStateByPortPath(port.path);
           const connectedDeviceId = connectedState?.deviceId;
           if (connectedDeviceId) {
             resolvedDeviceIdByPath.set(port.path, connectedDeviceId);
@@ -1174,7 +1174,7 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
       if (connectingPaths.has(row.devicePath)) {
         return;
       }
-      const currentlyConnected = getConnectedBoardByPortPath(row.devicePath);
+      const currentlyConnected = getConnectedPyDeviceByPortPath(row.devicePath);
       if (currentlyConnected) {
         row.status = 'connected';
         updateRow(row);
@@ -1198,7 +1198,7 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
           }
         }
 
-        let state: ConnectedBoardState | undefined;
+        let state: ConnectedPyDeviceState | undefined;
         try {
           state = await connectBoardForPath(row.devicePath, defaultBaudRate, true, true);
         } catch (error) {
@@ -1327,7 +1327,7 @@ export const initDisconnectBoardCommand = (context: vscode.ExtensionContext) => 
       return;
     }
 
-    await closeConnectedBoardByDeviceId(targetDeviceId, true);
+    await closeConnectedPyDeviceByDeviceId(targetDeviceId, true);
   });
 
   context.subscriptions.push(command);
@@ -1367,7 +1367,7 @@ export const initToggleBoardConnectionCommand = (context: vscode.ExtensionContex
       if (!targetDeviceId) {
         return;
       }
-      await closeConnectedBoardByDeviceId(targetDeviceId, true);
+      await closeConnectedPyDeviceByDeviceId(targetDeviceId, true);
       return;
     }
 
@@ -1400,7 +1400,7 @@ export const tryReconnectBoardOnStartup = async (context: vscode.ExtensionContex
   }
 
   for (const devicePath of reconnectDevicePaths) {
-    if (getConnectedBoardByPortPath(devicePath)) {
+    if (getConnectedPyDeviceByPortPath(devicePath)) {
       continue;
     }
 

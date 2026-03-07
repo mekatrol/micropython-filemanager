@@ -8,7 +8,7 @@ import { initOutputChannel, logChannelOutput as logChannelOutput } from './outpu
 import { initCreateConfigCommand } from './commands/create-config-command';
 import { initAutoDetectDevicesCommand } from './commands/auto-detect-devices-command';
 import {
-  closeAllConnectedBoards,
+  closeAllConnectedPyDevices,
   initConnectBoardCommand,
   initEsp32RecoveryConnectCommand,
   initDisconnectBoardCommand,
@@ -76,6 +76,6 @@ export async function deactivate() {
     return;
   }
 
-  await closeAllConnectedBoards(false, true, false, false);
+  await closeAllConnectedPyDevices(false, true, false, false);
 }
 
