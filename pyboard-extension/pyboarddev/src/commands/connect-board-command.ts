@@ -16,13 +16,11 @@ import { getDeviceNames, loadConfiguration, updateDeviceName } from '../utils/co
 import {
   ConnectRow,
   ConnectStatus,
-  resolveConnectStatus,
   toDeviceInfoSummary
 } from './connect-state';
 import { renderConnectHtml } from './connect-webview';
 
 const reconnectDevicePathsStateKey = 'reconnectDevicePaths';
-const lastKnownDevicePortByIdStateKey = 'lastKnownDevicePortById';
 const defaultBaudRate = 115200;
 const runtimeInfoConnectRetryAttempts = 3;
 const runtimeInfoConnectRetryDelayMs = 250;
@@ -34,7 +32,6 @@ const runtimeInfoRecoveryRebootAttempts = 2;
 const runtimeInfoRecoveryRebootDelayMs = 500;
 const connectionStateMonitorIntervalMs = 2000;
 const recoveryConnectAttemptTimeoutMs = 25000;
-const recoveryPreflightProbeTimeoutMs = 6000;
 const deviceDocumentScheme = 'pydevice-device';
 const pydeviceDebugType = 'pydevice';
 
@@ -56,34 +53,6 @@ const reconnectStateStore = new ReconnectStateStore(
   async <T>(key: string, value: T): Promise<void> => setWorkspaceCacheValue(key, value),
   reconnectDevicePathsStateKey
 );
-
-const readLastKnownDevicePorts = (): Record<string, string> => {
-  const raw = getWorkspaceCacheValue<unknown>(lastKnownDevicePortByIdStateKey);
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return {};
-  }
-
-  const entries = Object.entries(raw as Record<string, unknown>)
-    .filter(([deviceId, port]) => typeof deviceId === 'string' && deviceId.length > 0 && typeof port === 'string' && port.length > 0)
-    .sort((a, b) => a[0].localeCompare(b[0]));
-  return Object.fromEntries(entries) as Record<string, string>;
-};
-
-const writeLastKnownDevicePorts = async (mapping: Record<string, string>): Promise<void> => {
-  await setWorkspaceCacheValue(lastKnownDevicePortByIdStateKey, mapping);
-};
-
-const setLastKnownDevicePort = async (deviceId: string, devicePath: string): Promise<void> => {
-  if (!deviceId || !devicePath) {
-    return;
-  }
-  const current = readLastKnownDevicePorts();
-  if (current[deviceId] === devicePath) {
-    return;
-  }
-  const next = { ...current, [deviceId]: devicePath };
-  await writeLastKnownDevicePorts(next);
-};
 
 const getDistinctConfiguredDeviceNames = (namesByDeviceId: Record<string, string>): Record<string, string> => {
   const distinct: Record<string, string> = {};
@@ -443,7 +412,6 @@ const connectBoardForPath = async (
 
   boardRegistry.add(state);
   await reconnectStateStore.addReconnectDevicePath(board.device);
-  await setLastKnownDevicePort(state.deviceId, board.device);
   notifyStateChanged();
 
   const applyRefreshedRuntimeInfo = async (refreshedRuntimeInfo: PyDeviceRuntimeInfo): Promise<void> => {
@@ -462,7 +430,6 @@ const connectBoardForPath = async (
           true
         );
       } else if (boardRegistry.reassignDeviceId(previousDeviceId, promotedDeviceId)) {
-        await setLastKnownDevicePort(promotedDeviceId, state.board.device);
         logChannelOutput(`Promoted device ID for ${state.board.device}: ${previousDeviceId} -> ${promotedDeviceId}.`, false);
       }
     }
@@ -543,7 +510,6 @@ export const closeConnectedPyDeviceByDeviceId = async (
 
     if (showSuccessMessage) {
       const msg = `Board connection closed for ${deviceId}.`;
-      vscode.window.showInformationMessage(msg);
       logChannelOutput(msg, true);
     } else {
       logChannelOutput(`Board connection closed for ${deviceId} during extension shutdown.`, false);
@@ -635,23 +601,6 @@ const pickConnectedDeviceId = async (placeHolder: string): Promise<string | unde
   return selected?.label;
 };
 
-const probeRecoveryDeviceId = async (devicePath: string): Promise<string | undefined> => {
-  const board = new PyDeviceConnection(devicePath, defaultBaudRate, false);
-  try {
-    await board.open();
-    const runtimeInfo = await board.probeBoardRuntimeInfo(1800);
-    return toDeviceId(devicePath, runtimeInfo);
-  } catch {
-    return undefined;
-  } finally {
-    try {
-      await board.close();
-    } catch {
-      // Ignore close failures during non-fatal probing.
-    }
-  }
-};
-
 const pickSerialPortToConnect = async (
   onlyUnconnected: boolean = false,
   recoveryMode: boolean = false
@@ -684,26 +633,12 @@ const pickSerialPortToConnect = async (
 
   const connectedSnapshots = boardRegistry.getSnapshots();
   const connectedDeviceIdByPath = new Map(connectedSnapshots.map((snapshot) => [snapshot.devicePath, snapshot.deviceId]));
-  const resolveRecoveryDeviceId = async (devicePath: string): Promise<string | undefined> => {
-    const connectedDeviceId = connectedDeviceIdByPath.get(devicePath);
-    if (connectedDeviceId) {
-      return connectedDeviceId;
-    }
 
-    if (!recoveryMode) {
-      return undefined;
-    }
-
-    return probeRecoveryDeviceId(devicePath);
-  };
-
-  const items = await Promise.all(candidatePorts.map(async (port) => {
+  const items = candidatePorts.map((port) => {
     const details = [port.manufacturer, `VID:${port.vendorId}`, `PID:${port.productId}`].filter(Boolean).join(' | ');
     const alreadyConnected = connectedPaths.has(port.path);
     const serialPortName = path.basename(port.path);
-    const resolvedDeviceId = await resolveRecoveryDeviceId(port.path);
-    const fallbackDeviceId = toDeviceId(port.path);
-    const deviceId = resolvedDeviceId ?? fallbackDeviceId;
+    const deviceId = connectedDeviceIdByPath.get(port.path) ?? toDeviceId(port.path);
     const deviceName = configuredDeviceNames[deviceId];
     const recoveryLabel = deviceName ? `${deviceName} (${serialPortName})` : `${deviceId} (${serialPortName})`;
     return {
@@ -712,7 +647,7 @@ const pickSerialPortToConnect = async (
       picked: false,
       devicePath: port.path
     };
-  }));
+  });
 
   const selected = await vscode.window.showQuickPick(items, {
     placeHolder: 'Select a serial port to connect',
@@ -821,17 +756,6 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
     let configuredDeviceNames = getDistinctConfiguredDeviceNames(getDeviceNames(configuration));
     let configuredDeviceIds = Object.keys(configuration.devices ?? {}).sort((a, b) => a.localeCompare(b));
     const configuredDeviceIdSet = new Set(configuredDeviceIds);
-    const lastKnownDevicePortById = readLastKnownDevicePorts();
-    const updateLastKnownDevicePort = async (deviceId: string, serialPortPath: string): Promise<void> => {
-      if (!deviceId || !serialPortPath) {
-        return;
-      }
-      if (lastKnownDevicePortById[deviceId] === serialPortPath) {
-        return;
-      }
-      lastKnownDevicePortById[deviceId] = serialPortPath;
-      await writeLastKnownDevicePorts(lastKnownDevicePortById);
-    };
     const refreshConfiguredMappings = async (): Promise<void> => {
       const nextConfig = await loadConfiguration();
       configuredDeviceNames = getDistinctConfiguredDeviceNames(getDeviceNames(nextConfig));
@@ -851,12 +775,7 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
     panel.webview.html = renderConnectHtml([], recoveryConnectAttemptTimeoutMs);
 
     let rowsById = new Map<string, ConnectRow>();
-    const resolvedDeviceIdByPath = new Map<string, string>();
-    const mismatchObservationByPort = new Map<string, { deviceId: string; count: number }>();
-    const probingPaths = new Set<string>();
     const connectingPaths = new Set<string>();
-    const wasConnectedByPath = new Map<string, boolean>();
-    const wasPresentByPath = new Map<string, boolean>();
     let disposed = false;
     let reconcileInProgress = false;
     let reconcilePending = false;
@@ -897,174 +816,38 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
             activePorts = [];
           }
         }
-        const currentPortPaths = new Set(activePorts.map((port) => port.path));
-
         await pruneStaleConnectedDevices(activePorts);
 
-        for (const devicePath of [...resolvedDeviceIdByPath.keys()]) {
-          if (!currentPortPaths.has(devicePath)) {
-            resolvedDeviceIdByPath.delete(devicePath);
-            mismatchObservationByPort.delete(devicePath);
-            wasConnectedByPath.delete(devicePath);
-            wasPresentByPath.delete(devicePath);
-          }
-        }
-
         const nextRows = new Map<string, ConnectRow>();
-        const seenConfiguredDeviceIds = new Set<string>();
-        const claimedConfiguredIdByPort = new Map<string, string>();
 
         for (const port of activePorts) {
-          const presentBefore = wasPresentByPath.get(port.path) ?? false;
-          const presentNow = true;
-          if (!presentBefore && presentNow) {
-            // Port path has (re)appeared; require a fresh ID probe for this session.
-            resolvedDeviceIdByPath.delete(port.path);
-          }
-          wasPresentByPath.set(port.path, true);
-
-          const connectedNow = !!getConnectedPyDeviceStateByPortPath(port.path);
-          const connectedBefore = wasConnectedByPath.get(port.path) ?? false;
-          if (connectedBefore && !connectedNow) {
-            // This path disconnected; require a fresh probe before trusting identity again.
-            resolvedDeviceIdByPath.delete(port.path);
-          }
-          wasConnectedByPath.set(port.path, connectedNow);
-
-          const connectedState = getConnectedPyDeviceStateByPortPath(port.path);
-          const connectedDeviceId = connectedState?.deviceId;
-          if (connectedDeviceId && configuredDeviceIdSet.has(connectedDeviceId)) {
-            claimedConfiguredIdByPort.set(port.path, connectedDeviceId);
-            seenConfiguredDeviceIds.add(connectedDeviceId);
-            continue;
-          }
-
-          const cachedCandidate = configuredDeviceIds.find((deviceId) =>
-            !seenConfiguredDeviceIds.has(deviceId)
-            // If a configured device is already connected, do not let another
-            // unresolved port claim that same configured identity row.
-            && !boardRegistry.getByDeviceId(deviceId)
-            && lastKnownDevicePortById[deviceId] === port.path
-          );
-          if (cachedCandidate) {
-            claimedConfiguredIdByPort.set(port.path, cachedCandidate);
-            seenConfiguredDeviceIds.add(cachedCandidate);
-          }
-        }
-
-        for (const port of activePorts) {
-          const claimedConfiguredId = claimedConfiguredIdByPort.get(port.path);
-          const initialRowId = claimedConfiguredId ? `config:${claimedConfiguredId}` : `port:${port.path}`;
-          let rowId = initialRowId;
-          let existing = rowsById.get(rowId);
           const serialPortName = path.basename(port.path);
           const connectedState = getConnectedPyDeviceStateByPortPath(port.path);
           const connectedDeviceId = connectedState?.deviceId;
-          if (connectedDeviceId) {
-            resolvedDeviceIdByPath.set(port.path, connectedDeviceId);
-            mismatchObservationByPort.delete(port.path);
-            void updateLastKnownDevicePort(connectedDeviceId, port.path);
-          }
-          const resolvedDeviceId = connectedDeviceId ?? resolvedDeviceIdByPath.get(port.path);
-          let deviceId = claimedConfiguredId ?? resolvedDeviceId ?? toDeviceId(port.path);
-
-          if (
-            claimedConfiguredId
-            && resolvedDeviceId
-            && resolvedDeviceId !== claimedConfiguredId
-            && !connectedState
-          ) {
-            const previous = mismatchObservationByPort.get(port.path);
-            const count = previous && previous.deviceId === resolvedDeviceId
-              ? previous.count + 1
-              : 1;
-            mismatchObservationByPort.set(port.path, { deviceId: resolvedDeviceId, count });
-
-            if (count >= 2) {
-              // Port appeared where a configured device was last seen, but stable probed ID does
-              // not match. Keep configured row as not connected and create a distinct port row.
-              rowId = `port:${port.path}`;
-              existing = rowsById.get(rowId);
-              deviceId = resolvedDeviceId;
-              seenConfiguredDeviceIds.delete(claimedConfiguredId);
-            }
-          } else {
-            mismatchObservationByPort.delete(port.path);
-          }
-
-          if (configuredDeviceIdSet.has(deviceId)) {
-            seenConfiguredDeviceIds.add(deviceId);
-          }
-
-          const status = resolveConnectStatus({
-            isConnected: !!connectedState,
-            isConnecting: connectingPaths.has(port.path),
-            hasError: existing?.status === ConnectStatus.Error,
-            hasResolvedDeviceId: !!resolvedDeviceId,
-            // We already have a configured identity + remembered port match.
-            // Show this as connectable instead of indefinite "Fetching ID...".
-            hasClaimedConfiguredId: !!claimedConfiguredId
-          });
+          const rowId = connectedDeviceId && configuredDeviceIdSet.has(connectedDeviceId)
+            ? `config:${connectedDeviceId}`
+            : `port:${port.path}`;
+          const existing = rowsById.get(rowId);
+          const status = connectedState
+            ? ConnectStatus.Connected
+            : connectingPaths.has(port.path)
+              ? ConnectStatus.Connecting
+              : existing?.status === ConnectStatus.Error
+                ? ConnectStatus.Error
+                : ConnectStatus.Ready;
 
           const row: ConnectRow = {
             id: rowId,
             devicePath: port.path,
             serialPortName,
-            deviceId,
-            deviceName: configuredDeviceNames[deviceId] ?? '',
+            deviceId: connectedDeviceId ?? toDeviceId(port.path),
+            deviceName: connectedDeviceId ? (configuredDeviceNames[connectedDeviceId] ?? '') : '',
             status,
             deviceInfo: toDeviceInfoSummary(connectedState?.runtimeInfo),
             errorText: status === ConnectStatus.Error ? existing?.errorText : undefined,
             details: [port.manufacturer, `VID:${port.vendorId}`, `PID:${port.productId}`].filter(Boolean).join(' | ')
           };
           nextRows.set(rowId, row);
-
-          const needsReprobe = !connectedState
-            && !probingPaths.has(port.path)
-            && !connectingPaths.has(port.path)
-            // Re-probe only while unresolved; resolved IDs are invalidated on
-            // port reappearance/disconnect earlier in reconcileRows.
-            && !resolvedDeviceId
-            // Claimed configured rows are verified at connect time.
-            && !claimedConfiguredId;
-          if (needsReprobe) {
-            probingPaths.add(port.path);
-            void (async () => {
-              const probedDeviceId = await probeRecoveryDeviceId(port.path);
-              probingPaths.delete(port.path);
-              if (disposed) {
-                return;
-              }
-              const nextDeviceId = probedDeviceId ?? toDeviceId(port.path);
-              resolvedDeviceIdByPath.set(port.path, nextDeviceId);
-              if (probedDeviceId) {
-                void updateLastKnownDevicePort(probedDeviceId, port.path);
-              }
-              await reconcileRows();
-            })();
-          }
-        }
-
-        for (const configuredDeviceId of configuredDeviceIds) {
-          if (seenConfiguredDeviceIds.has(configuredDeviceId)) {
-            continue;
-          }
-          const connectedState = boardRegistry.getByDeviceId(configuredDeviceId);
-          const connectedPath = connectedState?.board.device;
-          const isPortPresent = !!connectedPath && currentPortPaths.has(connectedPath);
-          const rememberedPort = lastKnownDevicePortById[configuredDeviceId];
-          const serialPortPath = (isPortPresent ? connectedPath : undefined) ?? rememberedPort ?? '';
-          const serialPortName = serialPortPath ? path.basename(serialPortPath) : '';
-          const rowId = `config:${configuredDeviceId}`;
-          nextRows.set(rowId, {
-            id: rowId,
-            devicePath: serialPortPath,
-            serialPortName,
-            deviceId: configuredDeviceId,
-            deviceName: configuredDeviceNames[configuredDeviceId] ?? '',
-            deviceInfo: toDeviceInfoSummary(connectedState?.runtimeInfo),
-            status: connectedState && isPortPresent ? ConnectStatus.Connected : ConnectStatus.NotConnected
-          });
         }
 
         rowsById = nextRows;
@@ -1106,29 +889,8 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
 
       try {
         const initialRow = getLatestRow();
-        if (initialRow.id.startsWith('config:')) {
-          const probedId = await withTimeout(
-            probeRecoveryDeviceId(initialRow.devicePath),
-            recoveryPreflightProbeTimeoutMs,
-            `Recovery preflight probe for ${initialRow.devicePath}`
-          ).catch((error) => {
-            const reason = error instanceof Error ? error.message : String(error);
-            logChannelOutput(`Recovery preflight probe skipped for ${initialRow.devicePath}: ${reason}`, false);
-            return undefined;
-          });
-          if (probedId && probedId !== initialRow.deviceId) {
-            resolvedDeviceIdByPath.set(initialRow.devicePath, probedId);
-            const latestRow = getLatestRow();
-            latestRow.status = ConnectStatus.Ready;
-            latestRow.errorText = undefined;
-            await reconcileRows();
-            return;
-          }
-        }
-
-        let state: ConnectedPyDeviceState | undefined;
         try {
-          state = await withTimeout(
+          await withTimeout(
             connectBoardForPath(initialRow.devicePath, defaultBaudRate, true, true),
             recoveryConnectAttemptTimeoutMs,
             `Connect attempt for ${initialRow.devicePath}`
@@ -1140,16 +902,12 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
             throw error;
           }
           await wait(350);
-          state = await withTimeout(
+          await withTimeout(
             connectBoardForPath(initialRow.devicePath, defaultBaudRate, true, true),
             recoveryConnectAttemptTimeoutMs,
             `Retry connect attempt for ${initialRow.devicePath}`
           );
         }
-        const latestRow = getLatestRow();
-        const nextDeviceId = state?.deviceId ?? latestRow.deviceId;
-        resolvedDeviceIdByPath.set(latestRow.devicePath, nextDeviceId);
-        void updateLastKnownDevicePort(nextDeviceId, latestRow.devicePath);
         await reconcileRows();
       } catch (error) {
         const latestRow = getLatestRow();
@@ -1187,6 +945,13 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
       await reconcileRows();
     };
 
+    const disconnectAll = async (): Promise<void> => {
+      const candidates = [...rowsById.values()].filter((row) => row.status === ConnectStatus.Connected);
+      for (const row of candidates) {
+        await disconnectRow(row);
+      }
+    };
+
     panel.webview.onDidReceiveMessage((message: unknown) => {
       if (!message || typeof message !== 'object') {
         return;
@@ -1198,6 +963,10 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
       }
       if (typed.type === 'connectAll') {
         void connectAll();
+        return;
+      }
+      if (typed.type === 'disconnectAll') {
+        void disconnectAll();
         return;
       }
       if (typed.type === 'connect' && typeof typed.rowId === 'string') {
