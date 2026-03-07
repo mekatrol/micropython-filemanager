@@ -43,7 +43,7 @@ interface ReplWebviewState {
 }
 
 interface WebviewMessage {
-  type: 'submit' | 'switchTab';
+  type: 'submit' | 'switchTab' | 'interrupt';
   deviceId?: string;
   command?: string;
 }
@@ -150,6 +150,30 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
         await this.executeCommand(deviceId, command);
       });
       await state.pendingExecution;
+      return;
+    }
+
+    if (message.type === 'interrupt') {
+      const deviceId = message.deviceId;
+      if (!deviceId || !this.devicesById.has(deviceId)) {
+        return;
+      }
+
+      const board = getConnectedPyDevice(deviceId);
+      if (!board) {
+        this.appendLine(deviceId, '[device not connected]');
+        this.postState();
+        return;
+      }
+
+      try {
+        await board.write('\x03', { drain: false });
+        this.appendLine(deviceId, '[sent Ctrl-C]');
+      } catch (error) {
+        const messageText = error instanceof Error ? error.message : String(error);
+        this.appendLine(deviceId, `[interrupt failed] ${messageText}`);
+      }
+      this.postState();
     }
   }
 
@@ -451,6 +475,14 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     .prompt-row.disabled { opacity: 0.6; }
     .prompt-label { color: var(--vscode-editor-foreground); user-select: none; }
     .input { flex: 1; border: none; outline: none; background: transparent; color: var(--vscode-editor-foreground); padding: 0; font-family: inherit; font-size: inherit; }
+    .interrupt-button {
+      border: 1px solid var(--vscode-button-border, transparent);
+      background: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
+      padding: 2px 8px;
+      cursor: pointer;
+      font-size: 11px;
+    }
   </style>
 </head>
 <body>
@@ -461,6 +493,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       <div id="promptRow" class="prompt-row">
         <span class="prompt-label">>>> </span>
         <input id="commandInput" class="input" type="text" spellcheck="false" aria-label="REPL command input" />
+        <button id="interruptButton" class="interrupt-button" type="button" aria-label="Send Ctrl-C to device">Send Ctrl-C</button>
       </div>
     </div>
   </div>
@@ -473,6 +506,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     const outputEl = document.getElementById('output');
     const promptRowEl = document.getElementById('promptRow');
     const inputEl = document.getElementById('commandInput');
+    const interruptButtonEl = document.getElementById('interruptButton');
     const historyCursorByDevice = new Map();
     const historyDraftByDevice = new Map();
     const pendingEchoByDevice = new Map();
@@ -572,6 +606,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
         outputEl.textContent = 'No connected devices.';
         promptRowEl.classList.add('disabled');
         inputEl.disabled = true;
+        interruptButtonEl.disabled = true;
         if (!hasActiveSelectionInConsole()) {
           contentEl.scrollTop = contentEl.scrollHeight;
         }
@@ -580,6 +615,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
 
       promptRowEl.classList.remove('disabled');
       inputEl.disabled = false;
+      interruptButtonEl.disabled = false;
 
       for (const device of currentState.devices) {
         const tab = document.createElement('button');
@@ -603,6 +639,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
         outputEl.textContent = 'No active device.';
         promptRowEl.classList.add('disabled');
         inputEl.disabled = true;
+        interruptButtonEl.disabled = true;
         return;
       }
 
@@ -622,13 +659,14 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       }
 
       const command = inputEl.value;
-      const trimmedCommand = command.trimEnd();
+      const cleanedCommand = command.replace(/\u0003/g, '');
+      const trimmedCommand = cleanedCommand.trimEnd();
       if (trimmedCommand.length > 0) {
         pendingEchoByDevice.set(active.deviceId, trimmedCommand);
       }
-      vscode.postMessage({ type: 'submit', deviceId: active.deviceId, command });
+      vscode.postMessage({ type: 'submit', deviceId: active.deviceId, command: cleanedCommand });
       inputEl.value = '';
-      const submitted = command.trimEnd().length > 0;
+      const submitted = trimmedCommand.length > 0;
       const expectedNextLength = (Array.isArray(active.history) ? active.history.length : 0) + (submitted ? 1 : 0);
       resetHistoryCursor(active.deviceId, expectedNextLength);
       render();
@@ -644,6 +682,11 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     });
 
     inputEl.addEventListener('keydown', (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
+        // Preserve native copy behavior and prevent accidental Ctrl-C passthrough.
+        event.stopPropagation();
+        return;
+      }
       if (event.key === 'ArrowUp') {
         event.preventDefault();
         navigateHistory(-1);
@@ -663,6 +706,11 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     window.addEventListener('keydown', (event) => {
       const active = getActiveDevice();
       if (!active) {
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
+        // Keep Ctrl-C available for copy in REPL output/input.
         return;
       }
 
@@ -702,6 +750,14 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
         inputEl.focus();
         inputEl.value += event.key;
       }
+    });
+
+    interruptButtonEl.addEventListener('click', () => {
+      const active = getActiveDevice();
+      if (!active) {
+        return;
+      }
+      vscode.postMessage({ type: 'interrupt', deviceId: active.deviceId });
     });
 
     window.addEventListener('message', (event) => {
