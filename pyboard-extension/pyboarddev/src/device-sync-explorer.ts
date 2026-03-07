@@ -242,7 +242,7 @@ class DeviceSyncModel {
     return false;
   }
 
-  async refresh(fetchDevice: boolean = true): Promise<void> {
+  async refresh(fetchDevice: boolean = true, deriveSyncStates: boolean = false): Promise<void> {
     try {
     this.workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     const hasWorkspace = !!this.workspaceFolder;
@@ -360,7 +360,9 @@ class DeviceSyncModel {
       this.deviceEntriesByDeviceId.set(deviceId, deviceEntries);
       this.syncStatesByDeviceId.set(
         deviceId,
-        buildSyncStateMap(this.filterSyncableEntries(computerEntries), this.filterSyncableEntries(deviceEntries))
+        deriveSyncStates
+          ? buildSyncStateMap(this.filterSyncableEntries(computerEntries), this.filterSyncableEntries(deviceEntries))
+          : new Map()
       );
     }
 
@@ -1667,7 +1669,7 @@ class DeviceSyncModel {
     const relativePath = this.joinDevicePath(parentPath, fileName);
     await writeDeviceFile(board, relativePath, Buffer.alloc(0));
     const confirmed = await this.waitForDeviceEntry(board, relativePath, false);
-    await this.refresh(true);
+    await this.refresh(true, false);
     await this.revealNode({ side: 'device', relativePath: parentPath, deviceId });
     if (!confirmed) {
       const warning = `Timed out waiting for created device file: /${relativePath}`;
@@ -1720,7 +1722,7 @@ class DeviceSyncModel {
     const relativePath = this.joinDevicePath(parentPath, folderName);
     await createDeviceDirectory(board, relativePath);
     const confirmed = await this.waitForDeviceEntry(board, relativePath, true);
-    await this.refresh(true);
+    await this.refresh(true, false);
     await this.revealNode({ side: 'device', relativePath: parentPath, deviceId });
     if (!confirmed) {
       const warning = `Timed out waiting for created device folder: /${relativePath}`;
@@ -1769,7 +1771,7 @@ class DeviceSyncModel {
     if (this.notifyDevicePathDeleted) {
       await this.notifyDevicePathDeleted(currentPath, node.data.isDirectory);
     }
-    await this.refresh(true);
+    await this.refresh(true, false);
     if (!node.data.isDirectory && this.notifyDeviceFilesChanged) {
       await this.notifyDeviceFilesChanged([nextPath]);
     }
@@ -1807,7 +1809,7 @@ class DeviceSyncModel {
       await deleteDevicePath(board, targetPath);
     } catch (error) {
       if (this.isDevicePathNotFoundError(error)) {
-        await this.refresh(true);
+        await this.refresh(true, false);
         const msg = `Device path already missing: /${targetPath}`;
         vscode.window.showInformationMessage(msg);
         logChannelOutput(msg, true);
@@ -1821,7 +1823,7 @@ class DeviceSyncModel {
     if (this.notifyDevicePathDeleted) {
       await this.notifyDevicePathDeleted(targetPath, node.data.isDirectory);
     }
-    await this.refresh(true);
+    await this.refresh(true, false);
 
     const msg = `Deleted device path: /${targetPath}`;
     vscode.window.showInformationMessage(msg);
@@ -3500,7 +3502,7 @@ class DeviceSyncModel {
     const msg = `Mapped ${deviceId} to computer folder: ${normalised}`;
     logChannelOutput(msg, true);
     vscode.window.showInformationMessage(msg);
-    await this.refresh(true);
+    await this.refresh(true, false);
   }
 
   async unmapDeviceFromHostFolder(node?: SyncNode): Promise<void> {
@@ -3537,7 +3539,7 @@ class DeviceSyncModel {
     const msg = `Unmapped ${deviceId} from computer folder: ${current}`;
     logChannelOutput(msg, true);
     vscode.window.showInformationMessage(msg);
-    await this.refresh(true);
+    await this.refresh(true, false);
   }
 
   async addDeviceLibraryFolder(node?: SyncNode): Promise<void> {
@@ -3583,7 +3585,7 @@ class DeviceSyncModel {
     const msg = `Added library for ${deviceId}: ${normalisedRelativePath} -> /${deviceLibraryName}`;
     logChannelOutput(msg, true);
     vscode.window.showInformationMessage(msg);
-    await this.refresh(true);
+    await this.refresh(true, false);
   }
 
   async removeDeviceLibraryFolder(node?: SyncNode): Promise<void> {
@@ -3649,7 +3651,7 @@ class DeviceSyncModel {
     const msg = `Removed library for ${deviceId}: ${libraryToRemove}`;
     logChannelOutput(msg, true);
     vscode.window.showInformationMessage(msg);
-    await this.refresh(true);
+    await this.refresh(true, false);
   }
 
   async setDeviceName(node?: SyncNode): Promise<void> {
@@ -3727,7 +3729,7 @@ class DeviceSyncModel {
       : `Cleared name for ${deviceId}`;
     logChannelOutput(msg, true);
     vscode.window.showInformationMessage(msg);
-    await this.refresh(true);
+    await this.refresh(true, false);
   }
 
   async closeDeviceConnection(node?: SyncNode): Promise<void> {
@@ -3838,7 +3840,7 @@ class DeviceSyncModel {
 
   async handleDocumentSaved(document: vscode.TextDocument): Promise<void> {
     if (document.uri.scheme === deviceDocumentScheme) {
-      await this.refresh(true);
+      await this.refresh(true, false);
       return;
     }
 
@@ -5351,7 +5353,7 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): 
       return;
     }
 
-    void model.refresh(true);
+    void model.refresh(false, false);
   }));
 
   const deviceExplorerAutoRefreshTimer = setInterval(() => {
@@ -5359,17 +5361,17 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): 
       return;
     }
 
-    void model.refresh(true);
+    void model.refresh(false, false);
   }, deviceExplorerAutoRefreshIntervalMs);
   context.subscriptions.push(new vscode.Disposable(() => clearInterval(deviceExplorerAutoRefreshTimer)));
 
-  context.subscriptions.push(onBoardConnectionStateChanged(() => model.refresh()));
+  context.subscriptions.push(onBoardConnectionStateChanged(() => model.refresh(false, false)));
   context.subscriptions.push(onBoardConnectionsChanged((snapshots) => {
     const nextConnectedDeviceIds = snapshots.map((item) => item.deviceId).sort((a, b) => a.localeCompare(b));
     deviceFsProvider.notifyConnectedDeviceRootsChanged(lastConnectedDeviceIds, nextConnectedDeviceIds);
     lastConnectedDeviceIds = nextConnectedDeviceIds;
     void ensureNativeExplorerRoots(model);
-    void model.refresh();
+    void model.refresh(false, false);
   }));
   context.subscriptions.push(vscode.workspace.onDidSaveTextDocument((document) => model.handleDocumentSaved(document)));
   context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => void deviceFsProvider.updateWorkingCopyFromDocument(event.document)));
@@ -5384,7 +5386,7 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): 
   context.subscriptions.push(vscode.workspace.onDidDeleteFiles((event) => event.files.forEach((uri) => model.handlePossibleSyncFileChange(uri.fsPath))));
   context.subscriptions.push(vscode.workspace.onDidCreateFiles((event) => event.files.forEach((uri) => model.handlePossibleSyncFileChange(uri.fsPath))));
 
-  context.subscriptions.push(vscode.commands.registerCommand(commandRefreshId, async () => model.refresh(true)));
+  context.subscriptions.push(vscode.commands.registerCommand(commandRefreshId, async () => model.refresh(true, false)));
   context.subscriptions.push(vscode.commands.registerCommand(commandSyncFromDeviceId, async () => model.syncFromDevice()));
   context.subscriptions.push(vscode.commands.registerCommand(commandSyncToDeviceId, async () => model.syncToDevice()));
   context.subscriptions.push(vscode.commands.registerCommand(commandSyncNodeFromDeviceId, async (node?: SyncNode) => model.syncNodeFromDevice(node)));
@@ -5485,9 +5487,9 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): 
     const message = summary.length > 0 ? `PyDevice workspace initialized. ${summary}` : 'PyDevice workspace initialized.';
     vscode.window.showInformationMessage(message);
     logChannelOutput(message, true);
-    await model.refresh(true);
+    await model.refresh(true, false);
   }));
 
-  await model.refresh();
+  await model.refresh(false, false);
   await ensureNativeExplorerRoots(model);
 };
