@@ -831,6 +831,7 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
 
     let rowsById = new Map<string, ConnectRow>();
     const resolvedDeviceIdByPath = new Map<string, string>();
+    const mismatchObservationByPort = new Map<string, { deviceId: string; count: number }>();
     const probingPaths = new Set<string>();
     const connectingPaths = new Set<string>();
     const wasConnectedByPath = new Map<string, boolean>();
@@ -882,6 +883,7 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
         for (const devicePath of [...resolvedDeviceIdByPath.keys()]) {
           if (!currentPortPaths.has(devicePath)) {
             resolvedDeviceIdByPath.delete(devicePath);
+            mismatchObservationByPort.delete(devicePath);
             wasConnectedByPath.delete(devicePath);
             wasPresentByPath.delete(devicePath);
           }
@@ -939,6 +941,7 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
           const connectedDeviceId = connectedState?.deviceId;
           if (connectedDeviceId) {
             resolvedDeviceIdByPath.set(port.path, connectedDeviceId);
+            mismatchObservationByPort.delete(port.path);
             void updateLastKnownDevicePort(connectedDeviceId, port.path);
           }
           const resolvedDeviceId = connectedDeviceId ?? resolvedDeviceIdByPath.get(port.path);
@@ -950,12 +953,22 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
             && resolvedDeviceId !== claimedConfiguredId
             && !connectedState
           ) {
-            // Port appeared where a configured device was last seen, but probed ID does not match.
-            // Keep the configured row as not connected and create a distinct port row.
-            rowId = `port:${port.path}`;
-            existing = rowsById.get(rowId);
-            deviceId = resolvedDeviceId;
-            seenConfiguredDeviceIds.delete(claimedConfiguredId);
+            const previous = mismatchObservationByPort.get(port.path);
+            const count = previous && previous.deviceId === resolvedDeviceId
+              ? previous.count + 1
+              : 1;
+            mismatchObservationByPort.set(port.path, { deviceId: resolvedDeviceId, count });
+
+            if (count >= 2) {
+              // Port appeared where a configured device was last seen, but stable probed ID does
+              // not match. Keep configured row as not connected and create a distinct port row.
+              rowId = `port:${port.path}`;
+              existing = rowsById.get(rowId);
+              deviceId = resolvedDeviceId;
+              seenConfiguredDeviceIds.delete(claimedConfiguredId);
+            }
+          } else {
+            mismatchObservationByPort.delete(port.path);
           }
 
           if (configuredDeviceIdSet.has(deviceId)) {
@@ -1160,6 +1173,7 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
           return;
         }
         void (async () => {
+          await refreshConfiguredMappings();
           const suggested = row.deviceName || '';
           const name = await vscode.window.showInputBox({
             title: 'Set Device Name',
@@ -1170,6 +1184,16 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
               const trimmed = value.trim();
               if (!trimmed) {
                 return 'Device name is required.';
+              }
+              const key = trimmed.toLocaleLowerCase();
+              const duplicate = Object.entries(configuredDeviceNames).find(
+                ([deviceId, configuredName]) => (
+                  deviceId !== row.deviceId
+                  && configuredName.trim().toLocaleLowerCase() === key
+                )
+              );
+              if (duplicate) {
+                return `Device name "${trimmed}" is already used by ${duplicate[0]}.`;
               }
               return undefined;
             }

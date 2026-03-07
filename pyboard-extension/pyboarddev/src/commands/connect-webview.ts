@@ -122,7 +122,8 @@ export const renderConnectHtml = (rows: ConnectRow[], connectAttemptTimeoutMs: n
       }
       if (row.status === status.error) {
         const errText = row.errorText ? ' - ' + row.errorText : '';
-        return '<span class="status-wrap err"><span class="icon">' + warningIconSvg + '</span><span>Error' + errText + '</span></span>';
+        return '<span class="status-wrap err"><span class="icon">' + warningIconSvg + '</span><span>Error' + errText + '</span></span>'
+          + '<button type="button" class="link" data-action="connect" data-id="' + row.id + '">Retry</button>';
       }
       if (row.status === status.notConnected) {
         return '<span class="status-wrap secondary-text"><span class="icon">' + disconnectedIconSvg + '</span><span>Not connected</span></span>';
