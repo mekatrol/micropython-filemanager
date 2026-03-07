@@ -1446,7 +1446,6 @@ class DeviceSyncModel {
       return;
     }
 
-    const relativePath = toRelativePath(node.data.relativePath);
     const deviceSegment = encodeURIComponent(this.getDeviceUriSegment(deviceId));
     const deviceRelativePath = toRelativePath(node.data.relativePath);
     const deviceUri = vscode.Uri.parse(`${deviceDocumentScheme}:/${deviceSegment}/${deviceRelativePath}?deviceId=${encodeURIComponent(deviceId)}`);

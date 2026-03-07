@@ -628,7 +628,7 @@ export const resetDefaultConfiguration = async (): Promise<[PyDeviceConfiguratio
   }
 };
 
-const clampNumberUndefinable = (value: number | undefined, min: number, max: number | undefined = undefined): number | undefined => {
+const _clampNumberUndefinable = (value: number | undefined, min: number, max: number | undefined = undefined): number | undefined => {
   if (!value) {
     return undefined;
   }

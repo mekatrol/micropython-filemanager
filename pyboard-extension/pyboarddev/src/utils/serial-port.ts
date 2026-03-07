@@ -29,7 +29,7 @@ export const listAllSerialPorts = async (): Promise<PortInfo[]> => {
         path: p.path,
         manufacturer: p.manufacturer,
         vendorId: p.vendorId,
-        productId: p.productId,
+        productId: p.productId
     }));
 };
 

@@ -1364,7 +1364,7 @@ export const initToggleBoardConnectionCommand = (context: vscode.ExtensionContex
   context.subscriptions.push(command);
 };
 
-export const tryReconnectBoardOnStartup = async (context: vscode.ExtensionContext): Promise<void> => {
+export const tryReconnectBoardOnStartup = async (_context: vscode.ExtensionContext): Promise<void> => {
   const autoReconnectEnabled = getWorkspaceCacheValue<boolean>(autoReconnectDevicesCacheKey) ?? false;
 
   if (!autoReconnectEnabled || isBoardConnected()) {
