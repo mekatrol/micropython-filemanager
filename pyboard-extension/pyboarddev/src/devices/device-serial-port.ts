@@ -3,21 +3,9 @@
  * Wraps a serial transport with connect/disconnect/runtime operations and
  * emits serial-port lifecycle events.
  */
-import { PyDeviceConnection, PyDeviceRuntimeInfo } from './py-device';
-
-export interface Disposable {
-  dispose(): void;
-}
-
-export interface PyDeviceTransport {
-  device: string;
-  baudrate: number;
-  open(): Promise<void>;
-  close(): Promise<void>;
-  probeBoardRuntimeInfo(timeoutMs?: number): Promise<PyDeviceRuntimeInfo | undefined>;
-  getBoardRuntimeInfo(timeoutMs?: number): Promise<PyDeviceRuntimeInfo | undefined>;
-  softReboot(): Promise<void>;
-}
+import { MicroPythonDevice, PyDeviceRuntimeInfo } from './py-device';
+import { Disposable } from './disposable';
+import { PyDeviceTransport } from './py-device-transport';
 
 export type DeviceSerialPortEvent =
   | { type: 'connected'; path: string }
@@ -28,8 +16,10 @@ export type DeviceSerialPortEvent =
 type DeviceSerialPortListener = (event: DeviceSerialPortEvent) => void;
 
 const defaultTransportFactory = (devicePath: string, baudRate: number, reportErrorsToUser: boolean): PyDeviceTransport => {
-  return new PyDeviceConnection(devicePath, baudRate, reportErrorsToUser);
+  return new MicroPythonDevice(devicePath, baudRate, reportErrorsToUser);
 };
+
+export type { Disposable, PyDeviceTransport };
 
 export class DeviceSerialPort {
   private readonly listeners = new Set<DeviceSerialPortListener>();

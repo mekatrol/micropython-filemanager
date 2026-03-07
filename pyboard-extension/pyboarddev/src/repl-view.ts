@@ -208,7 +208,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
           this.appendLine(deviceId, '[serial port reopened]');
 
           try {
-            const runtimeInfo = await board.probeBoardRuntimeInfo(2500);
+            const runtimeInfo = await board.probeDeviceInfo(2500);
             this.appendLine(deviceId, runtimeInfo.banner);
             this.appendLine(deviceId, 'Type "help()" for more information.');
           } catch {
@@ -257,14 +257,14 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
           this.appendLine(deviceId, '[soft reboot complete]');
 
           try {
-            const runtimeInfo = await board.probeBoardRuntimeInfo(2500);
+            const runtimeInfo = await board.probeDeviceInfo(2500);
             this.appendLine(deviceId, runtimeInfo.banner);
             this.appendLine(deviceId, 'Type "help()" for more information.');
           } catch {
             // Board rebooted, but runtime banner probe may fail on some transports/boards.
           }
         } else {
-          await board.write(controlSpec.byte, { drain: false });
+          await board.sendText(controlSpec.byte, { drain: false });
           this.appendLine(deviceId, `[sent ${controlSpec.label}]`);
         }
       } catch (error) {
@@ -296,7 +296,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     }
 
     try {
-      const result = await board.execRawCapture(`${command}\n`);
+      const result = await board.execute(`${command}\n`);
       const combinedOutput = `${result.stdout ?? ''}${result.stderr ?? ''}`;
       this.appendMultiline(deviceId, combinedOutput);
     } catch (error) {

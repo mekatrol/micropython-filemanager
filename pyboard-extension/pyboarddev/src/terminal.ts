@@ -71,7 +71,7 @@ class ReplTerminalManager implements vscode.Disposable {
           }
 
           try {
-            const result = await board.execRawCapture(`${command}\n`);
+            const result = await board.execute(`${command}\n`);
             const combinedOutput = `${result.stdout ?? ''}${result.stderr ?? ''}`;
             if (result.stdout && result.stdout.length > 0) {
               this.writeEmitter.fire(formatForTerminal(result.stdout));

@@ -6,7 +6,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { logChannelOutput } from '../output-channel';
-import { PyDeviceConnection, PyDeviceRuntimeInfo } from '../devices/py-device';
+import { MicroPythonDevice, PyDeviceConnection, PyDeviceRuntimeInfo } from '../devices/py-device';
 import { listSerialDevices } from '../utils/serial-port';
 import { autoReconnectDevicesCacheKey, getWorkspaceCacheValue, setWorkspaceCacheValue } from '../utils/workspace-cache';
 import { ConnectedPyDeviceRegistry, ConnectedPyDeviceState, ConnectedPyDeviceSnapshot } from '../devices/connected-py-device-registry';
@@ -124,7 +124,7 @@ const readBoardRuntimeInfoWithRetries = async (
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      return await board.getBoardRuntimeInfo();
+      return await board.getDeviceInfo();
     } catch (error) {
       lastError = error;
       if (attempt < attempts) {
@@ -149,7 +149,7 @@ const readBoardRuntimeInfoWithRecovery = async (
   // Probe-first: this path repeatedly issues Ctrl-C and enters raw REPL without soft reboot.
   for (let attempt = 1; attempt <= runtimeInfoRecoveryProbeAttempts; attempt += 1) {
     try {
-      return await board.probeBoardRuntimeInfo(3500);
+      return await board.probeDeviceInfo(3500);
     } catch (error) {
       lastError = error;
       if (attempt < runtimeInfoRecoveryProbeAttempts) {
@@ -161,7 +161,7 @@ const readBoardRuntimeInfoWithRecovery = async (
   // Soft-reboot fallback for boards that only recover after a reset.
   for (let attempt = 1; attempt <= runtimeInfoRecoveryRebootAttempts; attempt += 1) {
     try {
-      return await board.getBoardRuntimeInfo(9000);
+      return await board.getDeviceInfo(9000);
     } catch (error) {
       lastError = error;
       if (attempt < runtimeInfoRecoveryRebootAttempts) {
@@ -385,7 +385,7 @@ const connectBoardForPath = async (
     return existingForPath;
   }
 
-  const board = new PyDeviceConnection(devicePath, baudRate, showMessages);
+  const board = new MicroPythonDevice(devicePath, baudRate, showMessages);
   await board.open();
 
   const runtimeInfo = recoveryMode
@@ -450,7 +450,7 @@ const connectBoardForPath = async (
         }
 
         try {
-          const refreshedRuntimeInfo = await state.board.getBoardRuntimeInfo();
+          const refreshedRuntimeInfo = await state.board.getDeviceInfo();
           await applyRefreshedRuntimeInfo(refreshedRuntimeInfo);
           logChannelOutput(`Runtime info refreshed for ${state.deviceId} on attempt ${attempt}.`, false);
           return;

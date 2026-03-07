@@ -3,31 +3,9 @@
  * Stores active connected-device state and exposes lookup/snapshot helpers
  * keyed by device ID and port path.
  */
-import { PyDeviceConnection, PyDeviceRuntimeInfo } from './py-device';
-
-/**
- * Tracks all active board connections and provides query/update helpers.
- *
- * The registry is intentionally isolated from VS Code UI concerns so it can be
- * unit-tested in isolation and reused from command handlers.
- */
-export interface ConnectedPyDeviceState {
-  deviceId: string;
-  board: PyDeviceConnection;
-  runtimeInfo: PyDeviceRuntimeInfo | undefined;
-  executionCount: number;
-}
-
-/**
- * Public immutable projection of active board state used by UI and commands.
- */
-export interface ConnectedPyDeviceSnapshot {
-  deviceId: string;
-  devicePath: string;
-  baudRate: number;
-  runtimeInfo: PyDeviceRuntimeInfo | undefined;
-  executionCount: number;
-}
+import { PyDeviceRuntimeInfo } from './py-device-runtime-info';
+import { ConnectedPyDeviceState } from './connected-py-device-state';
+import { ConnectedPyDeviceSnapshot } from './connected-py-device-snapshot';
 
 /**
  * In-memory registry for active board connections and port-to-device mappings.
@@ -145,3 +123,5 @@ export class ConnectedPyDeviceRegistry {
     return this.connectedPyDevices.values().next().value as ConnectedPyDeviceState | undefined;
   }
 }
+
+export type { ConnectedPyDeviceState, ConnectedPyDeviceSnapshot };

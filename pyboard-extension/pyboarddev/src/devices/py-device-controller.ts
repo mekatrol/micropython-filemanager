@@ -5,26 +5,11 @@
  */
 import { toDeviceId } from './device-id';
 import { DeviceSerialPort, Disposable } from './device-serial-port';
-import { PyDeviceRuntimeInfo, PyDevice, PyDeviceState } from './py-device';
-import { PortInfo } from '../utils/serial-port';
-
-export interface PyDeviceControllerEvent {
-  type: 'devicesChanged' | 'deviceUpdated';
-  devices: PyDeviceState[];
-  device?: PyDeviceState;
-}
+import { PyDevice, PyDeviceState } from './py-device';
+import { PyDeviceControllerEvent } from './py-device-controller-event';
+import { PyDeviceControllerOptions } from './py-device-controller-options';
 
 type PyDeviceControllerListener = (event: PyDeviceControllerEvent) => void;
-
-export interface PyDeviceControllerOptions {
-  baudRate?: number;
-  monitorIntervalMs?: number;
-  listPorts: () => Promise<PortInfo[]>;
-  probeRuntimeInfo: (serialPort: DeviceSerialPort) => Promise<PyDeviceRuntimeInfo | undefined>;
-  shouldProbePorts?: () => Promise<boolean> | boolean;
-  readConfiguredState: () => Promise<Record<string, Omit<PyDeviceState, 'deviceId' | 'connectedSerialPortPath' | 'runtimeInfo'>>>;
-  createSerialPort?: (path: string, baudRate: number) => DeviceSerialPort;
-}
 
 export class PyDeviceController {
   private readonly listeners = new Set<PyDeviceControllerListener>();
@@ -209,3 +194,5 @@ export class PyDeviceController {
     }
   }
 }
+
+export type { PyDeviceControllerEvent, PyDeviceControllerOptions };
