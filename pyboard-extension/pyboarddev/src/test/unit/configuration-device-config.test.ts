@@ -11,7 +11,7 @@ import {
   getDeviceLibraryFolderMappings,
   getDeviceNames,
   getDeviceSyncExcludedPaths,
-  PydeviceConfiguration
+  PyDeviceConfiguration
 } from '../../utils/configuration';
 
 suite('configuration DeviceConfiguration', () => {
@@ -92,7 +92,7 @@ suite('configuration DeviceConfiguration', () => {
     const empty = new DeviceConfiguration();
 
     // Arrange: compose full configuration payload.
-    const config: PydeviceConfiguration = {
+    const config: PyDeviceConfiguration = {
       devices: {
         a: full,
         b: empty

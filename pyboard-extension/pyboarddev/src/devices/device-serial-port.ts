@@ -1,15 +1,15 @@
 /**
  * Module overview:
- * This file is part of the Pydevice extension runtime and contains
+ * This file is part of the PyDevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
-import { PyDeviceRuntimeInfo, Pydevice } from './py-device';
+import { PyDeviceConnection, PyDeviceRuntimeInfo } from './py-device';
 
 export interface Disposable {
   dispose(): void;
 }
 
-export interface PydeviceTransport {
+export interface PyDeviceTransport {
   device: string;
   baudrate: number;
   open(): Promise<void>;
@@ -27,26 +27,26 @@ export type DeviceSerialPortEvent =
 
 type DeviceSerialPortListener = (event: DeviceSerialPortEvent) => void;
 
-const defaultTransportFactory = (devicePath: string, baudRate: number, reportErrorsToUser: boolean): PydeviceTransport => {
-  return new Pydevice(devicePath, baudRate, reportErrorsToUser);
+const defaultTransportFactory = (devicePath: string, baudRate: number, reportErrorsToUser: boolean): PyDeviceTransport => {
+  return new PyDeviceConnection(devicePath, baudRate, reportErrorsToUser);
 };
 
 export class DeviceSerialPort {
   private readonly listeners = new Set<DeviceSerialPortListener>();
-  private transport: PydeviceTransport | undefined;
+  private transport: PyDeviceTransport | undefined;
 
   constructor(
     public readonly path: string,
     public readonly baudRate: number = 115200,
     private readonly reportErrorsToUser: boolean = true,
-    private readonly transportFactory: (devicePath: string, baudRate: number, reportErrorsToUser: boolean) => PydeviceTransport = defaultTransportFactory
+    private readonly transportFactory: (devicePath: string, baudRate: number, reportErrorsToUser: boolean) => PyDeviceTransport = defaultTransportFactory
   ) {}
 
   get isConnected(): boolean {
     return this.transport !== undefined;
   }
 
-  getTransport(): PydeviceTransport | undefined {
+  getTransport(): PyDeviceTransport | undefined {
     return this.transport;
   }
 

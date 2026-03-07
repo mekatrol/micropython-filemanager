@@ -10,10 +10,10 @@ import type {
   DeviceSerialPort,
   DeviceSerialPortEvent,
   Disposable,
-  PydeviceTransport
+  PyDeviceTransport
 } from './device-serial-port';
 
-export interface PydeviceIOEvent {
+export interface PyDeviceIOEvent {
   direction: 'tx' | 'rx';
   data: Buffer;
 }
@@ -26,7 +26,7 @@ export interface PyDeviceRuntimeInfo {
   banner: string;
 }
 
-export class Pydevice {
+export class PyDeviceConnection {
   device: string;
   baudrate: number;
   user: string;
@@ -38,7 +38,7 @@ export class Pydevice {
 
   useRawPaste: boolean = true;
   waitDelay: number = 100;
-  private ioEmitter = new vscode.EventEmitter<PydeviceIOEvent>();
+  private ioEmitter = new vscode.EventEmitter<PyDeviceIOEvent>();
   readonly onDidIO = this.ioEmitter.event;
   private execQueue: Promise<void> = Promise.resolve();
   private static readonly transportLogSettingKey = 'verboseReplTransportLogs';
@@ -667,7 +667,7 @@ export class Pydevice {
   private isTransportLoggingEnabled(): boolean {
     return vscode.workspace
       .getConfiguration('mekatrol.pydevice')
-      .get<boolean>(Pydevice.transportLogSettingKey, false);
+      .get<boolean>(PyDeviceConnection.transportLogSettingKey, false);
   }
 
   private formatBytesForLog(data: Buffer): string {
@@ -781,7 +781,7 @@ export class PyDevice {
     return !!this._serialPort?.isConnected;
   }
 
-  get activeTransport(): PydeviceTransport | undefined {
+  get activeTransport(): PyDeviceTransport | undefined {
     return this._serialPort?.getTransport();
   }
 

@@ -58,7 +58,7 @@ You can open a folder from the VS Code file browser:
 
 ![Open Folder](images/open-folder-1.png)
 
-Or from the Pydevice workspace view, which will take you to the same folder picker:
+Or from the PyDevice workspace view, which will take you to the same folder picker:
 
 ![Open Folder](images/open-folder-2.png)
 
@@ -68,7 +68,7 @@ After your folder is open, click **Initialise Workspace**.
 
 ![Initialise Workspace](images/initialise-workspace.png)
 
-That sets up the Pydevice files and view for this project.
+That sets up the PyDevice files and view for this project.
 
 When it is done, your workspace should look like this:
 

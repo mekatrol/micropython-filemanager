@@ -1,6 +1,6 @@
 /**
  * Module overview:
- * This file is part of the Pydevice extension runtime and contains
+ * This file is part of the PyDevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
 import * as path from 'path';
@@ -43,12 +43,12 @@ interface DapEvent {
   body?: unknown;
 }
 
-interface PydeviceLaunchConfiguration extends vscode.DebugConfiguration {
+interface PyDeviceLaunchConfiguration extends vscode.DebugConfiguration {
   program?: string;
   timeoutMs?: number;
 }
 
-class PydeviceDebugAdapter implements vscode.DebugAdapter {
+class PyDeviceDebugAdapter implements vscode.DebugAdapter {
   private readonly messageEmitter = new vscode.EventEmitter<vscode.DebugProtocolMessage>();
   readonly onDidSendMessage = this.messageEmitter.event;
   private sequence = 1;
@@ -354,19 +354,19 @@ const softRebootConnectedBoard = async (deviceId: string, successMessage: string
   }
 };
 
-class PydeviceDebugAdapterDescriptorFactory implements vscode.DebugAdapterDescriptorFactory {
+class PyDeviceDebugAdapterDescriptorFactory implements vscode.DebugAdapterDescriptorFactory {
   createDebugAdapterDescriptor(): vscode.ProviderResult<vscode.DebugAdapterDescriptor> {
-    return new vscode.DebugAdapterInlineImplementation(new PydeviceDebugAdapter());
+    return new vscode.DebugAdapterInlineImplementation(new PyDeviceDebugAdapter());
   }
 }
 
-class PydeviceDebugConfigurationProvider implements vscode.DebugConfigurationProvider {
+class PyDeviceDebugConfigurationProvider implements vscode.DebugConfigurationProvider {
   provideDebugConfigurations(): vscode.ProviderResult<vscode.DebugConfiguration[]> {
     return [
       {
         type: debugType,
         request: 'launch',
-        name: 'Pydevice: Run Current File',
+        name: 'PyDevice: Run Current File',
         program: '${file}',
         timeoutMs: defaultTimeoutMs
       }
@@ -377,7 +377,7 @@ class PydeviceDebugConfigurationProvider implements vscode.DebugConfigurationPro
     _folder: vscode.WorkspaceFolder | undefined,
     debugConfiguration: vscode.DebugConfiguration
   ): vscode.ProviderResult<vscode.DebugConfiguration> {
-    const config = debugConfiguration as PydeviceLaunchConfiguration;
+    const config = debugConfiguration as PyDeviceLaunchConfiguration;
     if (!config.type && !config.request && !config.name) {
       return this.buildDefaultConfig();
     }
@@ -409,16 +409,16 @@ class PydeviceDebugConfigurationProvider implements vscode.DebugConfigurationPro
     return {
       type: debugType,
       request: 'launch',
-      name: 'Pydevice: Run Current File',
+      name: 'PyDevice: Run Current File',
       program: activeUri.toString(),
       timeoutMs: defaultTimeoutMs
     };
   }
 }
 
-export const initPydeviceDebug = (context: vscode.ExtensionContext): void => {
-  const configProvider = new PydeviceDebugConfigurationProvider();
-  const adapterFactory = new PydeviceDebugAdapterDescriptorFactory();
+export const initPyDeviceDebug = (context: vscode.ExtensionContext): void => {
+  const configProvider = new PyDeviceDebugConfigurationProvider();
+  const adapterFactory = new PyDeviceDebugAdapterDescriptorFactory();
 
   context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider(debugType, configProvider));
   context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory(debugType, adapterFactory));

@@ -1,12 +1,12 @@
 /**
  * Module overview:
- * This file is part of the Pydevice extension runtime and contains
+ * This file is part of the PyDevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConnectedBoard, getConnectedBoards, onBoardConnectionsChanged } from './commands/connect-board-command';
-import { configurationFileName, getDeviceNames, loadConfiguration, onPydeviceConfigurationUpdated } from './utils/configuration';
+import { configurationFileName, getDeviceNames, loadConfiguration, onPyDeviceConfigurationUpdated } from './utils/configuration';
 import { getWorkspaceCacheValue, setWorkspaceCacheValue } from './utils/workspace-cache';
 
 const openReplCommandId = 'mekatrol.pydevice.openrepl';
@@ -64,7 +64,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       this.reconcileConnectedDevices(snapshots);
       this.postState();
     });
-    this.configurationUpdatedDisposable = onPydeviceConfigurationUpdated((configuration) => {
+    this.configurationUpdatedDisposable = onPyDeviceConfigurationUpdated((configuration) => {
       this.deviceNames = getDeviceNames(configuration);
       this.postState();
     });

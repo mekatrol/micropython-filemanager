@@ -1,9 +1,9 @@
 /**
  * Module overview:
- * This file is part of the Pydevice extension runtime and contains
+ * This file is part of the PyDevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
-import { PyDeviceRuntimeInfo, Pydevice } from './py-device';
+import { PyDeviceConnection, PyDeviceRuntimeInfo } from './py-device';
 import { PortInfo } from '../utils/serial-port';
 import { DeviceSerialPort } from './device-serial-port';
 
@@ -16,7 +16,7 @@ export interface ProbedSerialDevice {
 }
 
 /**
- * Small adapter around Pydevice probing so command code remains focused on UI
+ * Small adapter around PyDevice probing so command code remains focused on UI
  * flow and can inject mock probing behavior in tests.
  */
 export class SerialDeviceProber {
@@ -27,7 +27,7 @@ export class SerialDeviceProber {
       port.path,
       this.baudRate,
       false,
-      (devicePath, baudRate) => new Pydevice(devicePath, baudRate, false)
+      (devicePath, baudRate) => new PyDeviceConnection(devicePath, baudRate, false)
     );
     const runtimeInfo = await serialPort.probeRuntimeInfo();
     return runtimeInfo ? { port, runtimeInfo } : undefined;

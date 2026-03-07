@@ -1,6 +1,6 @@
 /**
  * Module overview:
- * This file is part of the Pydevice extension runtime and contains
+ * This file is part of the PyDevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
 import * as vscode from 'vscode';
@@ -18,7 +18,7 @@ import {
   tryReconnectBoardOnStartup
 } from './commands/connect-board-command';
 import { initDeviceSyncExplorer } from './device-sync-explorer';
-import { initPydeviceDebug } from './pydevice-debug';
+import { initPyDeviceDebug } from './py-device-debug';
 import { initReplView } from './repl-view';
 import { initExtensionStatusView } from './extension-status-view';
 import { initialiseWorkspaceCache } from './utils/workspace-cache';
@@ -29,7 +29,7 @@ import { initialisePyDeviceController, stopPyDeviceController } from './devices/
 export const activate = async (context: vscode.ExtensionContext) => {
   // Initialise output channel for logging
   initOutputChannel();
-  logChannelOutput('Mekatrol Pydevice activated...', false);
+  logChannelOutput('Mekatrol PyDevice activated...', false);
   await initialiseWorkspaceCache();
   try {
     await initialisePyDeviceController();
@@ -60,7 +60,7 @@ export const activate = async (context: vscode.ExtensionContext) => {
   await initDeviceSyncExplorer(context);
 
   // Init Run/Debug integration
-  initPydeviceDebug(context);
+  initPyDeviceDebug(context);
 
 };
 

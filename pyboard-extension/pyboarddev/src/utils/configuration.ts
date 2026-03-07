@@ -1,6 +1,6 @@
 /**
  * Module overview:
- * This file is part of the Pydevice extension runtime and contains
+ * This file is part of the PyDevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
 import * as vscode from 'vscode';
@@ -8,7 +8,7 @@ import { posix } from 'path';
 
 export const configurationFileName = '.pydevice-config';
 
-export enum PydeviceConfigurationResult {
+export enum PyDeviceConfigurationResult {
   AlreadyExists = 'AlreadyExists',
   Created = 'Created',
   Error = 'Error',
@@ -158,27 +158,27 @@ export class DeviceConfiguration {
   }
 }
 
-export interface PydeviceConfiguration {
+export interface PyDeviceConfiguration {
   devices: Record<string, DeviceConfiguration>;
 }
 
-export interface MetaPydeviceConfiguration {
+export interface MetaPyDeviceConfiguration {
   version: number;
   help: string;
 }
 
-export interface PydeviceConfigurationWithMeta extends PydeviceConfiguration {
-  meta: MetaPydeviceConfiguration;
+export interface PyDeviceConfigurationWithMeta extends PyDeviceConfiguration {
+  meta: MetaPyDeviceConfiguration;
 }
 
-export const defaultConfiguration: PydeviceConfiguration = {
+export const defaultConfiguration: PyDeviceConfiguration = {
   devices: {}
 };
 
-const configurationUpdatedEmitter = new vscode.EventEmitter<PydeviceConfiguration>();
-export const onPydeviceConfigurationUpdated = configurationUpdatedEmitter.event;
+const configurationUpdatedEmitter = new vscode.EventEmitter<PyDeviceConfiguration>();
+export const onPyDeviceConfigurationUpdated = configurationUpdatedEmitter.event;
 
-interface LegacyPydeviceConfiguration {
+interface LegacyPyDeviceConfiguration {
   deviceHostFolderMappings?: Record<string, unknown>;
   deviceNames?: Record<string, unknown>;
 }
@@ -201,7 +201,7 @@ const pruneEmptyDevices = (devices: Record<string, DeviceConfiguration>): Record
   return next;
 };
 
-const parseDevices = (source: Partial<PydeviceConfiguration> & LegacyPydeviceConfiguration): Record<string, DeviceConfiguration> => {
+const parseDevices = (source: Partial<PyDeviceConfiguration> & LegacyPyDeviceConfiguration): Record<string, DeviceConfiguration> => {
   const devices: Record<string, DeviceConfiguration> = {};
   const legacyMappings = isObjectRecord(source.deviceHostFolderMappings) ? source.deviceHostFolderMappings : {};
   for (const [deviceId, hostFolder] of Object.entries(legacyMappings)) {
@@ -260,7 +260,7 @@ const findDuplicateNames = (devices: Record<string, DeviceConfiguration>): Array
     .sort((a, b) => a.name.localeCompare(b.name));
 };
 
-export const getDeviceHostFolderMappings = (configuration: PydeviceConfiguration): Record<string, string> => {
+export const getDeviceHostFolderMappings = (configuration: PyDeviceConfiguration): Record<string, string> => {
   const mappings: Record<string, string> = {};
   for (const [deviceId, device] of Object.entries(configuration.devices ?? {})) {
     const hostFolder = device.getHostFolder();
@@ -271,7 +271,7 @@ export const getDeviceHostFolderMappings = (configuration: PydeviceConfiguration
   return mappings;
 };
 
-export const getDeviceLibraryFolderMappings = (configuration: PydeviceConfiguration): Record<string, string[]> => {
+export const getDeviceLibraryFolderMappings = (configuration: PyDeviceConfiguration): Record<string, string[]> => {
   const mappings: Record<string, string[]> = {};
   for (const [deviceId, device] of Object.entries(configuration.devices ?? {})) {
     const folders = device.getLibraryFolders();
@@ -282,7 +282,7 @@ export const getDeviceLibraryFolderMappings = (configuration: PydeviceConfigurat
   return mappings;
 };
 
-export const getDeviceNames = (configuration: PydeviceConfiguration): Record<string, string> => {
+export const getDeviceNames = (configuration: PyDeviceConfiguration): Record<string, string> => {
   const names: Record<string, string> = {};
   for (const [deviceId, device] of Object.entries(configuration.devices ?? {})) {
     const name = device.getName();
@@ -293,7 +293,7 @@ export const getDeviceNames = (configuration: PydeviceConfiguration): Record<str
   return names;
 };
 
-export const getDeviceSyncExcludedPaths = (configuration: PydeviceConfiguration): Record<string, string[]> => {
+export const getDeviceSyncExcludedPaths = (configuration: PyDeviceConfiguration): Record<string, string[]> => {
   const excludedPathsByDevice: Record<string, string[]> = {};
   for (const [deviceId, device] of Object.entries(configuration.devices ?? {})) {
     const excludedPaths = device.getSyncExcludedPaths();
@@ -322,8 +322,8 @@ export const getConfigurationFullFileName = (): string | undefined => {
   return path;
 };
 
-export const loadConfiguration = async (): Promise<PydeviceConfiguration> => {
-  let configuration: PydeviceConfiguration = {
+export const loadConfiguration = async (): Promise<PyDeviceConfiguration> => {
+  let configuration: PyDeviceConfiguration = {
     ...defaultConfiguration,
     devices: {}
   };
@@ -341,7 +341,7 @@ export const loadConfiguration = async (): Promise<PydeviceConfiguration> => {
 
     const fileContent = await vscode.workspace.fs.readFile(fileUri);
     const json = Buffer.from(fileContent).toString('utf8');
-    const newConfiguration = JSON.parse(json) as Partial<PydeviceConfiguration> & LegacyPydeviceConfiguration;
+    const newConfiguration = JSON.parse(json) as Partial<PyDeviceConfiguration> & LegacyPyDeviceConfiguration;
 
     configuration = {
       ...configuration,
@@ -369,13 +369,13 @@ const getConfigurationFileUri = (): vscode.Uri | undefined => {
   });
 };
 
-export const saveConfiguration = async (configuration: PydeviceConfiguration): Promise<void> => {
+export const saveConfiguration = async (configuration: PyDeviceConfiguration): Promise<void> => {
   const fileUri = getConfigurationFileUri();
   if (!fileUri) {
-    throw new Error('Open a workspace to save Pydevice configuration.');
+    throw new Error('Open a workspace to save PyDevice configuration.');
   }
 
-  let existing: PydeviceConfigurationWithMeta = {
+  let existing: PyDeviceConfigurationWithMeta = {
     meta: {
       version: 1,
       help: 'See: https://github.com/mekatrol/micropython-filemanager/blob/main/pydevice-extension/pydevice/README.md for description of configuration values.'
@@ -387,7 +387,7 @@ export const saveConfiguration = async (configuration: PydeviceConfiguration): P
   try {
     const fileContent = await vscode.workspace.fs.readFile(fileUri);
     const json = Buffer.from(fileContent).toString('utf8');
-    const parsed = JSON.parse(json) as Partial<PydeviceConfigurationWithMeta> & LegacyPydeviceConfiguration;
+    const parsed = JSON.parse(json) as Partial<PyDeviceConfigurationWithMeta> & LegacyPyDeviceConfiguration;
     const meta = parsed.meta ?? existing.meta;
     existing = {
       meta,
@@ -397,7 +397,7 @@ export const saveConfiguration = async (configuration: PydeviceConfiguration): P
     // Missing config is expected; file will be created below.
   }
 
-  const merged: PydeviceConfigurationWithMeta = {
+  const merged: PyDeviceConfigurationWithMeta = {
     meta: existing.meta,
     ...configuration,
     devices: pruneEmptyDevices(cloneDevices(configuration.devices ?? {}))
@@ -416,7 +416,7 @@ export const saveConfiguration = async (configuration: PydeviceConfiguration): P
 export const updateDeviceHostFolderMapping = async (
   deviceId: string,
   hostFolderRelativePath: string | undefined
-): Promise<PydeviceConfiguration> => {
+): Promise<PyDeviceConfiguration> => {
   const configuration = await loadConfiguration();
   const nextDevices = cloneDevices(configuration.devices ?? {});
   const nextDeviceConfig = nextDevices[deviceId] ?? new DeviceConfiguration();
@@ -427,7 +427,7 @@ export const updateDeviceHostFolderMapping = async (
     nextDevices[deviceId] = nextDeviceConfig;
   }
 
-  const updated: PydeviceConfiguration = {
+  const updated: PyDeviceConfiguration = {
     ...configuration,
     devices: pruneEmptyDevices(nextDevices)
   };
@@ -438,7 +438,7 @@ export const updateDeviceHostFolderMapping = async (
 export const updateDeviceName = async (
   deviceId: string,
   name: string | undefined
-): Promise<PydeviceConfiguration> => {
+): Promise<PyDeviceConfiguration> => {
   const configuration = await loadConfiguration();
   const nextDevices = cloneDevices(configuration.devices ?? {});
   const nextDeviceConfig = nextDevices[deviceId] ?? new DeviceConfiguration();
@@ -449,7 +449,7 @@ export const updateDeviceName = async (
     nextDevices[deviceId] = nextDeviceConfig;
   }
 
-  const updated: PydeviceConfiguration = {
+  const updated: PyDeviceConfiguration = {
     ...configuration,
     devices: pruneEmptyDevices(nextDevices)
   };
@@ -460,7 +460,7 @@ export const updateDeviceName = async (
 export const updateDeviceLibraryFolders = async (
   deviceId: string,
   libraryFolderRelativePaths: readonly string[]
-): Promise<PydeviceConfiguration> => {
+): Promise<PyDeviceConfiguration> => {
   const configuration = await loadConfiguration();
   const nextDevices = cloneDevices(configuration.devices ?? {});
   const nextDeviceConfig = nextDevices[deviceId] ?? new DeviceConfiguration();
@@ -471,7 +471,7 @@ export const updateDeviceLibraryFolders = async (
     nextDevices[deviceId] = nextDeviceConfig;
   }
 
-  const updated: PydeviceConfiguration = {
+  const updated: PyDeviceConfiguration = {
     ...configuration,
     devices: pruneEmptyDevices(nextDevices)
   };
@@ -483,7 +483,7 @@ export const updateDeviceSyncExclusion = async (
   deviceId: string,
   relativePath: string,
   excluded: boolean
-): Promise<PydeviceConfiguration> => {
+): Promise<PyDeviceConfiguration> => {
   const configuration = await loadConfiguration();
   const nextDevices = cloneDevices(configuration.devices ?? {});
   const nextDeviceConfig = nextDevices[deviceId] ?? new DeviceConfiguration();
@@ -499,7 +499,7 @@ export const updateDeviceSyncExclusion = async (
     nextDevices[deviceId] = nextDeviceConfig;
   }
 
-  const updated: PydeviceConfiguration = {
+  const updated: PyDeviceConfiguration = {
     ...configuration,
     devices: pruneEmptyDevices(nextDevices)
   };
@@ -510,7 +510,7 @@ export const updateDeviceSyncExclusion = async (
 export const updateDeviceSyncExcludedPaths = async (
   deviceId: string,
   relativePaths: readonly string[]
-): Promise<PydeviceConfiguration> => {
+): Promise<PyDeviceConfiguration> => {
   const configuration = await loadConfiguration();
   const nextDevices = cloneDevices(configuration.devices ?? {});
   const nextDeviceConfig = nextDevices[deviceId] ?? new DeviceConfiguration();
@@ -522,7 +522,7 @@ export const updateDeviceSyncExcludedPaths = async (
     nextDevices[deviceId] = nextDeviceConfig;
   }
 
-  const updated: PydeviceConfiguration = {
+  const updated: PyDeviceConfiguration = {
     ...configuration,
     devices: pruneEmptyDevices(nextDevices)
   };
@@ -530,8 +530,8 @@ export const updateDeviceSyncExcludedPaths = async (
   return updated;
 };
 
-export const createDefaultConfiguration = async (): Promise<[PydeviceConfigurationResult, string?]> => {
-  let configuration: PydeviceConfigurationWithMeta = Object.assign(
+export const createDefaultConfiguration = async (): Promise<[PyDeviceConfigurationResult, string?]> => {
+  let configuration: PyDeviceConfigurationWithMeta = Object.assign(
     {
       meta: {
         version: 1,
@@ -543,7 +543,7 @@ export const createDefaultConfiguration = async (): Promise<[PydeviceConfigurati
 
   if (!vscode.workspace.workspaceFolders) {
     // Return default if there is no workspace configuration file
-    return [PydeviceConfigurationResult.NoWorkspace, undefined];
+    return [PyDeviceConfigurationResult.NoWorkspace, undefined];
   }
 
   try {
@@ -561,7 +561,7 @@ export const createDefaultConfiguration = async (): Promise<[PydeviceConfigurati
     // Does the file already exist?
     try {
       if ((await vscode.workspace.fs.stat(fileUri)) !== undefined) {
-        return [PydeviceConfigurationResult.AlreadyExists, path];
+        return [PyDeviceConfigurationResult.AlreadyExists, path];
       }
     } catch {
       /* ignore */
@@ -573,15 +573,15 @@ export const createDefaultConfiguration = async (): Promise<[PydeviceConfigurati
     const writeData = Buffer.from(content, 'utf8');
     await vscode.workspace.fs.writeFile(fileUri, writeData);
 
-    return [PydeviceConfigurationResult.Created, path];
+    return [PyDeviceConfigurationResult.Created, path];
   } catch (e) {
     /* ignore errors if config file does not exist */
-    return [PydeviceConfigurationResult.Error, e?.toString()];
+    return [PyDeviceConfigurationResult.Error, e?.toString()];
   }
 };
 
-export const resetDefaultConfiguration = async (): Promise<[PydeviceConfigurationResult, string?]> => {
-  const configuration: PydeviceConfigurationWithMeta = Object.assign(
+export const resetDefaultConfiguration = async (): Promise<[PyDeviceConfigurationResult, string?]> => {
+  const configuration: PyDeviceConfigurationWithMeta = Object.assign(
     {
       meta: {
         version: 1,
@@ -592,7 +592,7 @@ export const resetDefaultConfiguration = async (): Promise<[PydeviceConfiguratio
   );
 
   if (!vscode.workspace.workspaceFolders) {
-    return [PydeviceConfigurationResult.NoWorkspace, undefined];
+    return [PyDeviceConfigurationResult.NoWorkspace, undefined];
   }
 
   try {
@@ -607,9 +607,9 @@ export const resetDefaultConfiguration = async (): Promise<[PydeviceConfiguratio
     const writeData = Buffer.from(content, 'utf8');
     await vscode.workspace.fs.writeFile(fileUri, writeData);
 
-    return [PydeviceConfigurationResult.Created, filePath];
+    return [PyDeviceConfigurationResult.Created, filePath];
   } catch (e) {
-    return [PydeviceConfigurationResult.Error, e?.toString()];
+    return [PyDeviceConfigurationResult.Error, e?.toString()];
   }
 };
 

@@ -1,6 +1,6 @@
 /**
  * Module overview:
- * This file is part of the Pydevice extension runtime and contains
+ * This file is part of the PyDevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
 import * as vscode from 'vscode';
@@ -18,7 +18,7 @@ const formatForTerminal = (text: string): string => text.replace(/\n/g, '\r\n');
 const formatInputForEcho = (text: string): string => text.replace(/\r/g, '\r\n');
 
 const getDisconnectedHint = (): string => {
-  return '\r\n[device not connected; use the Pydevice side panel to scan/connect]\r\n';
+  return '\r\n[device not connected; use the PyDevice side panel to scan/connect]\r\n';
 };
 
 class ReplTerminalManager implements vscode.Disposable {
@@ -39,7 +39,7 @@ class ReplTerminalManager implements vscode.Disposable {
       onDidClose: this.closeEmitter.event,
       open: () => {
         this.isPtyOpen = true;
-        this.writeEmitter.fire('Pydevice REPL\r\n');
+        this.writeEmitter.fire('PyDevice REPL\r\n');
         this.renderConnectionStatus();
       },
       close: () => {
@@ -125,7 +125,7 @@ class ReplTerminalManager implements vscode.Disposable {
 
   show(): void {
     if (!this.terminal) {
-      this.terminal = vscode.window.createTerminal({ name: 'Pydevice REPL', pty: this.pty });
+      this.terminal = vscode.window.createTerminal({ name: 'PyDevice REPL', pty: this.pty });
     }
 
     this.terminal.show(true);

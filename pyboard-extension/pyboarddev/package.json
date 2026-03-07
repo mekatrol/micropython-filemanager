@@ -1,7 +1,7 @@
 {
   "name": "mekatrol-pydevice",
   "publisher": "Mekatrol",
-  "displayName": "Mekatrol Pydevice",
+  "displayName": "Mekatrol PyDevice",
   "description": "A Python device developer extension.",
   "icon": "images/logo.png",
   "version": "0.0.1",
@@ -34,7 +34,7 @@
       },
       {
         "command": "mekatrol.pydevice.connectboardwithpicker",
-        "title": "Pydevice: Connect to board (choose port)",
+        "title": "PyDevice: Connect to board (choose port)",
         "icon": "$(plug)"
       },
       {
@@ -60,31 +60,31 @@
       },
       {
         "command": "mekatrol.pydevice.setautoreconnect",
-        "title": "Pydevice: Set auto reconnect"
+        "title": "PyDevice: Set auto reconnect"
       },
       {
         "command": "mekatrol.pydevice.refreshsyncview",
-        "title": "Pydevice: Refresh sync explorer",
+        "title": "PyDevice: Refresh sync explorer",
         "icon": "$(refresh)"
       },
       {
         "command": "mekatrol.pydevice.explorerprerequisiteshint",
-        "title": "Pydevice: Explorer setup required",
+        "title": "PyDevice: Explorer setup required",
         "icon": "$(info)"
       },
       {
         "command": "mekatrol.pydevice.explorerinitialiseworkspace",
-        "title": "Pydevice: Initialize Pydevice Workspace",
+        "title": "PyDevice: Initialize PyDevice Workspace",
         "icon": "$(tools)"
       },
       {
         "command": "mekatrol.pydevice.syncfromdevice",
-        "title": "Pydevice: Sync from device to computer",
+        "title": "PyDevice: Sync from device to computer",
         "icon": "$(cloud-download)"
       },
       {
         "command": "mekatrol.pydevice.synctodevice",
-        "title": "Pydevice: Sync from computer to device",
+        "title": "PyDevice: Sync from computer to device",
         "icon": "$(cloud-upload)"
       },
       {
@@ -122,11 +122,11 @@
       },
       {
         "command": "mekatrol.pydevice.openrepl",
-        "title": "Pydevice: Open REPL console"
+        "title": "PyDevice: Open REPL console"
       },
       {
         "command": "mekatrol.pydevice.clearrepl",
-        "title": "Pydevice: Clear REPL console",
+        "title": "PyDevice: Clear REPL console",
         "icon": {
           "light": "images/clear-all-light.svg",
           "dark": "images/clear-all-dark.svg"
@@ -134,7 +134,7 @@
       },
       {
         "command": "mekatrol.pydevice.clearreplhistory",
-        "title": "Pydevice: Clear REPL command history",
+        "title": "PyDevice: Clear REPL command history",
         "icon": {
           "light": "images/clear-history-light.svg",
           "dark": "images/clear-history-dark.svg"
@@ -160,23 +160,23 @@
       },
       {
         "command": "mekatrol.pydevice.mapdevicehostfolder",
-        "title": "Pydevice: Map device to computer folder"
+        "title": "PyDevice: Map device to computer folder"
       },
       {
         "command": "mekatrol.pydevice.unmapdevicehostfolder",
-        "title": "Pydevice: Unmap device from computer folder"
+        "title": "PyDevice: Unmap device from computer folder"
       },
       {
         "command": "mekatrol.pydevice.adddevicelibraryfolder",
-        "title": "Pydevice: Add device library folder"
+        "title": "PyDevice: Add device library folder"
       },
       {
         "command": "mekatrol.pydevice.removedevicelibraryfolder",
-        "title": "Pydevice: Remove device library folder"
+        "title": "PyDevice: Remove device library folder"
       },
       {
         "command": "mekatrol.pydevice.setdevicename",
-        "title": "Pydevice: Set device name"
+        "title": "PyDevice: Set device name"
       },
       {
         "command": "mekatrol.pydevice.excludedevicefilefromsync",
@@ -198,29 +198,29 @@
       },
       {
         "command": "mekatrol.pydevice.syncExplorer.focus",
-        "title": "Focus on Pydevice Explorer View"
+        "title": "Focus on PyDevice Explorer View"
       },
       {
         "command": "mekatrol.pydevice.statusView.focus",
-        "title": "Focus on Pydevice View"
+        "title": "Focus on PyDevice View"
       },
       {
         "command": "mekatrol.pydevice.replView.focus",
-        "title": "Focus on Pydevice REPL View"
+        "title": "Focus on PyDevice REPL View"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
           "id": "mekatrol-pydevice-sidebar",
-          "title": "Pydevice",
+          "title": "PyDevice",
           "icon": "images/pydevice-sidebar.svg"
         }
       ],
       "panel": [
         {
           "id": "mekatrol-pydevice-panel",
-          "title": "Pydevice REPL",
+          "title": "PyDevice REPL",
           "icon": "images/pydevice-sidebar.svg"
         }
       ]
@@ -229,7 +229,7 @@
       "mekatrol-pydevice-sidebar": [
         {
           "id": "mekatrol.pydevice.syncExplorer",
-          "name": "Pydevice Explorer"
+          "name": "PyDevice Explorer"
         },
         {
           "id": "mekatrol.pydevice.statusView",
@@ -574,7 +574,7 @@
       }
     ],
     "configuration": {
-      "title": "Mekatrol Pydevice",
+      "title": "Mekatrol PyDevice",
       "properties": {
         "mekatrol.pydevice.autoReconnectLastDevice": {
           "type": "boolean",
@@ -613,7 +613,7 @@
     "debuggers": [
       {
         "type": "pydevice",
-        "label": "Pydevice",
+        "label": "PyDevice",
         "languages": [
           "python"
         ],
@@ -642,7 +642,7 @@
           {
             "type": "pydevice",
             "request": "launch",
-            "name": "Pydevice: Run Current File",
+            "name": "PyDevice: Run Current File",
             "program": "${file}",
             "timeoutMs": 60000
           }

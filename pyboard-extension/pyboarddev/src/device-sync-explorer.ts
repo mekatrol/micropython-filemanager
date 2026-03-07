@@ -1,6 +1,6 @@
 /**
  * Module overview:
- * This file is part of the Pydevice extension runtime and contains
+ * This file is part of the PyDevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
 import { Buffer } from 'buffer';
@@ -11,7 +11,7 @@ import { closeAllConnectedBoards, getConnectedBoard, getConnectedBoards, onBoard
 import { logChannelOutput } from './output-channel';
 import {
   createDefaultConfiguration,
-  PydeviceConfigurationResult,
+  PyDeviceConfigurationResult,
   configurationFileName,
   getDeviceLibraryFolderMappings,
   getDeviceNames,
@@ -269,7 +269,7 @@ class DeviceSyncModel {
 
     if (!hasWorkspace) {
       if (!this.hasWarnedNoWorkspaceFolder) {
-        const message = 'Open a workspace folder to show devices in Pydevice Explorer.';
+        const message = 'Open a workspace folder to show devices in PyDevice Explorer.';
         this.hasWarnedNoWorkspaceFolder = true;
         vscode.window.showWarningMessage(message);
         logChannelOutput(message, true);
@@ -379,7 +379,7 @@ class DeviceSyncModel {
       logChannelOutput(`Sync refresh failed: ${message}`, true);
       if (this.lastRefreshError !== message) {
         this.lastRefreshError = message;
-        vscode.window.showErrorMessage(`Pydevice Explorer refresh failed: ${message}`);
+        vscode.window.showErrorMessage(`PyDevice Explorer refresh failed: ${message}`);
       }
     }
   }
@@ -4928,8 +4928,8 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
       element.description = 'setup required';
       element.tooltip = 'Click to open Explorer view and complete setup.';
       element.command = this.model.hasWorkspaceFolder()
-        ? { command: commandExplorerInitialiseWorkspaceId, title: 'Initialize Pydevice Workspace' }
-        : { command: commandExplorerPrerequisitesHintId, title: 'Setup Pydevice Explorer' };
+        ? { command: commandExplorerInitialiseWorkspaceId, title: 'Initialize PyDevice Workspace' }
+        : { command: commandExplorerPrerequisitesHintId, title: 'Setup PyDevice Explorer' };
       return element;
     }
 
@@ -5039,15 +5039,15 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
 
   getChildren(element?: SyncNode): SyncNode[] {
     if (!this.model.isExplorerReady()) {
-      let label = 'Open a folder in Explorer to enable Pydevice Explorer';
+      let label = 'Open a folder in Explorer to enable PyDevice Explorer';
       if (this.model.hasWorkspaceFolder()) {
         const missing: string[] = [];
         if (!this.model.hasConfigurationFolder()) {
           missing.push(configurationFileName);
         }
         label = missing.length > 0
-          ? 'Initialize Pydevice Workspace'
-          : 'Complete Pydevice Explorer setup';
+          ? 'Initialize PyDevice Workspace'
+          : 'Complete PyDevice Explorer setup';
       }
       return [
         new SyncNode(
@@ -5423,7 +5423,7 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): 
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
       const action = await vscode.window.showWarningMessage(
-        'Open a workspace folder first to enable Pydevice Explorer.',
+        'Open a workspace folder first to enable PyDevice Explorer.',
         'Open Folder'
       );
       if (action === 'Open Folder') {
@@ -5439,7 +5439,7 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): 
       await vscode.workspace.fs.stat(configUri);
     } catch {
       const action = await vscode.window.showWarningMessage(
-        `${configurationFileName} was not found in this workspace. Create it to enable Pydevice Explorer.`,
+        `${configurationFileName} was not found in this workspace. Create it to enable PyDevice Explorer.`,
         `Create ${configurationFileName}`
       );
       if (action === `Create ${configurationFileName}`) {
@@ -5448,13 +5448,13 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): 
       return;
     }
 
-    vscode.window.showInformationMessage('Pydevice Explorer is ready.');
+    vscode.window.showInformationMessage('PyDevice Explorer is ready.');
   }));
   context.subscriptions.push(vscode.commands.registerCommand(commandExplorerInitialiseWorkspaceId, async () => {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
       const action = await vscode.window.showWarningMessage(
-        'Open a workspace folder first to Initialize Pydevice Workspace.',
+        'Open a workspace folder first to Initialize PyDevice Workspace.',
         'Open Folder'
       );
       if (action === 'Open Folder') {
@@ -5467,7 +5467,7 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): 
     const existingItems: string[] = [];
 
     const [configResult] = await createDefaultConfiguration();
-    if (configResult === PydeviceConfigurationResult.Created) {
+    if (configResult === PyDeviceConfigurationResult.Created) {
       createdItems.push(configurationFileName);
     } else {
       existingItems.push(configurationFileName);
@@ -5484,7 +5484,7 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): 
       createdItems.length > 0 ? `Created: ${createdItems.join(', ')}` : undefined,
       existingItems.length > 0 ? `Already existed: ${existingItems.join(', ')}` : undefined
     ].filter((item): item is string => !!item).join(' | ');
-    const message = summary.length > 0 ? `Pydevice workspace initialized. ${summary}` : 'Pydevice workspace initialized.';
+    const message = summary.length > 0 ? `PyDevice workspace initialized. ${summary}` : 'PyDevice workspace initialized.';
     vscode.window.showInformationMessage(message);
     logChannelOutput(message, true);
     await model.refresh(true);

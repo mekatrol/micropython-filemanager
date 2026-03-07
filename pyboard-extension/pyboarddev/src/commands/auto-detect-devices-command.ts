@@ -1,6 +1,6 @@
 /**
  * Module overview:
- * This file is part of the Pydevice extension runtime and contains
+ * This file is part of the PyDevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
 import * as vscode from 'vscode';
@@ -31,7 +31,7 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
       detectedDevices = await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
-          title: 'Pydevice: Detecting serial devices...',
+          title: 'PyDevice: Detecting serial devices...',
           cancellable: false
         },
         async (progress) => {

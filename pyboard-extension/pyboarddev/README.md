@@ -1,6 +1,6 @@
-# Mekatrol Pydevice
+# Mekatrol PyDevice
 
-Mekatrol Pydevice is a VS Code extension for developing against MicroPython devices with a synced computer workspace, sync tooling, and side-by-side device/computer workflows.
+Mekatrol PyDevice is a VS Code extension for developing against MicroPython devices with a synced computer workspace, sync tooling, and side-by-side device/computer workflows.
 
 ## Core Functions (Quick Summary)
 
@@ -149,7 +149,7 @@ The REPL view provides an interactive command console for connected boards.
 
 ### REPL capabilities
 
-- Open REPL from the Pydevice panel and run commands interactively.
+- Open REPL from the PyDevice panel and run commands interactively.
 - Maintain per-device REPL output lines and command history.
 - Switch between connected devices in the REPL UI.
 - Clear REPL output and clear REPL history with dedicated commands/actions.

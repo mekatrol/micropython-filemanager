@@ -1,9 +1,9 @@
 /**
  * Module overview:
- * This file is part of the Pydevice extension runtime and contains
+ * This file is part of the PyDevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
-import { PyDeviceRuntimeInfo, Pydevice } from './py-device';
+import { PyDeviceConnection, PyDeviceRuntimeInfo } from './py-device';
 
 /**
  * Tracks all active board connections and provides query/update helpers.
@@ -13,7 +13,7 @@ import { PyDeviceRuntimeInfo, Pydevice } from './py-device';
  */
 export interface ConnectedBoardState {
   deviceId: string;
-  board: Pydevice;
+  board: PyDeviceConnection;
   runtimeInfo: PyDeviceRuntimeInfo | undefined;
   executionCount: number;
 }

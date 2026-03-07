@@ -1,12 +1,12 @@
 /**
  * Module overview:
- * This file is part of the Pydevice extension runtime and contains
+ * This file is part of the PyDevice extension runtime and contains
  * feature-specific logic isolated for maintainability and unit testing.
  */
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { logChannelOutput } from '../output-channel';
-import { PyDeviceRuntimeInfo, Pydevice } from '../devices/py-device';
+import { PyDeviceConnection, PyDeviceRuntimeInfo } from '../devices/py-device';
 import { listSerialDevices } from '../utils/serial-port';
 import { getWorkspaceCacheValue, setWorkspaceCacheValue } from '../utils/workspace-cache';
 import { ConnectedBoardRegistry, ConnectedBoardState, ConnectedBoardSnapshot } from '../devices/connected-board-registry';
@@ -121,7 +121,7 @@ const getConnectedBoardStateByPortPath = (devicePath: string): ConnectedBoardSta
   boardRegistry.getByPortPath(devicePath);
 
 const readBoardRuntimeInfoWithRetries = async (
-  board: Pydevice,
+  board: PyDeviceConnection,
   devicePath: string,
   attempts: number,
   delayMs: number
@@ -146,7 +146,7 @@ const readBoardRuntimeInfoWithRetries = async (
 };
 
 const readBoardRuntimeInfoWithRecovery = async (
-  board: Pydevice,
+  board: PyDeviceConnection,
   devicePath: string
 ): Promise<PyDeviceRuntimeInfo | undefined> => {
   let lastError: unknown;
@@ -303,11 +303,11 @@ const notifyStateChanged = (): void => {
 
 export const isBoardConnected = (): boolean => boardRegistry.isConnected();
 
-export const getConnectedBoard = (deviceId?: string): Pydevice | undefined => {
+export const getConnectedBoard = (deviceId?: string): PyDeviceConnection | undefined => {
   return boardRegistry.getByDeviceId(deviceId)?.board;
 };
 
-export const getConnectedBoardByPortPath = (devicePath: string): Pydevice | undefined => {
+export const getConnectedBoardByPortPath = (devicePath: string): PyDeviceConnection | undefined => {
   return getConnectedBoardStateByPortPath(devicePath)?.board;
 };
 
@@ -357,7 +357,7 @@ const connectBoardForPath = async (
     return existingForPath;
   }
 
-  const board = new Pydevice(devicePath, baudRate, showMessages);
+  const board = new PyDeviceConnection(devicePath, baudRate, showMessages);
   await board.open();
 
   const runtimeInfo = recoveryMode
@@ -576,7 +576,7 @@ interface RecoveryReconnectRow {
 }
 
 const probeRecoveryDeviceId = async (devicePath: string): Promise<string | undefined> => {
-  const board = new Pydevice(devicePath, defaultBaudRate, false);
+  const board = new PyDeviceConnection(devicePath, defaultBaudRate, false);
   try {
     await board.open();
     const runtimeInfo = await board.probeBoardRuntimeInfo(1800);
@@ -864,7 +864,7 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
     }
 
     if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
-      const workspaceWarning = 'No workspace folder is open. Device can connect, but it will not appear in Pydevice Explorer until you open a workspace folder.';
+      const workspaceWarning = 'No workspace folder is open. Device can connect, but it will not appear in PyDevice Explorer until you open a workspace folder.';
       vscode.window.showWarningMessage(workspaceWarning);
       logChannelOutput(workspaceWarning, true);
     }
