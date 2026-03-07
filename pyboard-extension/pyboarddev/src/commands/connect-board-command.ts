@@ -559,8 +559,16 @@ interface RecoveryReconnectRow {
   deviceName: string;
   status: RecoveryReconnectStatus;
   errorText?: string;
+  osUname?: string;
   details?: string;
 }
+
+const toOsUnameSummary = (runtimeInfo: PyDeviceRuntimeInfo | undefined): string | undefined => {
+  if (!runtimeInfo) {
+    return undefined;
+  }
+  return `${runtimeInfo.version}; ${runtimeInfo.machine}`;
+};
 
 const probeRecoveryDeviceId = async (devicePath: string): Promise<string | undefined> => {
   const board = new PyDeviceConnection(devicePath, defaultBaudRate, false);
@@ -586,7 +594,7 @@ const renderRecoveryReconnectHtml = (rows: RecoveryReconnectRow[]): string => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Recovery Reconnect</title>
+  <title>Device connect</title>
   <style>
     :root { color-scheme: light dark; }
     body { margin: 0; font-family: var(--vscode-font-family); color: var(--vscode-foreground); }
@@ -599,8 +607,9 @@ const renderRecoveryReconnectHtml = (rows: RecoveryReconnectRow[]): string => {
     th.name, td.name { width: 200px; }
     th.id, td.id { width: 320px; }
     th.port, td.port { width: 200px; }
-    th.status, td.status { width: 220px; }
-    td.id, td.port { font-family: var(--vscode-editor-font-family); font-size: 12px; }
+    th.uname, td.uname { width: 260px; }
+    th.status, td.status { width: 190px; }
+    td.id, td.port, td.uname { font-family: var(--vscode-editor-font-family); font-size: 12px; }
     .status-wrap { display: inline-flex; align-items: center; gap: 8px; }
     .icon { width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; }
     .icon svg { width: 14px; height: 14px; fill: currentColor; }
@@ -641,14 +650,15 @@ const renderRecoveryReconnectHtml = (rows: RecoveryReconnectRow[]): string => {
 </head>
 <body>
   <div class="wrap">
-    <h2>Recovery Reconnect</h2>
-    <p class="hint">Device IDs are probed in the background. Reconnect individual rows or use Connect all.</p>
+    <h2>Device connect</h2>
+    <p class="hint">Device IDs are probed in the background. Connect individual rows or use Connect all.</p>
     <table>
       <thead>
         <tr>
           <th class="name">Device Name</th>
           <th class="id">Device ID</th>
           <th class="port">Serial Port</th>
+          <th class="uname">Device Info</th>
           <th class="status">Status</th>
         </tr>
       </thead>
@@ -684,7 +694,7 @@ const renderRecoveryReconnectHtml = (rows: RecoveryReconnectRow[]): string => {
       if (row.status === 'not_connected') {
         return '<span class="status-wrap secondary-text"><span class="icon">' + disconnectedIconSvg + '</span><span>Not connected</span></span>';
       }
-      return '<button type="button" class="link" data-action="reconnect" data-id="' + row.id + '">Reconnect</button>';
+      return '<button type="button" class="link" data-action="reconnect" data-id="' + row.id + '">Connect</button>';
     };
 
     const render = () => {
@@ -698,6 +708,7 @@ const renderRecoveryReconnectHtml = (rows: RecoveryReconnectRow[]): string => {
           '<td class="name">' + nameHtml + '</td>' +
           '<td class="id">' + (row.deviceId || '') + '</td>' +
           '<td class="port">' + (row.serialPortName || '') + '</td>' +
+          '<td class="uname">' + (row.osUname || '') + '</td>' +
           '<td class="status">' + statusHtml(row) + '</td>';
         tbody.appendChild(tr);
       }
@@ -938,8 +949,8 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
     };
 
     const panel = vscode.window.createWebviewPanel(
-      'pydevice.recoveryReconnect',
-      'Recovery Reconnect',
+      'pydevice.deviceConnect',
+      'Device Connect',
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true }
     );
@@ -1091,6 +1102,7 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
             deviceId,
             deviceName: configuredDeviceNames[deviceId] ?? '',
             status,
+            osUname: toOsUnameSummary(connectedState?.runtimeInfo),
             errorText: status === 'error' ? existing?.errorText : undefined,
             details: [port.manufacturer, `VID:${port.vendorId}`, `PID:${port.productId}`].filter(Boolean).join(' | ')
           };
@@ -1139,6 +1151,7 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
             serialPortName,
             deviceId: configuredDeviceId,
             deviceName: configuredDeviceNames[configuredDeviceId] ?? '',
+            osUname: toOsUnameSummary(connectedState?.runtimeInfo),
             status: connectedState && isPortPresent ? 'connected' : 'not_connected'
           });
         }
