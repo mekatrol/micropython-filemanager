@@ -113,6 +113,22 @@ export class ConnectedPyDeviceRegistry {
     return true;
   }
 
+  reassignDeviceId(currentDeviceId: string, nextDeviceId: string): boolean {
+    if (currentDeviceId === nextDeviceId) {
+      return true;
+    }
+    const state = this.connectedPyDevices.get(currentDeviceId);
+    if (!state || this.connectedPyDevices.has(nextDeviceId)) {
+      return false;
+    }
+
+    this.connectedPyDevices.delete(currentDeviceId);
+    state.deviceId = nextDeviceId;
+    this.connectedPyDevices.set(nextDeviceId, state);
+    this.deviceIdByPortPath.set(state.board.device, nextDeviceId);
+    return true;
+  }
+
   getSnapshots(): ConnectedPyDeviceSnapshot[] {
     return [...this.connectedPyDevices.values()]
       .map((state) => ({

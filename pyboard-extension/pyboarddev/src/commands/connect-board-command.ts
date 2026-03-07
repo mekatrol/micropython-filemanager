@@ -445,32 +445,58 @@ const connectBoardForPath = async (
   await setLastKnownDevicePort(state.deviceId, board.device);
   notifyStateChanged();
 
-  if (!runtimeInfo) {
+  const applyRefreshedRuntimeInfo = async (refreshedRuntimeInfo: PyDeviceRuntimeInfo): Promise<void> => {
+    const currentState = getConnectedPyDeviceStateByPortPath(state.board.device);
+    if (!currentState || currentState !== state) {
+      return;
+    }
+
+    boardRegistry.setRuntimeInfo(state.deviceId, refreshedRuntimeInfo);
+    const promotedDeviceId = toDeviceId(state.board.device, refreshedRuntimeInfo);
+    if (promotedDeviceId !== state.deviceId) {
+      const previousDeviceId = state.deviceId;
+      if (boardRegistry.hasDeviceId(promotedDeviceId)) {
+        logChannelOutput(
+          `Runtime info discovered new device ID ${promotedDeviceId} for ${state.board.device}, but it is already connected.`,
+          true
+        );
+      } else if (boardRegistry.reassignDeviceId(previousDeviceId, promotedDeviceId)) {
+        await setLastKnownDevicePort(promotedDeviceId, state.board.device);
+        logChannelOutput(`Promoted device ID for ${state.board.device}: ${previousDeviceId} -> ${promotedDeviceId}.`, false);
+      }
+    }
+    notifyStateChanged();
+  };
+
+  const needsRuntimeInfoRefresh = !runtimeInfo;
+  const needsIdentityPromotion = state.deviceId.startsWith('port_');
+  if (needsRuntimeInfoRefresh || needsIdentityPromotion) {
     void (async () => {
       let lastError: unknown;
       for (let attempt = 1; attempt <= runtimeInfoBackgroundRetryAttempts; attempt += 1) {
         await wait(runtimeInfoBackgroundRetryDelayMs);
 
-        const currentState = boardRegistry.getByDeviceId(state.deviceId);
+        const currentState = getConnectedPyDeviceStateByPortPath(state.board.device);
         if (!currentState || currentState !== state) {
           return;
         }
 
         try {
           const refreshedRuntimeInfo = await state.board.getBoardRuntimeInfo();
-          boardRegistry.setRuntimeInfo(state.deviceId, refreshedRuntimeInfo);
-          notifyStateChanged();
-          logChannelOutput(`Runtime info recovered for ${state.deviceId} on attempt ${attempt}.`, false);
+          await applyRefreshedRuntimeInfo(refreshedRuntimeInfo);
+          logChannelOutput(`Runtime info refreshed for ${state.deviceId} on attempt ${attempt}.`, false);
           return;
         } catch (error) {
           lastError = error;
         }
       }
 
-      const reason = lastError instanceof Error ? lastError.message : String(lastError);
-      const message = `Runtime info remained unavailable for ${state.deviceId} after ${runtimeInfoBackgroundRetryAttempts} background attempt(s): ${reason}`;
-      logChannelOutput(message, true);
-      void vscode.window.showWarningMessage(message);
+      if (needsRuntimeInfoRefresh) {
+        const reason = lastError instanceof Error ? lastError.message : String(lastError);
+        const message = `Runtime info remained unavailable for ${state.deviceId} after ${runtimeInfoBackgroundRetryAttempts} background attempt(s): ${reason}`;
+        logChannelOutput(message, true);
+        void vscode.window.showWarningMessage(message);
+      }
     })();
   }
 
