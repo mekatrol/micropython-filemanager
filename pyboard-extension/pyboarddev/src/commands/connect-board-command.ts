@@ -559,11 +559,11 @@ interface RecoveryReconnectRow {
   deviceName: string;
   status: RecoveryReconnectStatus;
   errorText?: string;
-  osUname?: string;
+  deviceInfo?: string;
   details?: string;
 }
 
-const toOsUnameSummary = (runtimeInfo: PyDeviceRuntimeInfo | undefined): string | undefined => {
+const toDeviceInfoSummary = (runtimeInfo: PyDeviceRuntimeInfo | undefined): string | undefined => {
   if (!runtimeInfo) {
     return undefined;
   }
@@ -605,11 +605,11 @@ const renderRecoveryReconnectHtml = (rows: RecoveryReconnectRow[]): string => {
     th, td { padding: 8px 10px; border-bottom: 1px solid var(--vscode-editorWidget-border); vertical-align: middle; }
     th { text-align: left; font-weight: 600; }
     th.name, td.name { width: 200px; }
-    th.id, td.id { width: 320px; }
-    th.port, td.port { width: 200px; }
-    th.uname, td.uname { width: 260px; }
+    th.id, td.id { width: 240px; }
+    th.port, td.port { width: 140px; }
+    th.deviceInfo, td.deviceInfo { width: 400px; }
     th.status, td.status { width: 190px; }
-    td.id, td.port, td.uname { font-family: var(--vscode-editor-font-family); font-size: 12px; }
+    td.id, td.port, td.deviceInfo { font-family: var(--vscode-editor-font-family); font-size: 12px; }
     .status-wrap { display: inline-flex; align-items: center; gap: 8px; }
     .icon { width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; }
     .icon svg { width: 14px; height: 14px; fill: currentColor; }
@@ -658,7 +658,7 @@ const renderRecoveryReconnectHtml = (rows: RecoveryReconnectRow[]): string => {
           <th class="name">Device Name</th>
           <th class="id">Device ID</th>
           <th class="port">Serial Port</th>
-          <th class="uname">Device Info</th>
+          <th class="deviceInfo">Device Info</th>
           <th class="status">Status</th>
         </tr>
       </thead>
@@ -708,7 +708,7 @@ const renderRecoveryReconnectHtml = (rows: RecoveryReconnectRow[]): string => {
           '<td class="name">' + nameHtml + '</td>' +
           '<td class="id">' + (row.deviceId || '') + '</td>' +
           '<td class="port">' + (row.serialPortName || '') + '</td>' +
-          '<td class="uname">' + (row.osUname || '') + '</td>' +
+          '<td class="deviceInfo">' + (row.deviceInfo || '') + '</td>' +
           '<td class="status">' + statusHtml(row) + '</td>';
         tbody.appendChild(tr);
       }
@@ -1102,7 +1102,7 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
             deviceId,
             deviceName: configuredDeviceNames[deviceId] ?? '',
             status,
-            osUname: toOsUnameSummary(connectedState?.runtimeInfo),
+            deviceInfo: toDeviceInfoSummary(connectedState?.runtimeInfo),
             errorText: status === 'error' ? existing?.errorText : undefined,
             details: [port.manufacturer, `VID:${port.vendorId}`, `PID:${port.productId}`].filter(Boolean).join(' | ')
           };
@@ -1151,7 +1151,7 @@ export const initEsp32RecoveryConnectCommand = (context: vscode.ExtensionContext
             serialPortName,
             deviceId: configuredDeviceId,
             deviceName: configuredDeviceNames[configuredDeviceId] ?? '',
-            osUname: toOsUnameSummary(connectedState?.runtimeInfo),
+            deviceInfo: toDeviceInfoSummary(connectedState?.runtimeInfo),
             status: connectedState && isPortPresent ? 'connected' : 'not_connected'
           });
         }
