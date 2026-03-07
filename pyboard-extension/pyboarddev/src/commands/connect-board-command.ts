@@ -496,7 +496,11 @@ export const closeConnectedPyDeviceByDeviceId = async (
   }
 
   try {
-    await state.board.close();
+    await withTimeout(
+      state.board.close(),
+      2500,
+      `Close serial port for ${deviceId}`
+    );
     boardRegistry.remove(deviceId);
     if (!preserveReconnectState) {
       await reconnectStateStore.removeReconnectDevicePath(state.board.device);
@@ -519,7 +523,9 @@ export const closeConnectedPyDeviceByDeviceId = async (
     const normalized = reason.toLocaleLowerCase();
     const alreadyClosed = normalized.includes('port is not open')
       || normalized.includes('serial port is not connected')
-      || normalized.includes('the serial port must be open');
+      || normalized.includes('the serial port must be open')
+      || normalized.includes('close serial port for')
+      || normalized.includes('timed out after');
     if (alreadyClosed) {
       boardRegistry.remove(deviceId);
       if (!preserveReconnectState) {
@@ -949,7 +955,12 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
       }
     };
 
-    const disconnectRow = async (row: ConnectRow, reconcileAfter: boolean = true): Promise<void> => {
+    const disconnectRow = async (
+      row: ConnectRow,
+      reconcileAfter: boolean = true,
+      promptToSaveDirtyDeviceFiles: boolean = true,
+      closeDeviceTabsAfterDisconnect: boolean = true
+    ): Promise<void> => {
       const connectedByPath = row.devicePath ? getConnectedPyDeviceStateByPortPath(row.devicePath) : undefined;
       const targetDeviceId = connectedByPath?.deviceId ?? (row.deviceId ? boardRegistry.getByDeviceId(row.deviceId)?.deviceId : undefined);
       if (!targetDeviceId) {
@@ -959,17 +970,30 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
         return;
       }
 
-      await closeConnectedPyDeviceByDeviceId(targetDeviceId, true, false, true, true);
+      await closeConnectedPyDeviceByDeviceId(
+        targetDeviceId,
+        true,
+        false,
+        promptToSaveDirtyDeviceFiles,
+        closeDeviceTabsAfterDisconnect
+      );
       if (reconcileAfter) {
         await reconcileRows();
       }
     };
 
     const disconnectAll = async (): Promise<void> => {
+      const canClose = await saveDirtyDeviceDocumentsBeforeDisconnect();
+      if (!canClose) {
+        await reconcileRows();
+        return;
+      }
+
       const candidates = [...rowsById.values()].filter((row) => row.status === ConnectStatus.Connected);
       for (const row of candidates) {
-        await disconnectRow(row, false);
+        await disconnectRow(row, false, false, false);
       }
+      await closeOpenDeviceTabsAfterDisconnect();
       await reconcileRows();
     };
 

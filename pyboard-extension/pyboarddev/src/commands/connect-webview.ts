@@ -91,7 +91,7 @@ export const renderConnectHtml = (rows: ConnectRow[], connectAttemptTimeoutMs: n
 <body>
   <div class="wrap">
     <h2>Device connect</h2>
-    <p class="hint">Device IDs are probed in the background. Connect individual rows or use Connect all.</p>
+    <p class="hint">Connect individual rows or use Connect all.</p>
     <div class="table-section">
       <h3 class="table-title">Unconnected serial ports</h3>
       <table>
