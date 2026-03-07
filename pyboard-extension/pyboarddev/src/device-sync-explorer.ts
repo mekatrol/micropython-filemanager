@@ -3764,7 +3764,6 @@ class DeviceSyncModel {
     );
     if (closed) {
       await this.refresh(false);
-      vscode.window.showInformationMessage(`Disconnected ${connected.length} board connection(s).`);
     }
   }
 
