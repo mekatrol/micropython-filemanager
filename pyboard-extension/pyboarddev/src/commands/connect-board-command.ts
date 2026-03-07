@@ -501,12 +501,6 @@ const connectBoardForPath = async (
     })();
   }
 
-  if (showMessages) {
-    const msg = `Connected to board ${deviceId} on ${devicePath} @ ${baudRate}.`;
-    vscode.window.showInformationMessage(msg);
-    logChannelOutput(msg, true);
-  }
-
   return state;
 };
 

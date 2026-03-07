@@ -20,11 +20,14 @@ const maxRetainedLinesPerDevice = 2000;
 const replHistoryStateKey = 'replHistoryByDevice';
 const replHistoryLimitSettingKey = 'replHistoryLimit';
 const defaultReplHistoryLimit = 100;
+const reopenPortDelayMs = 1000;
 
 interface DeviceReplState {
   devicePath: string;
   lines: string[];
   history: string[];
+  isExecuting: boolean;
+  isPortRestarting: boolean;
   hasRenderedConnectedIntro: boolean;
   promptFallbackTimer: NodeJS.Timeout | undefined;
   pendingExecution: Promise<void>;
@@ -34,8 +37,11 @@ interface ReplWebviewDeviceState {
   deviceId: string;
   displayName: string;
   devicePath: string;
+  portLabel: string;
   lines: string[];
   history: string[];
+  isExecuting: boolean;
+  isPortRestarting: boolean;
 }
 
 interface ReplWebviewState {
@@ -44,7 +50,7 @@ interface ReplWebviewState {
 }
 
 interface WebviewMessage {
-  type: 'submit' | 'switchTab' | 'interrupt' | 'sendControl';
+  type: 'submit' | 'switchTab' | 'interrupt' | 'sendControl' | 'reopenPort';
   deviceId?: string;
   command?: string;
   control?: 'interrupt' | 'softReset' | 'pasteMode';
@@ -118,6 +124,17 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     return name && name.length > 0 ? name : deviceId;
   }
 
+  private getPortLabel(devicePath: string): string {
+    const base = path.basename(devicePath);
+    const withoutTtyPrefix = base.replace(/^tty/i, '');
+    const shortBase = withoutTtyPrefix.length > 0 ? withoutTtyPrefix : base;
+    const dir = path.dirname(devicePath);
+    if (!dir || dir === '.') {
+      return shortBase;
+    }
+    return `${dir}/${shortBase}`;
+  }
+
   reveal(): void {
     if (this.webviewView) {
       this.webviewView.show(true);
@@ -149,7 +166,61 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       }
 
       state.pendingExecution = state.pendingExecution.then(async () => {
-        await this.executeCommand(deviceId, command);
+        state.isExecuting = true;
+        this.postState();
+        try {
+          await this.executeCommand(deviceId, command);
+        } finally {
+          state.isExecuting = false;
+          this.postState();
+        }
+      });
+      await state.pendingExecution;
+      return;
+    }
+
+    if (message.type === 'reopenPort') {
+      const deviceId = message.deviceId;
+      if (!deviceId || !this.devicesById.has(deviceId)) {
+        return;
+      }
+
+      const state = this.devicesById.get(deviceId);
+      if (!state) {
+        return;
+      }
+
+      state.pendingExecution = state.pendingExecution.then(async () => {
+        const board = getConnectedPyDevice(deviceId);
+        if (!board) {
+          this.appendLine(deviceId, '[device not connected]');
+          this.postState();
+          return;
+        }
+
+        state.isPortRestarting = true;
+        this.postState();
+        try {
+          await board.close();
+          this.appendLine(deviceId, '[serial port closed]');
+          await new Promise((resolve) => setTimeout(resolve, reopenPortDelayMs));
+          await board.open();
+          this.appendLine(deviceId, '[serial port reopened]');
+
+          try {
+            const runtimeInfo = await board.probeBoardRuntimeInfo(2500);
+            this.appendLine(deviceId, runtimeInfo.banner);
+            this.appendLine(deviceId, 'Type "help()" for more information.');
+          } catch {
+            // Port reopen can succeed even if runtime probe does not.
+          }
+        } catch (error) {
+          const messageText = error instanceof Error ? error.message : String(error);
+          this.appendLine(deviceId, `[reopen failed] ${messageText}`);
+        } finally {
+          state.isPortRestarting = false;
+          this.postState();
+        }
       });
       await state.pendingExecution;
       return;
@@ -169,19 +240,33 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       }
 
       const control = message.type === 'interrupt' ? 'interrupt' : message.control;
-      const controlMap: Record<NonNullable<WebviewMessage['control']>, { byte: string; label: string }> = {
+      const controlMap: Record<NonNullable<WebviewMessage['control']>, { byte: string; label: string; isSoftReset?: boolean }> = {
         interrupt: { byte: '\x03', label: 'Ctrl-C' },
-        softReset: { byte: '\x04', label: 'Ctrl-D' },
+        softReset: { byte: '\x04', label: 'Ctrl-D', isSoftReset: true },
         pasteMode: { byte: '\x05', label: 'Ctrl-E' }
       };
+      
       const controlSpec = control ? controlMap[control] : undefined;
       if (!controlSpec) {
         return;
       }
 
       try {
-        await board.write(controlSpec.byte, { drain: false });
-        this.appendLine(deviceId, `[sent ${controlSpec.label}]`);
+        if (controlSpec.isSoftReset) {
+          await board.softReboot();
+          this.appendLine(deviceId, '[soft reboot complete]');
+
+          try {
+            const runtimeInfo = await board.probeBoardRuntimeInfo(2500);
+            this.appendLine(deviceId, runtimeInfo.banner);
+            this.appendLine(deviceId, 'Type "help()" for more information.');
+          } catch {
+            // Board rebooted, but runtime banner probe may fail on some transports/boards.
+          }
+        } else {
+          await board.write(controlSpec.byte, { drain: false });
+          this.appendLine(deviceId, `[sent ${controlSpec.label}]`);
+        }
       } catch (error) {
         const messageText = error instanceof Error ? error.message : String(error);
         this.appendLine(deviceId, `[${controlSpec.label} failed] ${messageText}`);
@@ -313,6 +398,8 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
           devicePath: snapshot.devicePath,
           lines: [],
           history: persistedHistory,
+          isExecuting: false,
+          isPortRestarting: false,
           hasRenderedConnectedIntro: false,
           promptFallbackTimer: undefined,
           pendingExecution: Promise.resolve()
@@ -493,8 +580,11 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
         deviceId: snapshot.deviceId,
         displayName: this.getDeviceDisplayName(snapshot.deviceId),
         devicePath: snapshot.devicePath,
+        portLabel: this.getPortLabel(snapshot.devicePath),
         lines: this.devicesById.get(snapshot.deviceId)?.lines ?? [],
-        history: this.devicesById.get(snapshot.deviceId)?.history ?? []
+        history: this.devicesById.get(snapshot.deviceId)?.history ?? [],
+        isExecuting: this.devicesById.get(snapshot.deviceId)?.isExecuting ?? false,
+        isPortRestarting: this.devicesById.get(snapshot.deviceId)?.isPortRestarting ?? false
       })),
       activeDeviceId: this.activeDeviceId
     };
@@ -525,8 +615,19 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     .output { margin: 0; white-space: pre-wrap; word-break: break-word; }
     .prompt-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); }
     .prompt-row.disabled { opacity: 0.6; }
-    .prompt-label { color: var(--vscode-editor-foreground); user-select: none; }
+    .prompt-label { color: var(--vscode-editor-foreground); user-select: text; }
     .input { flex: 1; border: none; outline: none; background: transparent; color: var(--vscode-editor-foreground); padding: 0; font-family: inherit; font-size: inherit; }
+    .busy { display: inline-flex; align-items: center; gap: 6px; color: var(--vscode-descriptionForeground); font-size: 11px; user-select: none; }
+    .busy.hidden { display: none; }
+    .spinner {
+      width: 11px;
+      height: 11px;
+      border: 2px solid var(--vscode-descriptionForeground);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .toolbar { display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--vscode-panel-border); padding: 6px 8px; }
     .toolbar-button {
       border: 1px solid var(--vscode-button-border, transparent);
@@ -546,12 +647,14 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       <button id="ctrlCButton" class="toolbar-button" type="button" aria-label="Send Ctrl-C to device">Ctrl-C Interrupt</button>
       <button id="ctrlDButton" class="toolbar-button" type="button" aria-label="Send Ctrl-D to device">Ctrl-D Soft reset</button>
       <button id="ctrlEButton" class="toolbar-button" type="button" aria-label="Send Ctrl-E to device">Ctrl-E Paste mode</button>
+      <button id="reopenPortButton" class="toolbar-button" type="button" aria-label="Close and reopen serial port">Reopen Port</button>
     </div>
     <div id="content" class="console">
       <pre id="output" class="output"></pre>
       <div id="promptRow" class="prompt-row">
         <span class="prompt-label">>>> </span>
         <input id="commandInput" class="input" type="text" spellcheck="false" aria-label="REPL command input" />
+        <span id="busyIndicator" class="busy hidden" aria-live="polite"><span class="spinner"></span>Running...</span>
       </div>
     </div>
   </div>
@@ -564,15 +667,32 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     const outputEl = document.getElementById('output');
     const promptRowEl = document.getElementById('promptRow');
     const inputEl = document.getElementById('commandInput');
+    const busyIndicatorEl = document.getElementById('busyIndicator');
     const ctrlCButtonEl = document.getElementById('ctrlCButton');
     const ctrlDButtonEl = document.getElementById('ctrlDButton');
     const ctrlEButtonEl = document.getElementById('ctrlEButton');
+    const reopenPortButtonEl = document.getElementById('reopenPortButton');
     const historyCursorByDevice = new Map();
     const historyDraftByDevice = new Map();
     const pendingEchoByDevice = new Map();
     let deferredState;
 
     const getActiveDevice = () => currentState.devices.find((item) => item.deviceId === currentState.activeDeviceId);
+
+    const renderReopenPortButton = (active) => {
+      if (!active) {
+        reopenPortButtonEl.textContent = 'Reopen Port';
+        return;
+      }
+
+      const portLabel = active.portLabel || active.devicePath || 'Port';
+      if (active.isPortRestarting) {
+        reopenPortButtonEl.innerHTML = '<span class="spinner"></span> Reopening ' + portLabel + '...';
+        return;
+      }
+
+      reopenPortButtonEl.textContent = 'Reopen ' + portLabel;
+    };
 
     const resetHistoryCursor = (deviceId, nextLength) => {
       const active = currentState.devices.find((item) => item.deviceId === deviceId);
@@ -666,9 +786,12 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
         outputEl.textContent = 'No connected devices.';
         promptRowEl.classList.add('disabled');
         inputEl.disabled = true;
+        busyIndicatorEl.classList.add('hidden');
         ctrlCButtonEl.disabled = true;
         ctrlDButtonEl.disabled = true;
         ctrlEButtonEl.disabled = true;
+        reopenPortButtonEl.disabled = true;
+        renderReopenPortButton(undefined);
         if (!hasActiveSelectionInConsole()) {
           contentEl.scrollTop = contentEl.scrollHeight;
         }
@@ -680,6 +803,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       ctrlCButtonEl.disabled = false;
       ctrlDButtonEl.disabled = false;
       ctrlEButtonEl.disabled = false;
+      reopenPortButtonEl.disabled = false;
 
       for (const device of currentState.devices) {
         const tab = document.createElement('button');
@@ -703,17 +827,34 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
         outputEl.textContent = 'No active device.';
         promptRowEl.classList.add('disabled');
         inputEl.disabled = true;
+        busyIndicatorEl.classList.add('hidden');
         ctrlCButtonEl.disabled = true;
         ctrlDButtonEl.disabled = true;
         ctrlEButtonEl.disabled = true;
+        reopenPortButtonEl.disabled = true;
+        renderReopenPortButton(undefined);
         return;
       }
+
+      const isBusy = !!active.isExecuting || !!active.isPortRestarting;
+      const isRestarting = !!active.isPortRestarting;
+      inputEl.disabled = isBusy;
+      if (isBusy) {
+        busyIndicatorEl.classList.remove('hidden');
+      } else {
+        busyIndicatorEl.classList.add('hidden');
+      }
+      ctrlCButtonEl.disabled = isRestarting;
+      ctrlDButtonEl.disabled = isRestarting;
+      ctrlEButtonEl.disabled = isRestarting;
+      reopenPortButtonEl.disabled = isRestarting;
+      renderReopenPortButton(active);
 
       outputEl.textContent = getRenderLines(active).join('\\n');
       if (!hasActiveSelectionInConsole()) {
         contentEl.scrollTop = contentEl.scrollHeight;
       }
-      if (!hasActiveSelectionInConsole() && document.activeElement !== inputEl) {
+      if (!isBusy && !hasActiveSelectionInConsole() && document.activeElement !== inputEl) {
         inputEl.focus();
       }
     };
@@ -721,6 +862,9 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     const submitCommand = () => {
       const active = getActiveDevice();
       if (!active) {
+        return;
+      }
+      if (active.isExecuting || active.isPortRestarting) {
         return;
       }
 
@@ -772,6 +916,9 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     window.addEventListener('keydown', (event) => {
       const active = getActiveDevice();
       if (!active) {
+        return;
+      }
+      if (active.isExecuting || active.isPortRestarting) {
         return;
       }
 
@@ -829,6 +976,13 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     ctrlCButtonEl.addEventListener('click', () => sendControl('interrupt'));
     ctrlDButtonEl.addEventListener('click', () => sendControl('softReset'));
     ctrlEButtonEl.addEventListener('click', () => sendControl('pasteMode'));
+    reopenPortButtonEl.addEventListener('click', () => {
+      const active = getActiveDevice();
+      if (!active || active.isPortRestarting) {
+        return;
+      }
+      vscode.postMessage({ type: 'reopenPort', deviceId: active.deviceId });
+    });
 
     window.addEventListener('message', (event) => {
       const message = event.data;
