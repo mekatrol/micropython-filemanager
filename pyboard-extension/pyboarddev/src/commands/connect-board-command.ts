@@ -516,6 +516,22 @@ export const closeConnectedPyDeviceByDeviceId = async (
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
+    const normalized = reason.toLocaleLowerCase();
+    const alreadyClosed = normalized.includes('port is not open')
+      || normalized.includes('serial port is not connected')
+      || normalized.includes('the serial port must be open');
+    if (alreadyClosed) {
+      boardRegistry.remove(deviceId);
+      if (!preserveReconnectState) {
+        await reconnectStateStore.removeReconnectDevicePath(state.board.device);
+      }
+      notifyStateChanged();
+      if (closeDeviceTabsAfterDisconnect) {
+        await closeOpenDeviceTabsAfterDisconnect(deviceId);
+      }
+      logChannelOutput(`Board connection for ${deviceId} was already closed. Cleared stale state.`, true);
+      return true;
+    }
     const msg = `Failed to close board connection for ${deviceId}. ${reason}`;
     logChannelOutput(msg, true);
     return false;
@@ -933,22 +949,36 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
       }
     };
 
-    const disconnectRow = async (row: ConnectRow): Promise<void> => {
+    const disconnectRow = async (row: ConnectRow, reconcileAfter: boolean = true): Promise<void> => {
       const connectedByPath = row.devicePath ? getConnectedPyDeviceStateByPortPath(row.devicePath) : undefined;
       const targetDeviceId = connectedByPath?.deviceId ?? (row.deviceId ? boardRegistry.getByDeviceId(row.deviceId)?.deviceId : undefined);
       if (!targetDeviceId) {
-        await reconcileRows();
+        if (reconcileAfter) {
+          await reconcileRows();
+        }
         return;
       }
 
       await closeConnectedPyDeviceByDeviceId(targetDeviceId, true, false, true, true);
-      await reconcileRows();
+      if (reconcileAfter) {
+        await reconcileRows();
+      }
     };
 
     const disconnectAll = async (): Promise<void> => {
       const candidates = [...rowsById.values()].filter((row) => row.status === ConnectStatus.Connected);
       for (const row of candidates) {
-        await disconnectRow(row);
+        await disconnectRow(row, false);
+      }
+      await reconcileRows();
+    };
+
+    const runBulkTask = async (task: () => Promise<void>): Promise<void> => {
+      void panel.webview.postMessage({ type: 'setBusy', busy: true });
+      try {
+        await task();
+      } finally {
+        void panel.webview.postMessage({ type: 'setBusy', busy: false });
       }
     };
 
@@ -962,11 +992,11 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
         return;
       }
       if (typed.type === 'connectAll') {
-        void connectAll();
+        void runBulkTask(connectAll);
         return;
       }
       if (typed.type === 'disconnectAll') {
-        void disconnectAll();
+        void runBulkTask(disconnectAll);
         return;
       }
       if (typed.type === 'connect' && typeof typed.rowId === 'string') {
