@@ -36,6 +36,7 @@ export const renderConnectHtml = (rows: ConnectRow[], connectAttemptTimeoutMs: n
     th.status, td.status { width: 190px; }
     td.id, td.port, td.deviceInfo { font-family: var(--vscode-editor-font-family); font-size: 12px; }
     .status-wrap { display: inline-flex; align-items: center; gap: 8px; }
+    .status-actions { display: inline-flex; align-items: center; gap: 10px; }
     .icon { width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; }
     .icon svg { width: 14px; height: 14px; fill: currentColor; }
     .spinner {
@@ -118,12 +119,17 @@ export const renderConnectHtml = (rows: ConnectRow[], connectAttemptTimeoutMs: n
         return '<span class="status-wrap"><span class="spinner"></span><span>Connecting... (' + remainingSeconds + 's)</span></span>';
       }
       if (row.status === status.connected) {
-        return '<span class="status-wrap ok"><span class="icon">' + passIconSvg + '</span><span>Connected</span></span>';
+        return '<span class="status-actions">'
+          + '<span class="status-wrap ok"><span class="icon">' + passIconSvg + '</span><span>Connected</span></span>'
+          + '<button type="button" class="link" data-action="disconnect" data-id="' + row.id + '">Disconnect</button>'
+          + '</span>';
       }
       if (row.status === status.error) {
         const errText = row.errorText ? ' - ' + row.errorText : '';
-        return '<span class="status-wrap err"><span class="icon">' + warningIconSvg + '</span><span>Error' + errText + '</span></span>'
-          + '<button type="button" class="link" data-action="connect" data-id="' + row.id + '">Retry</button>';
+        return '<span class="status-actions">'
+          + '<span class="status-wrap err"><span class="icon">' + warningIconSvg + '</span><span>Error' + errText + '</span></span>'
+          + '<button type="button" class="link" data-action="connect" data-id="' + row.id + '">Retry</button>'
+          + '</span>';
       }
       if (row.status === status.notConnected) {
         return '<span class="status-wrap secondary-text"><span class="icon">' + disconnectedIconSvg + '</span><span>Not connected</span></span>';
@@ -198,6 +204,11 @@ export const renderConnectHtml = (rows: ConnectRow[], connectAttemptTimeoutMs: n
       for (const button of document.querySelectorAll('button[data-action="set-name"]')) {
         button.addEventListener('click', () => {
           vscode.postMessage({ type: 'setName', rowId: button.dataset.id });
+        });
+      }
+      for (const button of document.querySelectorAll('button[data-action="disconnect"]')) {
+        button.addEventListener('click', () => {
+          vscode.postMessage({ type: 'disconnect', rowId: button.dataset.id });
         });
       }
     };

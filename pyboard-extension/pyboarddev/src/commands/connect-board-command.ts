@@ -1181,6 +1181,18 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
       }
     };
 
+    const disconnectRow = async (row: ConnectRow): Promise<void> => {
+      const connectedByPath = row.devicePath ? getConnectedPyDeviceStateByPortPath(row.devicePath) : undefined;
+      const targetDeviceId = connectedByPath?.deviceId ?? (row.deviceId ? boardRegistry.getByDeviceId(row.deviceId)?.deviceId : undefined);
+      if (!targetDeviceId) {
+        await reconcileRows();
+        return;
+      }
+
+      await closeConnectedPyDeviceByDeviceId(targetDeviceId, true, false, true, true);
+      await reconcileRows();
+    };
+
     panel.webview.onDidReceiveMessage((message: unknown) => {
       if (!message || typeof message !== 'object') {
         return;
@@ -1200,6 +1212,14 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
           return;
         }
         void connectRow(row);
+        return;
+      }
+      if (typed.type === 'disconnect' && typeof typed.rowId === 'string') {
+        const row = rowsById.get(typed.rowId);
+        if (!row) {
+          return;
+        }
+        void disconnectRow(row);
         return;
       }
       if (typed.type === 'setName' && typeof typed.rowId === 'string') {
