@@ -629,9 +629,6 @@ const pickSerialPortToConnect = async (
 ): Promise<string | undefined> => {
   const ports = await listSerialDevices();
   if (ports.length === 0) {
-    const msg = 'No serial devices found.';
-    vscode.window.showWarningMessage(msg);
-    logChannelOutput(msg, true);
     return undefined;
   }
 
@@ -763,13 +760,6 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
       const reason = error instanceof Error ? error.message : String(error);
       const msg = `Unable to list serial ports. ${reason}`;
       vscode.window.showErrorMessage(msg);
-      logChannelOutput(msg, true);
-      return;
-    }
-
-    if (ports.length === 0) {
-      const msg = 'No serial devices found.';
-      vscode.window.showWarningMessage(msg);
       logChannelOutput(msg, true);
       return;
     }
