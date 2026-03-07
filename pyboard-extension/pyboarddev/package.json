@@ -576,11 +576,6 @@
     "configuration": {
       "title": "Mekatrol PyDevice",
       "properties": {
-        "mekatrol.pydevice.autoReconnectLastDevice": {
-          "type": "boolean",
-          "default": false,
-          "description": "Automatically reconnect to the last selected device on startup if it was still connected when VS Code exited."
-        },
         "mekatrol.pydevice.verboseReplTransportLogs": {
           "type": "boolean",
           "default": false,

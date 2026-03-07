@@ -1,7 +1,7 @@
 /**
  * Module overview:
  * Registers the command that creates or resets the workspace
- * `.pydevice-config` file and reports results to the user.
+ * `.pydevice/config.json` file and reports results to the user.
  */
 import * as vscode from 'vscode';
 import { configurationFileName, getConfigurationFullFileName, PyDeviceConfigurationResult, resetDefaultConfiguration } from '../utils/configuration';

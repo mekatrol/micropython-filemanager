@@ -21,6 +21,7 @@ export interface PyDeviceControllerOptions {
   monitorIntervalMs?: number;
   listPorts: () => Promise<PortInfo[]>;
   probeRuntimeInfo: (serialPort: DeviceSerialPort) => Promise<PyDeviceRuntimeInfo | undefined>;
+  shouldProbePorts?: () => Promise<boolean> | boolean;
   readConfiguredState: () => Promise<Record<string, Omit<PyDeviceState, 'deviceId' | 'connectedSerialPortPath' | 'runtimeInfo'>>>;
   createSerialPort?: (path: string, baudRate: number) => DeviceSerialPort;
 }
@@ -110,9 +111,21 @@ export class PyDeviceController {
   }
 
   private async reconcileCore(): Promise<void> {
+    const shouldProbePorts = await this.options.shouldProbePorts?.() ?? true;
+    if (!shouldProbePorts) {
+      for (const device of this.devicesById.values()) {
+        if (device.serialPort) {
+          device.attachSerialPort(undefined);
+        }
+      }
+      this.emitDevicesChanged();
+      return;
+    }
+
     const ports = await this.options.listPorts();
     const nextPortPaths = new Set(ports.map((port) => port.path));
     const deviceByConnectedPath = new Map<string, PyDevice>();
+
     for (const device of this.devicesById.values()) {
       if (device.serialPort) {
         deviceByConnectedPath.set(device.serialPort.path, device);
@@ -124,6 +137,7 @@ export class PyDeviceController {
       const runtimeInfo = await this.options.probeRuntimeInfo(serialPort);
       const probedDeviceId = toDeviceId(port.path, runtimeInfo);
       const existing = deviceByConnectedPath.get(port.path);
+
       if (existing && existing.deviceId === probedDeviceId) {
         existing.attachSerialPort(serialPort);
         continue;
@@ -145,6 +159,7 @@ export class PyDeviceController {
         syncExcludedPaths: [],
         lastKnownSerialPortPath: port.path
       });
+
       created.attachSerialPort(serialPort);
       this.upsertDevice(created);
     }

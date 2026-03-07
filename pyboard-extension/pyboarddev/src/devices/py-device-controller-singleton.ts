@@ -5,6 +5,7 @@
  */
 import { loadConfiguration } from '../utils/configuration';
 import { listAllSerialPorts } from '../utils/serial-port';
+import { autoReconnectDevicesCacheKey, getWorkspaceCacheValue } from '../utils/workspace-cache';
 import { PyDeviceState } from './py-device';
 import { DeviceSerialPort } from './device-serial-port';
 import { PyDeviceController } from './py-device-controller';
@@ -36,6 +37,7 @@ const createController = (): PyDeviceController => {
     baudRate: defaultBaudRate,
     listPorts: listAllSerialPorts,
     probeRuntimeInfo: async (serialPort: DeviceSerialPort) => serialPort.probeRuntimeInfo(),
+    shouldProbePorts: () => getWorkspaceCacheValue<boolean>(autoReconnectDevicesCacheKey) ?? false,
     readConfiguredState
   });
 };

@@ -171,7 +171,6 @@ The REPL view provides an interactive command console for connected boards.
 
 This extension contributes these main settings:
 
-- `mekatrol.pydevice.autoReconnectLastDevice`: Reconnect previously connected device on startup.
 - `mekatrol.pydevice.verboseReplTransportLogs`: Enable low-level REPL transport logging.
 - `mekatrol.pydevice.deviceFileOpenWaitForConnectionMs`: Wait time before device file open/save fails.
 - `mekatrol.pydevice.mountHostInWorkspaceExplorer`: Mount host sync in native VS Code Explorer.

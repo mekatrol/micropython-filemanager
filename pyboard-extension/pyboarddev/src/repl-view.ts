@@ -69,7 +69,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       this.postState();
     });
     this.configurationSavedDisposable = vscode.workspace.onDidSaveTextDocument((document) => {
-      if (path.basename(document.uri.fsPath) !== configurationFileName) {
+      if (path.basename(document.uri.fsPath) !== path.basename(configurationFileName)) {
         return;
       }
       void this.reloadDeviceNames();

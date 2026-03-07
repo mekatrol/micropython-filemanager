@@ -8,17 +8,8 @@ export class ReconnectStateStore {
   constructor(
     private readonly readState: <T>(key: string) => T | undefined,
     private readonly writeState: <T>(key: string, value: T) => Promise<void>,
-    private readonly reconnectLastSessionStateKey: string,
     private readonly reconnectDevicePathsStateKey: string
   ) {}
-
-  readShouldReconnect(): boolean {
-    return this.readState<boolean>(this.reconnectLastSessionStateKey) ?? false;
-  }
-
-  async writeShouldReconnect(value: boolean): Promise<void> {
-    await this.writeState(this.reconnectLastSessionStateKey, value);
-  }
 
   readReconnectDevicePaths(): string[] {
     const stored = this.readState<unknown>(this.reconnectDevicePathsStateKey);

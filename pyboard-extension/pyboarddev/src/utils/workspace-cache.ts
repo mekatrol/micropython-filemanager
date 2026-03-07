@@ -1,17 +1,18 @@
 /**
  * Module overview:
- * Manages persisted per-workspace cache data stored in `.pydevice-cache`.
+ * Manages persisted per-workspace cache data stored in `.pydevice/settings.json`.
  */
 import * as vscode from 'vscode';
 import { posix } from 'path';
-import { configurationFileName } from './configuration';
+import { configurationFileName, pydeviceDirectoryName } from './configuration';
 
-export const workspaceCacheFileName = '.pydevice-cache';
+export const workspaceCacheFileName = `${pydeviceDirectoryName}/settings.json`;
+export const autoReconnectDevicesCacheKey = 'autoReconnectDevices';
 
 type WorkspaceCache = Record<string, unknown>;
 
 const defaultWorkspaceCache: WorkspaceCache = {
-  reconnectLastSession: false,
+  [autoReconnectDevicesCacheKey]: false,
   reconnectDevicePaths: [],
   lastKnownDevicePortById: {},
   replHistoryByDevice: {}
@@ -73,6 +74,14 @@ const saveCacheToPrimaryFile = async (): Promise<void> => {
   if (!fileUri) {
     return;
   }
+  const workspaceUri = getWorkspaceRootUri();
+  if (!workspaceUri) {
+    return;
+  }
+  const pydeviceDirUri = workspaceUri.with({
+    path: posix.join(workspaceUri.path, pydeviceDirectoryName)
+  });
+  await vscode.workspace.fs.createDirectory(pydeviceDirUri);
 
   const content = JSON.stringify(cacheState, null, 2);
   await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, 'utf8'));

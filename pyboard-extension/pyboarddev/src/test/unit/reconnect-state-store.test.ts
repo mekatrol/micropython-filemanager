@@ -8,9 +8,6 @@ import * as assert from 'assert';
 import { ReconnectStateStore } from '../../devices/reconnect-state-store';
 
 suite('ReconnectStateStore', () => {
-  // Shared keys used by the store under test.
-  // Keeping them local to this suite makes expected state shape explicit.
-  const reconnectKey = 'reconnect';
   const pathsKey = 'paths';
 
   test('reads default values for missing state', () => {
@@ -19,12 +16,8 @@ suite('ReconnectStateStore', () => {
     const store = new ReconnectStateStore(
       () => undefined,
       async () => undefined,
-      reconnectKey,
       pathsKey
     );
-
-    // Act + Assert: missing reconnect flag should default to false.
-    assert.strictEqual(store.readShouldReconnect(), false);
 
     // Act + Assert: missing device-path list should default to an empty array.
     assert.deepStrictEqual(store.readReconnectDevicePaths(), []);
@@ -41,7 +34,6 @@ suite('ReconnectStateStore', () => {
     const store = new ReconnectStateStore(
       <T>(key: string): T | undefined => state[key] as T | undefined,
       async (key, value) => { state[key] = value; },
-      reconnectKey,
       pathsKey
     );
 
@@ -64,22 +56,4 @@ suite('ReconnectStateStore', () => {
     assert.deepStrictEqual(state[pathsKey], ['/dev/ttyUSB1', '/dev/ttyUSB2']);
   });
 
-  test('writeShouldReconnect persists boolean state', async () => {
-    // Arrange: start with empty in-memory state map.
-    const state: Record<string, unknown> = {};
-
-    // Arrange: use adapters that read/write that map.
-    const store = new ReconnectStateStore(
-      <T>(key: string): T | undefined => state[key] as T | undefined,
-      async (key, value) => { state[key] = value; },
-      reconnectKey,
-      pathsKey
-    );
-
-    // Act: request reconnect persistence.
-    await store.writeShouldReconnect(true);
-
-    // Assert: expected key now contains true.
-    assert.strictEqual(state[reconnectKey], true);
-  });
 });

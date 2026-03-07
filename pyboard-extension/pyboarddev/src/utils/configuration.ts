@@ -1,12 +1,13 @@
 /**
  * Module overview:
  * Loads, normalises, validates, and persists workspace PyDevice
- * configuration from `.pydevice-config`.
+ * configuration from `.pydevice/config.json`.
  */
 import * as vscode from 'vscode';
 import { posix } from 'path';
 
-export const configurationFileName = '.pydevice-config';
+export const pydeviceDirectoryName = '.pydevice';
+export const configurationFileName = `${pydeviceDirectoryName}/config.json`;
 
 export enum PyDeviceConfigurationResult {
   AlreadyExists = 'AlreadyExists',
@@ -369,11 +370,23 @@ const getConfigurationFileUri = (): vscode.Uri | undefined => {
   });
 };
 
+const ensurePyDeviceDirectory = async (): Promise<void> => {
+  const folderUri = vscode.workspace.workspaceFolders?.[0]?.uri;
+  if (!folderUri) {
+    return;
+  }
+  const pydeviceDirUri = folderUri.with({
+    path: posix.join(folderUri.path, pydeviceDirectoryName)
+  });
+  await vscode.workspace.fs.createDirectory(pydeviceDirUri);
+};
+
 export const saveConfiguration = async (configuration: PyDeviceConfiguration): Promise<void> => {
   const fileUri = getConfigurationFileUri();
   if (!fileUri) {
     throw new Error('Open a workspace to save PyDevice configuration.');
   }
+  await ensurePyDeviceDirectory();
 
   let existing: PyDeviceConfigurationWithMeta = {
     meta: {
@@ -571,6 +584,7 @@ export const createDefaultConfiguration = async (): Promise<[PyDeviceConfigurati
 
     // Create the file
     const writeData = Buffer.from(content, 'utf8');
+    await ensurePyDeviceDirectory();
     await vscode.workspace.fs.writeFile(fileUri, writeData);
 
     return [PyDeviceConfigurationResult.Created, path];
@@ -605,6 +619,7 @@ export const resetDefaultConfiguration = async (): Promise<[PyDeviceConfiguratio
     const filePath = process.platform === 'win32' ? fileUri.path.substring(1).replace(/\//g, '\\') : fileUri.path;
     const content = JSON.stringify(configuration, null, 2);
     const writeData = Buffer.from(content, 'utf8');
+    await ensurePyDeviceDirectory();
     await vscode.workspace.fs.writeFile(fileUri, writeData);
 
     return [PyDeviceConfigurationResult.Created, filePath];

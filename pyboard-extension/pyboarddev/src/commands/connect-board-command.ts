@@ -8,13 +8,12 @@ import * as path from 'path';
 import { logChannelOutput } from '../output-channel';
 import { PyDeviceConnection, PyDeviceRuntimeInfo } from '../devices/py-device';
 import { listSerialDevices } from '../utils/serial-port';
-import { getWorkspaceCacheValue, setWorkspaceCacheValue } from '../utils/workspace-cache';
+import { autoReconnectDevicesCacheKey, getWorkspaceCacheValue, setWorkspaceCacheValue } from '../utils/workspace-cache';
 import { ConnectedPyDeviceRegistry, ConnectedPyDeviceState, ConnectedPyDeviceSnapshot } from '../devices/connected-py-device-registry';
 import { ReconnectStateStore } from '../devices/reconnect-state-store';
 import { toDeviceId } from '../devices/device-id';
 import { getDeviceNames, loadConfiguration, updateDeviceName } from '../utils/configuration';
 
-const reconnectLastSessionStateKey = 'reconnectLastSession';
 const reconnectDevicePathsStateKey = 'reconnectDevicePaths';
 const lastKnownDevicePortByIdStateKey = 'lastKnownDevicePortById';
 const defaultBaudRate = 115200;
@@ -26,7 +25,6 @@ const runtimeInfoRecoveryProbeAttempts = 5;
 const runtimeInfoRecoveryProbeDelayMs = 300;
 const runtimeInfoRecoveryRebootAttempts = 2;
 const runtimeInfoRecoveryRebootDelayMs = 500;
-const autoReconnectSettingKey = 'autoReconnectLastDevice';
 const deviceDocumentScheme = 'pydevice-device';
 const pydeviceDebugType = 'pydevice';
 
@@ -46,7 +44,6 @@ export const onBoardExecutionStateChanged = boardExecutionStateChangedEmitter.ev
 const reconnectStateStore = new ReconnectStateStore(
   <T>(key: string): T | undefined => getWorkspaceCacheValue<T>(key),
   async <T>(key: string, value: T): Promise<void> => setWorkspaceCacheValue(key, value),
-  reconnectLastSessionStateKey,
   reconnectDevicePathsStateKey
 );
 
@@ -105,7 +102,7 @@ const getDistinctConfiguredDeviceNames = (namesByDeviceId: Record<string, string
     const summary = duplicateDetails
       .map((item) => `"${item.name}" kept for ${item.existingDeviceId}, ignored for ${item.ignoredDeviceId}`)
       .join('; ');
-    const message = `Duplicate device names detected in .pydevice-config. ${summary}`;
+    const message = `Duplicate device names detected in .pydevice/config.json. ${summary}`;
     logChannelOutput(message, true);
     void vscode.window.showWarningMessage(message);
   }
@@ -180,10 +177,6 @@ const readBoardRuntimeInfoWithRecovery = async (
   logChannelOutput(message, true);
   void vscode.window.showWarningMessage(message);
   return undefined;
-};
-
-const updateReconnectState = async (shouldReconnectOnStartup: boolean): Promise<void> => {
-  await reconnectStateStore.writeShouldReconnect(shouldReconnectOnStartup);
 };
 
 const parseDeviceIdFromDeviceUri = (uri: vscode.Uri): string | undefined => {
@@ -385,7 +378,6 @@ const connectBoardForPath = async (
   boardRegistry.add(state);
   await reconnectStateStore.addReconnectDevicePath(board.device);
   await setLastKnownDevicePort(state.deviceId, board.device);
-  await updateReconnectState(true);
   notifyStateChanged();
 
   if (!runtimeInfo) {
@@ -457,10 +449,6 @@ export const closeConnectedPyDeviceByDeviceId = async (
       await reconnectStateStore.removeReconnectDevicePath(state.board.device);
     }
 
-    if (!preserveReconnectState && !boardRegistry.isConnected()) {
-      await updateReconnectState(false);
-    }
-
     notifyStateChanged();
 
     if (closeDeviceTabsAfterDisconnect) {
@@ -530,7 +518,6 @@ export const closeAllConnectedPyDevices = async (
   }
 
   if (!preserveReconnectState) {
-    await updateReconnectState(false);
     await reconnectStateStore.writeReconnectDevicePaths([]);
   }
 
@@ -1378,16 +1365,9 @@ export const initToggleBoardConnectionCommand = (context: vscode.ExtensionContex
 };
 
 export const tryReconnectBoardOnStartup = async (context: vscode.ExtensionContext): Promise<void> => {
-  const autoReconnectEnabled = vscode.workspace
-    .getConfiguration('mekatrol.pydevice')
-    .get<boolean>('autoReconnectLastDevice', false);
+  const autoReconnectEnabled = getWorkspaceCacheValue<boolean>(autoReconnectDevicesCacheKey) ?? false;
 
   if (!autoReconnectEnabled || isBoardConnected()) {
-    return;
-  }
-
-  const shouldReconnect = reconnectStateStore.readShouldReconnect();
-  if (!shouldReconnect) {
     return;
   }
 
@@ -1395,7 +1375,6 @@ export const tryReconnectBoardOnStartup = async (context: vscode.ExtensionContex
   const baudRate = defaultBaudRate;
 
   if (reconnectDevicePaths.length === 0) {
-    await vscode.commands.executeCommand('mekatrol.pydevice.connectboard');
     return;
   }
 
@@ -1415,14 +1394,13 @@ export const tryReconnectBoardOnStartup = async (context: vscode.ExtensionContex
 
 export const initSetAutoReconnectCommand = (context: vscode.ExtensionContext) => {
   const command = vscode.commands.registerCommand('mekatrol.pydevice.setautoreconnect', async () => {
-    const configuration = vscode.workspace.getConfiguration('mekatrol.pydevice');
-    const currentValue = configuration.get<boolean>(autoReconnectSettingKey, false);
+    const currentValue = getWorkspaceCacheValue<boolean>(autoReconnectDevicesCacheKey) ?? false;
 
     const selected = await vscode.window.showQuickPick(
       [
         {
           label: 'Enable',
-          description: 'Reconnect to last selected device on startup when last session had an active connection',
+          description: 'Reconnect previously connected devices on startup when the last session had active connections',
           picked: currentValue
         },
         {
@@ -1441,7 +1419,7 @@ export const initSetAutoReconnectCommand = (context: vscode.ExtensionContext) =>
     }
 
     const enabled = selected.label === 'Enable';
-    await configuration.update(autoReconnectSettingKey, enabled, vscode.ConfigurationTarget.Global);
+    await setWorkspaceCacheValue(autoReconnectDevicesCacheKey, enabled);
 
     const msg = `Auto reconnect is now ${enabled ? 'enabled' : 'disabled'}.`;
     vscode.window.showInformationMessage(msg);
