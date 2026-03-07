@@ -5,7 +5,7 @@
  */
 import { loadConfiguration } from '../utils/configuration';
 import { listAllSerialPorts } from '../utils/serial-port';
-import { PyDeviceState } from './device';
+import { PyDeviceState } from './py-device';
 import { DeviceSerialPort } from './device-serial-port';
 import { PyDeviceController } from './py-device-controller';
 

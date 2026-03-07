@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { DeviceSerialPort } from '../../devices/device-serial-port';
-import { PyDevice } from '../../devices/device';
+import { PyDevice } from '../../devices/py-device';
 
 suite('PyDevice', () => {
   test('forwards serial port connect and disconnect events', async () => {
@@ -33,4 +33,3 @@ suite('PyDevice', () => {
     assert.strictEqual(pyDevice.lastKnownSerialPortPath, '/dev/ttyUSB0');
   });
 });
-

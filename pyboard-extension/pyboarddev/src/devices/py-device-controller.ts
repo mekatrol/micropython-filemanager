@@ -5,7 +5,7 @@
  */
 import { toDeviceId } from './device-id';
 import { DeviceSerialPort, Disposable } from './device-serial-port';
-import { PyDevice, PyDeviceState } from './device';
+import { PyDevice, PyDeviceState } from './py-device';
 import { PortInfo } from '../utils/serial-port';
 import { BoardRuntimeInfo } from '../utils/pydevice';
 
