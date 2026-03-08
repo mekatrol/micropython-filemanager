@@ -6188,6 +6188,48 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext, f
     context.subscriptions.push(vscode.workspace.onDidCreateFiles((event) => event.files.forEach((uri) => model.handlePossibleSyncFileChange(uri.fsPath))));
   }
 
+  const findTreeNode = (predicate: (node: SyncNode) => boolean): SyncNode | undefined => {
+    const queue: SyncNode[] = [...provider.getChildren()];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (predicate(current)) {
+        return current;
+      }
+      if (!current.data.isDirectory || current.data.isIndicator) {
+        continue;
+      }
+      queue.push(...provider.getChildren(current));
+    }
+    return undefined;
+  };
+
+  const revealConnectedDeviceNode = async (deviceId: string): Promise<void> => {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const deviceRootNode = findTreeNode((node) => node.data.side === 'device' && !!node.data.isRoot);
+      if (deviceRootNode) {
+        try {
+          await treeView.reveal(deviceRootNode, { expand: true, focus: false, select: false });
+        } catch {
+          // Retry below.
+        }
+      }
+
+      const deviceIdNode = findTreeNode(
+        (node) => node.data.side === 'device' && !!node.data.isDeviceIdNode && node.data.deviceId === deviceId
+      );
+      if (deviceIdNode) {
+        try {
+          await treeView.reveal(deviceIdNode, { expand: true, focus: false, select: false });
+          return;
+        } catch {
+          // Retry below.
+        }
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  };
+
   context.subscriptions.push(vscode.commands.registerCommand(commandRefreshId, async () => model.refresh(true, false)));
   context.subscriptions.push(vscode.commands.registerCommand(commandSyncFromDeviceId, async () => model.syncFromDevice()));
   context.subscriptions.push(vscode.commands.registerCommand(commandSyncToDeviceId, async () => model.syncToDevice()));
@@ -6218,7 +6260,15 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext, f
   context.subscriptions.push(vscode.commands.registerCommand(commandCloseDeviceConnectionId, async (node?: SyncNode) => model.closeDeviceConnection(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandCloseAllDeviceConnectionsId, async () => model.closeAllDeviceConnections()));
   context.subscriptions.push(vscode.commands.registerCommand(commandConnectBoardWithPickerId, async () => {
+    const beforeDeviceIds = new Set(getConnectedPyDevices().map((item) => item.deviceId));
     await vscode.commands.executeCommand('mekatrol.pydevice.connectboard', { forcePickPort: true });
+    const connectedAfter = getConnectedPyDevices().map((item) => item.deviceId);
+    const newlyConnectedDeviceIds = connectedAfter.filter((deviceId) => !beforeDeviceIds.has(deviceId));
+    if (newlyConnectedDeviceIds.length === 1) {
+      const [deviceId] = newlyConnectedDeviceIds;
+      await model.refresh(true, false);
+      await revealConnectedDeviceNode(deviceId);
+    }
   }));
   context.subscriptions.push(vscode.commands.registerCommand(commandExplorerPrerequisitesHintId, async () => {
     await vscode.commands.executeCommand('workbench.view.explorer');
