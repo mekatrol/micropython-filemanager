@@ -1,0 +1,130 @@
+strict digraph "dependency-cruiser output"{
+    rankdir="LR" splines="true" overlap="false" nodesep="0.16" ranksep="0.18" fontname="Helvetica-bold" fontsize="9" style="rounded,bold,filled" fillcolor="#ffffff" compound="true"
+    node [shape="box" style="rounded, filled" height="0.2" color="black" fillcolor="#ffffcc" fontcolor="black" fontname="Helvetica" fontsize="9"]
+    edge [arrowhead="normal" arrowsize="0.6" penwidth="2.0" color="#00000033" fontname="Helvetica" fontsize="9"]
+
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/commands" {label="commands" "src/commands/auto-detect-devices-command.ts" [label=<auto-detect-devices-command.ts> tooltip="auto-detect-devices-command.ts" URL="src/commands/auto-detect-devices-command.ts" fillcolor="#ddfeff"] } }
+    "src/commands/auto-detect-devices-command.ts" -> "src/devices/serial-device-prober.ts"
+    "src/commands/auto-detect-devices-command.ts" -> "src/output-channel.ts"
+    "src/commands/auto-detect-devices-command.ts" -> "src/utils/serial-port.ts"
+    "src/commands/auto-detect-devices-command.ts" -> "src/commands/connect-board-command.ts"
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/commands" {label="commands" "src/commands/connect-board-command.ts" [label=<connect-board-command.ts> tooltip="connect-board-command.ts" URL="src/commands/connect-board-command.ts" fillcolor="#ddfeff"] } }
+    "src/commands/connect-board-command.ts" -> "src/devices/connected-py-device-registry.ts"
+    "src/commands/connect-board-command.ts" -> "src/devices/device-id.ts"
+    "src/commands/connect-board-command.ts" -> "src/devices/py-device.ts"
+    "src/commands/connect-board-command.ts" -> "src/devices/reconnect-state-store.ts"
+    "src/commands/connect-board-command.ts" -> "src/output-channel.ts"
+    "src/commands/connect-board-command.ts" -> "src/utils/configuration.ts"
+    "src/commands/connect-board-command.ts" -> "src/utils/serial-port.ts"
+    "src/commands/connect-board-command.ts" -> "src/utils/workspace-cache.ts"
+    "src/commands/connect-board-command.ts" -> "src/commands/connect-state.ts"
+    "src/commands/connect-board-command.ts" -> "src/commands/connect-webview.ts"
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/commands" {label="commands" "src/commands/connect-state.ts" [label=<connect-state.ts> tooltip="connect-state.ts" URL="src/commands/connect-state.ts" fillcolor="#ddfeff"] } }
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/commands" {label="commands" "src/commands/connect-webview.ts" [label=<connect-webview.ts> tooltip="connect-webview.ts" URL="src/commands/connect-webview.ts" fillcolor="#ddfeff"] } }
+    "src/commands/connect-webview.ts" -> "src/commands/connect-state.ts"
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/commands" {label="commands" "src/commands/create-config-command.ts" [label=<create-config-command.ts> tooltip="create-config-command.ts" URL="src/commands/create-config-command.ts" fillcolor="#ddfeff"] } }
+    "src/commands/create-config-command.ts" -> "src/output-channel.ts"
+    "src/commands/create-config-command.ts" -> "src/utils/configuration.ts"
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/commands" {label="commands" "src/commands/set-logger-autostart-command.ts" [label=<set-logger-autostart-command.ts> tooltip="set-logger-autostart-command.ts" URL="src/commands/set-logger-autostart-command.ts" fillcolor="#ddfeff"] } }
+    "src/commands/set-logger-autostart-command.ts" -> "src/output-channel.ts"
+    "src/commands/set-logger-autostart-command.ts" -> "src/utils/workspace-cache.ts"
+    subgraph "cluster_src" {label="src" "src/device-sync-explorer.ts" [label=<device-sync-explorer.ts> tooltip="device-sync-explorer.ts" URL="src/device-sync-explorer.ts" fillcolor="#ddfeff"] }
+    "src/device-sync-explorer.ts" -> "src/commands/connect-board-command.ts"
+    "src/device-sync-explorer.ts" -> "src/output-channel.ts"
+    "src/device-sync-explorer.ts" -> "src/sync-state-store.ts"
+    "src/device-sync-explorer.ts" -> "src/utils/configuration.ts"
+    "src/device-sync-explorer.ts" -> "src/utils/device-filesystem.ts"
+    "src/device-sync-explorer.ts" -> "src/utils/workspace-cache.ts"
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/connected-py-device-registry.ts" [label=<connected-py-device-registry.ts> tooltip="connected-py-device-registry.ts" URL="src/devices/connected-py-device-registry.ts" fillcolor="#ddfeff"] } }
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/connected-py-device-snapshot.ts" [label=<connected-py-device-snapshot.ts> tooltip="connected-py-device-snapshot.ts" URL="src/devices/connected-py-device-snapshot.ts" fillcolor="#ccffcc"] } }
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/connected-py-device-state.ts" [label=<connected-py-device-state.ts> tooltip="connected-py-device-state.ts" URL="src/devices/connected-py-device-state.ts" fillcolor="#ccffcc"] } }
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/device-id.ts" [label=<device-id.ts> tooltip="device-id.ts" URL="src/devices/device-id.ts" fillcolor="#ddfeff"] } }
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/device-serial-port.ts" [label=<device-serial-port.ts> tooltip="device-serial-port.ts" URL="src/devices/device-serial-port.ts" fillcolor="#ddfeff"] } }
+    "src/devices/device-serial-port.ts" -> "src/devices/py-device.ts"
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/disposable.ts" [label=<disposable.ts> tooltip="disposable.ts" URL="src/devices/disposable.ts" fillcolor="#ccffcc"] } }
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/micro-python-device.ts" [label=<micro-python-device.ts> tooltip="micro-python-device.ts" URL="src/devices/micro-python-device.ts" fillcolor="#ddfeff"] } }
+    "src/devices/micro-python-device.ts" -> "src/devices/py-device-connection.ts"
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/probed-serial-device.ts" [label=<probed-serial-device.ts> tooltip="probed-serial-device.ts" URL="src/devices/probed-serial-device.ts" fillcolor="#ccffcc"] } }
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/py-device-connection.ts" [label=<py-device-connection.ts> tooltip="py-device-connection.ts" URL="src/devices/py-device-connection.ts" fillcolor="#ddfeff"] } }
+    "src/devices/py-device-connection.ts" -> "src/output-channel.ts"
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/py-device-controller-event.ts" [label=<py-device-controller-event.ts> tooltip="py-device-controller-event.ts" URL="src/devices/py-device-controller-event.ts" fillcolor="#ccffcc"] } }
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/py-device-controller-options.ts" [label=<py-device-controller-options.ts> tooltip="py-device-controller-options.ts" URL="src/devices/py-device-controller-options.ts" fillcolor="#ccffcc"] } }
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/py-device-controller-singleton.ts" [label=<py-device-controller-singleton.ts> tooltip="py-device-controller-singleton.ts" URL="src/devices/py-device-controller-singleton.ts" fillcolor="#ddfeff"] } }
+    "src/devices/py-device-controller-singleton.ts" -> "src/utils/configuration.ts"
+    "src/devices/py-device-controller-singleton.ts" -> "src/utils/serial-port.ts"
+    "src/devices/py-device-controller-singleton.ts" -> "src/utils/workspace-cache.ts"
+    "src/devices/py-device-controller-singleton.ts" -> "src/devices/py-device-controller.ts"
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/py-device-controller.ts" [label=<py-device-controller.ts> tooltip="py-device-controller.ts" URL="src/devices/py-device-controller.ts" fillcolor="#ddfeff"] } }
+    "src/devices/py-device-controller.ts" -> "src/devices/device-id.ts"
+    "src/devices/py-device-controller.ts" -> "src/devices/device-serial-port.ts"
+    "src/devices/py-device-controller.ts" -> "src/devices/py-device.ts"
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/py-device-io-event.ts" [label=<py-device-io-event.ts> tooltip="py-device-io-event.ts" URL="src/devices/py-device-io-event.ts" fillcolor="#ccffcc"] } }
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/py-device-model.ts" [label=<py-device-model.ts> tooltip="py-device-model.ts" URL="src/devices/py-device-model.ts" fillcolor="#ddfeff"] } }
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/py-device-runtime-info.ts" [label=<py-device-runtime-info.ts> tooltip="py-device-runtime-info.ts" URL="src/devices/py-device-runtime-info.ts" fillcolor="#ccffcc"] } }
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/py-device-state.ts" [label=<py-device-state.ts> tooltip="py-device-state.ts" URL="src/devices/py-device-state.ts" fillcolor="#ccffcc"] } }
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/py-device-transport.ts" [label=<py-device-transport.ts> tooltip="py-device-transport.ts" URL="src/devices/py-device-transport.ts" fillcolor="#ccffcc"] } }
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/py-device.ts" [label=<py-device.ts> tooltip="py-device.ts" URL="src/devices/py-device.ts" fillcolor="#ddfeff"] } }
+    "src/devices/py-device.ts" -> "src/devices/micro-python-device.ts" [arrowhead="inv"]
+    "src/devices/py-device.ts" -> "src/devices/py-device-connection.ts" [arrowhead="inv"]
+    "src/devices/py-device.ts" -> "src/devices/py-device-model.ts" [arrowhead="inv"]
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/python-device.ts" [label=<python-device.ts> tooltip="python-device.ts" URL="src/devices/python-device.ts" fillcolor="#ccffcc"] } }
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/reconnect-state-store.ts" [label=<reconnect-state-store.ts> tooltip="reconnect-state-store.ts" URL="src/devices/reconnect-state-store.ts" fillcolor="#ddfeff"] } }
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/devices" {label="devices" "src/devices/serial-device-prober.ts" [label=<serial-device-prober.ts> tooltip="serial-device-prober.ts" URL="src/devices/serial-device-prober.ts" fillcolor="#ddfeff"] } }
+    "src/devices/serial-device-prober.ts" -> "src/devices/device-serial-port.ts"
+    "src/devices/serial-device-prober.ts" -> "src/devices/py-device.ts"
+    subgraph "cluster_src" {label="src" "src/extension-status-view.ts" [label=<extension-status-view.ts> tooltip="extension-status-view.ts" URL="src/extension-status-view.ts" fillcolor="#ddfeff"] }
+    "src/extension-status-view.ts" -> "src/commands/connect-board-command.ts"
+    subgraph "cluster_src" {label="src" "src/extension.ts" [label=<extension.ts> tooltip="extension.ts" URL="src/extension.ts" fillcolor="#ddfeff"] }
+    "src/extension.ts" -> "src/commands/auto-detect-devices-command.ts"
+    "src/extension.ts" -> "src/commands/connect-board-command.ts"
+    "src/extension.ts" -> "src/commands/create-config-command.ts"
+    "src/extension.ts" -> "src/commands/set-logger-autostart-command.ts"
+    "src/extension.ts" -> "src/device-sync-explorer.ts"
+    "src/extension.ts" -> "src/devices/py-device-controller-singleton.ts"
+    "src/extension.ts" -> "src/extension-status-view.ts"
+    "src/extension.ts" -> "src/output-channel.ts"
+    "src/extension.ts" -> "src/py-device-debug.ts"
+    "src/extension.ts" -> "src/pydevice-logger.ts"
+    "src/extension.ts" -> "src/repl-view.ts"
+    "src/extension.ts" -> "src/util/file-watcher.ts"
+    "src/extension.ts" -> "src/utils/workspace-cache.ts"
+    subgraph "cluster_src" {label="src" "src/output-channel.ts" [label=<output-channel.ts> tooltip="output-channel.ts" URL="src/output-channel.ts" fillcolor="#ddfeff"] }
+    subgraph "cluster_src" {label="src" "src/py-device-debug.ts" [label=<py-device-debug.ts> tooltip="py-device-debug.ts" URL="src/py-device-debug.ts" fillcolor="#ddfeff"] }
+    "src/py-device-debug.ts" -> "src/commands/connect-board-command.ts"
+    "src/py-device-debug.ts" -> "src/output-channel.ts"
+    "src/py-device-debug.ts" -> "src/utils/configuration.ts"
+    "src/py-device-debug.ts" -> "src/utils/device-filesystem.ts"
+    subgraph "cluster_src" {label="src" "src/pydevice-logger.ts" [label=<pydevice-logger.ts> tooltip="pydevice-logger.ts" URL="src/pydevice-logger.ts" fillcolor="#ddfeff"] }
+    subgraph "cluster_src" {label="src" "src/repl-view.ts" [label=<repl-view.ts> tooltip="repl-view.ts" URL="src/repl-view.ts" fillcolor="#ddfeff"] }
+    "src/repl-view.ts" -> "src/commands/connect-board-command.ts"
+    "src/repl-view.ts" -> "src/utils/configuration.ts"
+    "src/repl-view.ts" -> "src/utils/workspace-cache.ts"
+    subgraph "cluster_src" {label="src" "src/sync-state-store.ts" [label=<sync-state-store.ts> tooltip="sync-state-store.ts" URL="src/sync-state-store.ts" fillcolor="#ddfeff"] }
+    subgraph "cluster_src" {label="src" "src/terminal.ts" [label=<terminal.ts> tooltip="terminal.ts" URL="src/terminal.ts" fillcolor="#ddfeff"] }
+    "src/terminal.ts" -> "src/commands/connect-board-command.ts"
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/test" {label="test" subgraph "cluster_src/test/unit" {label="unit" "src/test/unit/configuration-device-config.test.ts" [label=<configuration-device-config.test.ts> tooltip="configuration-device-config.test.ts" URL="src/test/unit/configuration-device-config.test.ts" fillcolor="#ddfeff"] } } }
+    "src/test/unit/configuration-device-config.test.ts" -> "src/utils/configuration.ts"
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/test" {label="test" subgraph "cluster_src/test/unit" {label="unit" "src/test/unit/connected-py-device-registry.test.ts" [label=<connected-py-device-registry.test.ts> tooltip="connected-py-device-registry.test.ts" URL="src/test/unit/connected-py-device-registry.test.ts" fillcolor="#ddfeff"] } } }
+    "src/test/unit/connected-py-device-registry.test.ts" -> "src/devices/connected-py-device-registry.ts"
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/test" {label="test" subgraph "cluster_src/test/unit" {label="unit" "src/test/unit/device-filesystem-utils.test.ts" [label=<device-filesystem-utils.test.ts> tooltip="device-filesystem-utils.test.ts" URL="src/test/unit/device-filesystem-utils.test.ts" fillcolor="#ddfeff"] } } }
+    "src/test/unit/device-filesystem-utils.test.ts" -> "src/utils/device-filesystem.ts"
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/test" {label="test" subgraph "cluster_src/test/unit" {label="unit" "src/test/unit/device-id.test.ts" [label=<device-id.test.ts> tooltip="device-id.test.ts" URL="src/test/unit/device-id.test.ts" fillcolor="#ddfeff"] } } }
+    "src/test/unit/device-id.test.ts" -> "src/devices/device-id.ts"
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/test" {label="test" subgraph "cluster_src/test/unit" {label="unit" "src/test/unit/device-serial-port.test.ts" [label=<device-serial-port.test.ts> tooltip="device-serial-port.test.ts" URL="src/test/unit/device-serial-port.test.ts" fillcolor="#ddfeff"] } } }
+    "src/test/unit/device-serial-port.test.ts" -> "src/devices/device-serial-port.ts"
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/test" {label="test" subgraph "cluster_src/test/unit" {label="unit" "src/test/unit/device.test.ts" [label=<device.test.ts> tooltip="device.test.ts" URL="src/test/unit/device.test.ts" fillcolor="#ddfeff"] } } }
+    "src/test/unit/device.test.ts" -> "src/devices/device-serial-port.ts"
+    "src/test/unit/device.test.ts" -> "src/devices/py-device.ts"
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/test" {label="test" subgraph "cluster_src/test/unit" {label="unit" "src/test/unit/py-device-controller.test.ts" [label=<py-device-controller.test.ts> tooltip="py-device-controller.test.ts" URL="src/test/unit/py-device-controller.test.ts" fillcolor="#ddfeff"] } } }
+    "src/test/unit/py-device-controller.test.ts" -> "src/devices/py-device-controller.ts"
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/test" {label="test" subgraph "cluster_src/test/unit" {label="unit" "src/test/unit/reconnect-state-store.test.ts" [label=<reconnect-state-store.test.ts> tooltip="reconnect-state-store.test.ts" URL="src/test/unit/reconnect-state-store.test.ts" fillcolor="#ddfeff"] } } }
+    "src/test/unit/reconnect-state-store.test.ts" -> "src/devices/reconnect-state-store.ts"
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/util" {label="util" "src/util/file-watcher.ts" [label=<file-watcher.ts> tooltip="file-watcher.ts" URL="src/util/file-watcher.ts" fillcolor="#ddfeff"] } }
+    "src/util/file-watcher.ts" -> "src/output-channel.ts"
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/utils" {label="utils" "src/utils/configuration.ts" [label=<configuration.ts> tooltip="configuration.ts" URL="src/utils/configuration.ts" fillcolor="#ddfeff"] } }
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/utils" {label="utils" "src/utils/device-filesystem.ts" [label=<device-filesystem.ts> tooltip="device-filesystem.ts" URL="src/utils/device-filesystem.ts" fillcolor="#ddfeff"] } }
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/utils" {label="utils" "src/utils/pyboard.ts" [label=<pyboard.ts> tooltip="pyboard.ts" URL="src/utils/pyboard.ts" fillcolor="#ccffcc"] } }
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/utils" {label="utils" "src/utils/serial-port.ts" [label=<serial-port.ts> tooltip="serial-port.ts" URL="src/utils/serial-port.ts" fillcolor="#ddfeff"] } }
+    subgraph "cluster_src" {label="src" subgraph "cluster_src/utils" {label="utils" "src/utils/workspace-cache.ts" [label=<workspace-cache.ts> tooltip="workspace-cache.ts" URL="src/utils/workspace-cache.ts" fillcolor="#ddfeff"] } }
+    "src/utils/workspace-cache.ts" -> "src/utils/configuration.ts"
+}
