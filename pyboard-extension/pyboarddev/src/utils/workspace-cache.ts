@@ -8,11 +8,13 @@ import { configurationFileName, pydeviceDirectoryName } from './configuration';
 
 export const workspaceCacheFileName = `${pydeviceDirectoryName}/settings.json`;
 export const autoReconnectDevicesCacheKey = 'autoReconnectDevices';
+export const loggerAutoStartCacheKey = 'loggerAutoStart';
 
 type WorkspaceCache = Record<string, unknown>;
 
 const defaultWorkspaceCache: WorkspaceCache = {
   [autoReconnectDevicesCacheKey]: false,
+  [loggerAutoStartCacheKey]: true,
   reconnectDevicePaths: [],
   replHistoryByDevice: {}
 };
@@ -89,7 +91,11 @@ const saveCacheToPrimaryFile = async (): Promise<void> => {
 export const initialiseWorkspaceCache = async (): Promise<void> => {
   const primary = await loadCacheFromFile(workspaceCacheFileName);
   if (primary !== undefined) {
-    cacheState = primary;
+    const merged = { ...defaultWorkspaceCache, ...primary };
+    cacheState = merged;
+    if (JSON.stringify(primary) !== JSON.stringify(merged)) {
+      await saveCacheToPrimaryFile();
+    }
     return;
   }
 

@@ -22,8 +22,11 @@ import { initDeviceSyncExplorer } from './device-sync-explorer';
 import { initPyDeviceDebug } from './py-device-debug';
 import { initReplView } from './repl-view';
 import { initExtensionStatusView } from './extension-status-view';
-import { initialiseWorkspaceCache } from './utils/workspace-cache';
+import { getWorkspaceCacheValue, initialiseWorkspaceCache, loggerAutoStartCacheKey, setWorkspaceCacheValue } from './utils/workspace-cache';
 import { initialisePyDeviceController, stopPyDeviceController } from './devices/py-device-controller-singleton';
+import { FileWatcher } from './util/file-watcher';
+import { disposePyDeviceLogger, initPyDeviceLogger, logFileWatcherEventToPyDeviceLogger, logPyDeviceLogger } from './pydevice-logger';
+import { initSetLoggerAutoStartCommand } from './commands/set-logger-autostart-command';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -32,12 +35,46 @@ export const activate = async (context: vscode.ExtensionContext) => {
   initOutputChannel();
   logChannelOutput('Mekatrol PyDevice activated...', false);
   await initialiseWorkspaceCache();
+  const storedLoggerAutoStart = getWorkspaceCacheValue<boolean>(loggerAutoStartCacheKey);
+  if (storedLoggerAutoStart === undefined) {
+    await setWorkspaceCacheValue(loggerAutoStartCacheKey, true);
+  }
+
+  let fileWatcherLogSubscription: vscode.Disposable | undefined;
+  const setLoggerLiveState = (enabled: boolean): void => {
+    if (enabled) {
+      initPyDeviceLogger();
+      if (!fileWatcherLogSubscription) {
+        fileWatcherLogSubscription = fileWatcher.subscribe((event) => logFileWatcherEventToPyDeviceLogger(event));
+      }
+      logPyDeviceLogger('Mekatrol PyDevice activated.');
+      return;
+    }
+
+    fileWatcherLogSubscription?.dispose();
+    fileWatcherLogSubscription = undefined;
+    disposePyDeviceLogger();
+  };
+
   try {
     await initialisePyDeviceController();
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     logChannelOutput(`PyDeviceController startup failed: ${reason}`, true);
   }
+
+  const fileWatcher = new FileWatcher({
+    excludedPaths: ['.vscode', '.pydevice']
+  });
+  fileWatcher.start();
+  const loggerAutoStart = getWorkspaceCacheValue<boolean>(loggerAutoStartCacheKey) ?? true;
+  setLoggerLiveState(loggerAutoStart);
+
+  context.subscriptions.push(new vscode.Disposable(() => {
+    fileWatcherLogSubscription?.dispose();
+    fileWatcherLogSubscription = undefined;
+  }));
+  context.subscriptions.push(fileWatcher);
 
   context.subscriptions.push({
     dispose: () => stopPyDeviceController()
@@ -51,6 +88,7 @@ export const activate = async (context: vscode.ExtensionContext) => {
   initDisconnectBoardCommand(context);
   initSoftRebootBoardCommand(context);
   initSetAutoReconnectCommand(context);
+  initSetLoggerAutoStartCommand(context, (enabled) => setLoggerLiveState(enabled));
   initToggleBoardConnectionCommand(context);
   initConnectionStateMonitor(context);
   initReplView(context);
@@ -59,7 +97,7 @@ export const activate = async (context: vscode.ExtensionContext) => {
   initExtensionStatusView(context);
 
   // Init device sync explorer
-  await initDeviceSyncExplorer(context);
+  await initDeviceSyncExplorer(context, fileWatcher);
 
   // Init Run/Debug integration
   initPyDeviceDebug(context);
@@ -68,6 +106,7 @@ export const activate = async (context: vscode.ExtensionContext) => {
 
 // This method is called when your extension is deactivated
 export async function deactivate() {
+  disposePyDeviceLogger();
   stopPyDeviceController();
 
   const hasDirtyDeviceDocuments = vscode.workspace.textDocuments.some(

@@ -38,6 +38,7 @@ import {
   toRelativePath,
   writeDeviceFile
 } from './utils/device-filesystem';
+import { FileWatcher } from './util/file-watcher';
 
 const syncViewId = 'mekatrol.pydevice.syncExplorer';
 const commandRefreshId = 'mekatrol.pydevice.refreshsyncview';
@@ -5281,7 +5282,7 @@ const ensureNativeExplorerRoots = async (model: DeviceSyncModel): Promise<void> 
   vscode.workspace.updateWorkspaceFolders(currentFolders.length, 0, ...additions);
 };
 
-export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): Promise<void> => {
+export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext, fileWatcher?: FileWatcher): Promise<void> => {
   const deviceFsProvider = new DeviceDeviceFileSystemProvider(context);
   let lastConnectedDeviceIds = getConnectedPyDevices().map((item) => item.deviceId).sort((a, b) => a.localeCompare(b));
   const model = new DeviceSyncModel(context, async (relativePaths: string[]) => {
@@ -5342,6 +5343,9 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext): 
   const treeView = vscode.window.createTreeView(syncViewId, { treeDataProvider: provider });
   context.subscriptions.push(treeView);
   context.subscriptions.push(vscode.workspace.registerFileSystemProvider(deviceDocumentScheme, deviceFsProvider, { isCaseSensitive: true }));
+  if (fileWatcher) {
+    context.subscriptions.push(fileWatcher.addDeviceEventSource(deviceFsProvider.onDidChangeFile));
+  }
 
   context.subscriptions.push(treeView.onDidChangeSelection(async (event) => {
     const node = event.selection[0];

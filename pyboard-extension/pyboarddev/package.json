@@ -63,6 +63,10 @@
         "title": "PyDevice: Set auto reconnect"
       },
       {
+        "command": "mekatrol.pydevice.setloggerautostart",
+        "title": "PyDevice: Set logger auto start"
+      },
+      {
         "command": "mekatrol.pydevice.refreshsyncview",
         "title": "PyDevice: Refresh sync explorer",
         "icon": "$(refresh)"
@@ -280,6 +284,10 @@
         },
         {
           "command": "mekatrol.pydevice.setautoreconnect",
+          "when": "true"
+        },
+        {
+          "command": "mekatrol.pydevice.setloggerautostart",
           "when": "true"
         },
         {
