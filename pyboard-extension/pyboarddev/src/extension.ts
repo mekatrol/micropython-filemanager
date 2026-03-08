@@ -25,7 +25,7 @@ import { initExtensionStatusView } from './extension-status-view';
 import { getWorkspaceCacheValue, initialiseWorkspaceCache, loggerAutoStartCacheKey, setWorkspaceCacheValue } from './utils/workspace-cache';
 import { initialisePyDeviceController, stopPyDeviceController } from './devices/py-device-controller-singleton';
 import { FileWatcher } from './util/file-watcher';
-import { disposePyDeviceLogger, initPyDeviceLogger, logFileWatcherEventToPyDeviceLogger, logPyDeviceLogger } from './pydevice-logger';
+import { disposePyDeviceLogger, initPyDeviceLogger, logPyDeviceLogger } from './pydevice-logger';
 import { initSetLoggerAutoStartCommand } from './commands/set-logger-autostart-command';
 
 // This method is called when your extension is activated
@@ -40,19 +40,22 @@ export const activate = async (context: vscode.ExtensionContext) => {
     await setWorkspaceCacheValue(loggerAutoStartCacheKey, true);
   }
 
-  let fileWatcherLogSubscription: vscode.Disposable | undefined;
+  let fileWatcherLoggerSubscription: vscode.Disposable | undefined;
+  let fileWatcherOutputLogSubscription: vscode.Disposable | undefined;
   const setLoggerLiveState = (enabled: boolean): void => {
     if (enabled) {
       initPyDeviceLogger();
-      if (!fileWatcherLogSubscription) {
-        fileWatcherLogSubscription = fileWatcher.subscribe((event) => logFileWatcherEventToPyDeviceLogger(event));
+      if (!fileWatcherLoggerSubscription) {
+        fileWatcherLoggerSubscription = fileWatcher.onDidLog((entry) => {
+          logPyDeviceLogger(entry.message);
+        });
       }
       logPyDeviceLogger('Mekatrol PyDevice activated.');
       return;
     }
 
-    fileWatcherLogSubscription?.dispose();
-    fileWatcherLogSubscription = undefined;
+    fileWatcherLoggerSubscription?.dispose();
+    fileWatcherLoggerSubscription = undefined;
     disposePyDeviceLogger();
   };
 
@@ -66,13 +69,18 @@ export const activate = async (context: vscode.ExtensionContext) => {
   const fileWatcher = new FileWatcher({
     excludedPaths: ['.vscode', '.pydevice']
   });
+  fileWatcherOutputLogSubscription = fileWatcher.onDidLog((entry) => {
+    logChannelOutput(entry.message, entry.isError);
+  });
   fileWatcher.start();
   const loggerAutoStart = getWorkspaceCacheValue<boolean>(loggerAutoStartCacheKey) ?? true;
   setLoggerLiveState(loggerAutoStart);
 
   context.subscriptions.push(new vscode.Disposable(() => {
-    fileWatcherLogSubscription?.dispose();
-    fileWatcherLogSubscription = undefined;
+    fileWatcherLoggerSubscription?.dispose();
+    fileWatcherLoggerSubscription = undefined;
+    fileWatcherOutputLogSubscription?.dispose();
+    fileWatcherOutputLogSubscription = undefined;
   }));
   context.subscriptions.push(fileWatcher);
 

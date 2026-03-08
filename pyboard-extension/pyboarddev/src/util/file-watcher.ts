@@ -6,7 +6,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { logChannelOutput } from '../output-channel';
 
 export type FileWatcherScope = 'host' | 'device';
 export type FileWatcherSource = 'vscode' | 'disk' | 'device-source' | 'manual';
@@ -21,6 +20,12 @@ export interface FileWatcherEvent {
   uri: vscode.Uri;
   workspaceRelativePath: string;
   timestamp: number;
+}
+
+export interface FileWatcherLogEvent {
+  message: string;
+  timestamp: number;
+  isError: boolean;
 }
 
 export interface FileWatcherOptions {
@@ -45,6 +50,7 @@ export class FileWatcher implements vscode.Disposable {
   private readonly options: Required<Omit<FileWatcherOptions, 'workspaceFolder' | 'excludedPaths'>>;
   private readonly workspaceFolder: vscode.WorkspaceFolder | undefined;
   private readonly eventEmitter = new vscode.EventEmitter<FileWatcherEvent>();
+  private readonly logEmitter = new vscode.EventEmitter<FileWatcherLogEvent>();
   private readonly subscriptions = new Set<(event: FileWatcherEvent) => void>();
   private readonly disposables: vscode.Disposable[] = [];
   private readonly recentEventTimestamps = new Map<string, number>();
@@ -53,6 +59,7 @@ export class FileWatcher implements vscode.Disposable {
   private started = false;
 
   readonly onDidEvent: vscode.Event<FileWatcherEvent> = this.eventEmitter.event;
+  readonly onDidLog: vscode.Event<FileWatcherLogEvent> = this.logEmitter.event;
 
   constructor(options: FileWatcherOptions = {}) {
     this.workspaceFolder = options.workspaceFolder ?? vscode.workspace.workspaceFolders?.[0];
@@ -186,6 +193,7 @@ export class FileWatcher implements vscode.Disposable {
   dispose(): void {
     this.stop();
     this.eventEmitter.dispose();
+    this.logEmitter.dispose();
     this.subscriptions.clear();
   }
 
@@ -248,7 +256,7 @@ export class FileWatcher implements vscode.Disposable {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.log(`FileWatcher host disk watcher failed to start: ${message}`);
+      this.log(`FileWatcher host disk watcher failed to start: ${message}`, true);
     }
   }
 
@@ -437,11 +445,15 @@ export class FileWatcher implements vscode.Disposable {
     return relativePath;
   }
 
-  private log(message: string): void {
+  private log(message: string, isError = false): void {
     if (!this.options.logEvents) {
       return;
     }
 
-    logChannelOutput(message, false);
+    this.logEmitter.fire({
+      message,
+      timestamp: Date.now(),
+      isError
+    });
   }
 }
