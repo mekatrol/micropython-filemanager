@@ -1,0 +1,44 @@
+    :root { color-scheme: light dark; }
+    body { margin: 0; font-family: var(--vscode-font-family); color: var(--vscode-foreground); }
+    .wrap { max-width: 1100px; margin: 28px auto; padding: 0 20px 20px; }
+    h2 { margin: 0 0 10px; font-size: 16px; }
+    .hint { margin: 0 0 12px; opacity: 0.9; }
+    table { width: 100%; border-collapse: collapse; border: 1px solid var(--vscode-editorWidget-border); table-layout: fixed; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid var(--vscode-editorWidget-border); vertical-align: middle; user-select: text; }
+    th { text-align: left; font-weight: 600; }
+    th.status, td.status { width: 180px; }
+    th.scope, td.scope { width: 220px; }
+    th.action, td.action { width: 90px; text-align: center; }
+    td.path { font-family: var(--vscode-editor-font-family); font-size: 12px; }
+    td.scope { color: var(--vscode-descriptionForeground); font-size: 12px; }
+    .scope-wrap { display: inline-flex; align-items: center; gap: 6px; }
+    .scope-icon { width: 14px; height: 14px; color: var(--vscode-descriptionForeground); display: inline-flex; align-items: center; justify-content: center; }
+    .scope-icon svg { width: 14px; height: 14px; fill: currentColor; }
+    .status-wrap { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .icon { width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; }
+    .icon svg { width: 14px; height: 14px; fill: currentColor; }
+    .status-match { color: var(--vscode-charts-green); }
+    .status-mismatch { color: var(--vscode-charts-yellow); }
+    .status-missing_computer, .status-missing_device { color: var(--vscode-descriptionForeground); }
+    .empty { padding: 20px; text-align: center; color: var(--vscode-descriptionForeground); }
+    .link {
+      color: var(--vscode-textLink-foreground);
+      text-decoration: underline;
+      background: none;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      font: inherit;
+    }
+    .buttons { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }
+    button {
+      border: 1px solid var(--vscode-button-border, transparent);
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      padding: 6px 14px;
+      cursor: pointer;
+    }
+    button.secondary {
+      background: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
+    }

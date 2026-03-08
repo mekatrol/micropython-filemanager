@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src __CSP_SOURCE__; script-src 'nonce-__NONCE__';">
+  <title>Device connect</title>
+  <link rel="stylesheet" href="__CSS_URI__">
+</head>
+<body>
+  <div class="wrap">
+    <h2>Device connect</h2>
+    <p class="hint">Connect individual rows or use Connect all.</p>
+    <div class="table-section">
+      <h3 class="table-title">Unconnected serial ports</h3>
+      <table>
+        <thead>
+          <tr>
+            <th class="unconnectedPort">Serial Port</th>
+            <th class="unconnectedStatus">Status</th>
+          </tr>
+        </thead>
+        <tbody id="unconnectedRows"></tbody>
+      </table>
+    </div>
+    <div class="table-section">
+      <h3 class="table-title">Connected serial ports</h3>
+      <table>
+        <thead>
+          <tr>
+            <th class="name">Device Name</th>
+            <th class="id">Device ID</th>
+            <th class="port">Serial Port</th>
+            <th class="deviceInfo">Device Info</th>
+            <th class="status">Status</th>
+          </tr>
+        </thead>
+        <tbody id="connectedRows"></tbody>
+      </table>
+    </div>
+    <div class="buttons">
+      <button id="probeDevices" class="secondary">Probe devices</button>
+      <button id="connectAll">Connect all</button>
+      <button id="disconnectAll" class="secondary">Disconnect all</button>
+      <button id="close" class="secondary">Close</button>
+    </div>
+  </div>
+  <div id="probeModal" class="probe-modal hidden" role="dialog" aria-modal="true" aria-label="Probe devices status">
+    <div class="probe-dialog">
+      <h3 id="probeTitle" class="probe-title">Probing devices</h3>
+      <p id="probeStatus" class="probe-status">Preparing probe...</p>
+      <div class="probe-progress">
+        <div id="probeProgressBar" class="probe-progress-bar"></div>
+      </div>
+      <div class="probe-actions">
+        <button id="cancelProbe" class="secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+  <script id="initial-state" type="application/json">__INITIAL_STATE__</script>
+  <script nonce="__NONCE__" src="__SCRIPT_URI__"></script>
+</body>
+</html>

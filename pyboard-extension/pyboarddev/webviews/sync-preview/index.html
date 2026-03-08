@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src __CSP_SOURCE__; script-src 'nonce-__NONCE__';">
+  <title>__TITLE__</title>
+  <link rel="stylesheet" href="__CSS_URI__">
+</head>
+<body>
+  <div class="wrap">
+    <h2>__TITLE__</h2>
+    <div class="direction">Sync direction: __DIRECTION__</div>
+    <p class="hint">Unchecking a folder unchecks all children. Checking a folder does not auto-check children.</p>
+    <table>
+      <thead>
+        <tr>
+          <th class="check"></th>
+          <th class="action">Action</th>
+          <th>Path</th>
+          <th></th>
+          <th class="status">Status</th>
+          <th class="error"></th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="buttons">
+      <button id="cancel" class="secondary">Cancel</button>
+      <button id="continue">Continue</button>
+      <button id="close" class="secondary" style="display:none">Close</button>
+    </div>
+    <p id="summary" class="hint" style="display:none; margin-top:12px;"></p>
+  </div>
+  <script id="initial-state" type="application/json">__INITIAL_STATE__</script>
+  <script nonce="__NONCE__" src="__SCRIPT_URI__"></script>
+</body>
+</html>

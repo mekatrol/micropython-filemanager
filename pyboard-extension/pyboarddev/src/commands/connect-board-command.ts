@@ -807,9 +807,19 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
       'pydevice.deviceConnect',
       'Device Connect',
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
-      { enableScripts: true }
+      {
+        enableScripts: true,
+        localResourceRoots: [
+          vscode.Uri.joinPath(context.extensionUri, 'dist', 'webviews')
+        ]
+      }
     );
-    panel.webview.html = renderConnectHtml([], pyDeviceInternalTimeouts.recoveryConnectAttemptTimeoutMs);
+    panel.webview.html = renderConnectHtml(
+      panel.webview,
+      context.extensionUri,
+      [],
+      pyDeviceInternalTimeouts.recoveryConnectAttemptTimeoutMs
+    );
 
     let rowsById = new Map<string, ConnectRow>();
     const connectingPaths = new Set<string>();

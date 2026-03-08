@@ -1,4 +1,6 @@
 const esbuild = require("esbuild");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
@@ -10,10 +12,23 @@ const esbuildProblemMatcherPlugin = {
 	name: 'esbuild-problem-matcher',
 
 	setup(build) {
+		const sourceWebviewsPath = path.resolve(__dirname, 'webviews');
+		const targetWebviewsPath = path.resolve(__dirname, 'dist', 'webviews');
+		const copyWebviews = () => {
+			if (!fs.existsSync(sourceWebviewsPath)) {
+				return;
+			}
+			fs.mkdirSync(path.dirname(targetWebviewsPath), { recursive: true });
+			fs.cpSync(sourceWebviewsPath, targetWebviewsPath, { recursive: true, force: true });
+		};
+
 		build.onStart(() => {
 			console.log('[watch] build started');
 		});
 		build.onEnd((result) => {
+			if (result.errors.length === 0) {
+				copyWebviews();
+			}
 			result.errors.forEach(({ text, location }) => {
 				console.error(`✘ [ERROR] ${text}`);
 				console.error(`    ${location.file}:${location.line}:${location.column}:`);
