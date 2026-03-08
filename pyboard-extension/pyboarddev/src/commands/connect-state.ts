@@ -14,6 +14,7 @@ export interface ConnectRow {
   serialPortName: string;
   deviceId: string;
   deviceName: string;
+  section?: 'unconnected' | 'device';
   status: ConnectStatus;
   errorText?: string;
   deviceInfo?: string;

@@ -12,6 +12,7 @@ import { autoReconnectDevicesCacheKey, getWorkspaceCacheValue, setWorkspaceCache
 import { ConnectedPyDeviceRegistry, ConnectedPyDeviceState, ConnectedPyDeviceSnapshot } from '../devices/connected-py-device-registry';
 import { ReconnectStateStore } from '../devices/reconnect-state-store';
 import { toDeviceId } from '../devices/device-id';
+import { SerialDeviceProber } from '../devices/serial-device-prober';
 import { getDeviceNames, loadConfiguration, updateDeviceName } from '../utils/configuration';
 import {
   ConnectRow,
@@ -805,9 +806,13 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
 
     let rowsById = new Map<string, ConnectRow>();
     const connectingPaths = new Set<string>();
+    const probedRuntimeInfoByPath = new Map<string, PyDeviceRuntimeInfo>();
+    const serialDeviceProber = new SerialDeviceProber(defaultBaudRate);
     let disposed = false;
     let reconcileInProgress = false;
     let reconcilePending = false;
+    let probeInProgress = false;
+    let probeCancelRequested = false;
 
     panel.onDidDispose(() => {
       disposed = true;
@@ -824,6 +829,14 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
 
     const updateRow = (row: ConnectRow): void => {
       void panel.webview.postMessage({ type: 'updateRow', row });
+    };
+    const updateProbeStatus = (
+      state: 'hidden' | 'running' | 'cancelling',
+      message?: string,
+      current?: number,
+      total?: number
+    ): void => {
+      void panel.webview.postMessage({ type: 'probeStatus', state, message, current, total });
     };
 
     const reconcileRows = async (knownPorts?: Awaited<ReturnType<typeof listSerialDevices>>): Promise<void> => {
@@ -852,31 +865,68 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
         for (const port of activePorts) {
           const serialPortName = path.basename(port.path);
           const connectedState = getConnectedPyDeviceStateByPortPath(port.path);
-          const connectedDeviceId = connectedState?.deviceId;
-          const rowId = connectedDeviceId && configuredDeviceIdSet.has(connectedDeviceId)
-            ? `config:${connectedDeviceId}`
-            : `port:${port.path}`;
-          const existing = rowsById.get(rowId);
-          const status = connectedState
-            ? ConnectStatus.Connected
-            : connectingPaths.has(port.path)
-              ? ConnectStatus.Connecting
-              : existing?.status === ConnectStatus.Error
-                ? ConnectStatus.Error
-                : ConnectStatus.Ready;
+          const details = [port.manufacturer, `VID:${port.vendorId}`, `PID:${port.productId}`].filter(Boolean).join(' | ');
 
-          const row: ConnectRow = {
-            id: rowId,
+          if (connectedState) {
+            const connectedDeviceId = connectedState.deviceId;
+            const rowId = configuredDeviceIdSet.has(connectedDeviceId)
+              ? `config:${connectedDeviceId}`
+              : `port:${port.path}`;
+            const row: ConnectRow = {
+              id: rowId,
+              devicePath: port.path,
+              serialPortName,
+              deviceId: connectedDeviceId,
+              deviceName: configuredDeviceNames[connectedDeviceId] ?? '',
+              section: 'device',
+              status: ConnectStatus.Connected,
+              deviceInfo: toDeviceInfoSummary(connectedState.runtimeInfo),
+              details
+            };
+            nextRows.set(rowId, row);
+            probedRuntimeInfoByPath.delete(port.path);
+            continue;
+          }
+
+          const unconnectedRowId = `port:${port.path}`;
+          const unconnectedRow: ConnectRow = {
+            id: unconnectedRowId,
             devicePath: port.path,
             serialPortName,
-            deviceId: connectedDeviceId ?? toDeviceId(port.path),
-            deviceName: connectedDeviceId ? (configuredDeviceNames[connectedDeviceId] ?? '') : '',
-            status,
-            deviceInfo: toDeviceInfoSummary(connectedState?.runtimeInfo),
-            errorText: status === ConnectStatus.Error ? existing?.errorText : undefined,
-            details: [port.manufacturer, `VID:${port.vendorId}`, `PID:${port.productId}`].filter(Boolean).join(' | ')
+            deviceId: toDeviceId(port.path),
+            deviceName: '',
+            section: 'unconnected',
+            status: connectingPaths.has(port.path) ? ConnectStatus.Connecting : ConnectStatus.Ready,
+            details
           };
-          nextRows.set(rowId, row);
+          nextRows.set(unconnectedRowId, unconnectedRow);
+
+          const probedRuntimeInfo = probedRuntimeInfoByPath.get(port.path);
+          if (!probedRuntimeInfo) {
+            continue;
+          }
+
+          const detectedDeviceId = toDeviceId(port.path, probedRuntimeInfo);
+          const detectedRowId = `probe:${port.path}`;
+          const existingDetected = rowsById.get(detectedRowId);
+          const detectedStatus = connectingPaths.has(port.path)
+            ? ConnectStatus.Connecting
+            : existingDetected?.status === ConnectStatus.Error
+              ? ConnectStatus.Error
+              : ConnectStatus.Ready;
+          const detectedRow: ConnectRow = {
+            id: detectedRowId,
+            devicePath: port.path,
+            serialPortName,
+            deviceId: detectedDeviceId,
+            deviceName: configuredDeviceNames[detectedDeviceId] ?? '',
+            section: 'device',
+            status: detectedStatus,
+            deviceInfo: toDeviceInfoSummary(probedRuntimeInfo),
+            errorText: detectedStatus === ConnectStatus.Error ? existingDetected?.errorText : undefined,
+            details
+          };
+          nextRows.set(detectedRowId, detectedRow);
         }
 
         rowsById = nextRows;
@@ -960,6 +1010,79 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
       }
     };
 
+    const probeDisconnectedPorts = async (): Promise<void> => {
+      if (probeInProgress) {
+        return;
+      }
+      probeInProgress = true;
+      probeCancelRequested = false;
+      updateProbeStatus('running', 'Preparing probe...', 0, 0);
+
+      let ports: Awaited<ReturnType<typeof listSerialDevices>>;
+      try {
+        ports = await listSerialDevices();
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        const msg = `Unable to list serial ports for probing. ${reason}`;
+        vscode.window.showErrorMessage(msg);
+        logChannelOutput(msg, true);
+        updateProbeStatus('hidden');
+        probeInProgress = false;
+        probeCancelRequested = false;
+        return;
+      }
+
+      const availablePorts = ports.filter((port) => !getConnectedPyDeviceByPortPath(port.path) && !connectingPaths.has(port.path));
+      if (availablePorts.length === 0) {
+        await reconcileRows(ports);
+        updateProbeStatus('hidden');
+        probeInProgress = false;
+        probeCancelRequested = false;
+        return;
+      }
+
+      try {
+        for (let index = 0; index < availablePorts.length; index += 1) {
+          if (probeCancelRequested) {
+            break;
+          }
+
+          const port = availablePorts[index];
+          updateProbeStatus(
+            probeCancelRequested ? 'cancelling' : 'running',
+            `Probing ${index + 1}/${availablePorts.length}: ${port.path}`,
+            index,
+            availablePorts.length
+          );
+
+          try {
+            const detected = await serialDeviceProber.probePort(port);
+            if (detected?.runtimeInfo) {
+              probedRuntimeInfoByPath.set(port.path, detected.runtimeInfo);
+            } else {
+              probedRuntimeInfoByPath.delete(port.path);
+            }
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            logChannelOutput(`Probe failed for ${port.path}: ${reason}`, false);
+            probedRuntimeInfoByPath.delete(port.path);
+          }
+
+          if (probeCancelRequested) {
+            updateProbeStatus('cancelling', 'Cancelling...', index + 1, availablePorts.length);
+            break;
+          }
+
+          updateProbeStatus('running', `Probed ${index + 1}/${availablePorts.length}`, index + 1, availablePorts.length);
+        }
+      } finally {
+        await reconcileRows(ports);
+        updateProbeStatus('hidden');
+        probeInProgress = false;
+        probeCancelRequested = false;
+      }
+    };
+
     const disconnectRow = async (
       row: ConnectRow,
       reconcileAfter: boolean = true,
@@ -1026,6 +1149,17 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
       }
       if (typed.type === 'disconnectAll') {
         void runBulkTask(disconnectAll);
+        return;
+      }
+      if (typed.type === 'probeDevices') {
+        void runBulkTask(probeDisconnectedPorts);
+        return;
+      }
+      if (typed.type === 'cancelProbe') {
+        if (probeInProgress && !probeCancelRequested) {
+          probeCancelRequested = true;
+          updateProbeStatus('cancelling', 'Cancelling...');
+        }
         return;
       }
       if (typed.type === 'connect' && typeof typed.rowId === 'string') {
