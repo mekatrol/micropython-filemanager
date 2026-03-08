@@ -4,6 +4,7 @@
  * filesystem integration for connected devices.
  */
 import { Buffer } from 'buffer';
+import { createHash } from 'crypto';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -38,7 +39,8 @@ import {
   toRelativePath,
   writeDeviceFile
 } from './utils/device-filesystem';
-import { FileWatcher } from './util/file-watcher';
+import { FileWatcher, FileWatcherEvent } from './util/file-watcher';
+import { syncStateStore } from './sync-state-store';
 
 const syncViewId = 'mekatrol.pydevice.syncExplorer';
 const commandRefreshId = 'mekatrol.pydevice.refreshsyncview';
@@ -243,7 +245,7 @@ class DeviceSyncModel {
     return false;
   }
 
-  async refresh(fetchDevice: boolean = true, deriveSyncStates: boolean = false): Promise<void> {
+  async refresh(fetchDevice: boolean = true, _deriveSyncStates: boolean = false): Promise<void> {
     try {
     this.workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     const hasWorkspace = !!this.workspaceFolder;
@@ -359,12 +361,12 @@ class DeviceSyncModel {
       }
 
       this.deviceEntriesByDeviceId.set(deviceId, deviceEntries);
-      this.syncStatesByDeviceId.set(
-        deviceId,
-        deriveSyncStates
-          ? buildSyncStateMap(this.filterSyncableEntries(computerEntries), this.filterSyncableEntries(deviceEntries))
-          : new Map()
+      const syncStates = buildSyncStateMap(
+        this.filterSyncableEntries(computerEntries),
+        this.filterSyncableEntries(deviceEntries)
       );
+      this.syncStatesByDeviceId.set(deviceId, syncStates);
+      this.pushDeviceSnapshotToGlobalStore(deviceId);
     }
 
     if (!this.activeDeviceId || !this.knownDeviceIds.has(this.activeDeviceId)) {
@@ -3485,17 +3487,21 @@ class DeviceSyncModel {
       return;
     }
 
-    const picked = await vscode.window.showQuickPick(folderOptions, {
-      title: 'Map Device to Computer Folder',
-      placeHolder: `Select computer folder for ${deviceId}`,
-      canPickMany: false,
-      ignoreFocusOut: true
-    });
-    if (!picked) {
+    const normalised = await this.pickOrEnterHostFolderPath(deviceId, folderOptions);
+    if (!normalised) {
       return;
     }
 
-    const normalised = picked.relativePath;
+    const absoluteFolderPath = path.join(this.workspaceFolder.uri.fsPath, normalised);
+    try {
+      await fs.mkdir(absoluteFolderPath, { recursive: true });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      const msg = `Failed to create computer folder "${normalised}". ${reason}`;
+      vscode.window.showErrorMessage(msg);
+      logChannelOutput(msg, true);
+      return;
+    }
 
     const updated = await updateDeviceHostFolderMapping(deviceId, normalised);
     this.deviceHostFolderMappings = getDeviceHostFolderMappings(updated);
@@ -3504,6 +3510,49 @@ class DeviceSyncModel {
     logChannelOutput(msg, true);
     vscode.window.showInformationMessage(msg);
     await this.refresh(true, false);
+  }
+
+  private async pickOrEnterHostFolderPath(
+    deviceId: string,
+    folderOptions: Array<{ label: string; description: string; relativePath: string }>
+  ): Promise<string | undefined> {
+    const picker = vscode.window.createQuickPick<{ label: string; description: string; relativePath: string }>();
+    picker.title = 'Map Device to Computer Folder';
+    picker.placeholder = `Select or type computer folder for ${deviceId}`;
+    picker.ignoreFocusOut = true;
+    picker.items = folderOptions;
+    picker.matchOnDescription = true;
+
+    return await new Promise<string | undefined>((resolve) => {
+      let settled = false;
+      const finish = (value: string | undefined): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        picker.hide();
+        picker.dispose();
+        resolve(value);
+      };
+
+      picker.onDidAccept(() => {
+        const selected = picker.selectedItems[0];
+        const rawValue = selected?.relativePath ?? picker.value;
+        const normalised = toRelativePath(rawValue);
+        if (!normalised) {
+          void vscode.window.showWarningMessage('Enter a folder name.');
+          return;
+        }
+        if (path.isAbsolute(normalised) || normalised.split('/').includes('..')) {
+          void vscode.window.showWarningMessage('Use a workspace-relative folder path.');
+          return;
+        }
+        finish(normalised);
+      });
+
+      picker.onDidHide(() => finish(undefined));
+      picker.show();
+    });
   }
 
   async unmapDeviceFromHostFolder(node?: SyncNode): Promise<void> {
@@ -3860,7 +3909,314 @@ class DeviceSyncModel {
       return;
     }
 
-    await this.refresh(false);
+    const workspaceRoot = this.workspaceFolder?.uri.fsPath;
+    if (!workspaceRoot) {
+      return;
+    }
+
+    const workspaceRelativePath = toRelativePath(path.relative(workspaceRoot, fsPath));
+    await this.applyHostEntryChangeForAllDevices(
+      workspaceRelativePath,
+      'modified',
+      'unknown',
+      vscode.Uri.file(fsPath)
+    );
+    this.onDidChangeDataEmitter.fire();
+  }
+
+  async handleFileWatcherEvent(event: FileWatcherEvent): Promise<void> {
+    if (event.scope === 'host') {
+      if (event.uri.scheme !== 'file') {
+        return;
+      }
+      await this.applyHostEntryChangeForAllDevices(
+        event.workspaceRelativePath,
+        event.changeType,
+        event.entityType,
+        event.uri
+      );
+      this.onDidChangeDataEmitter.fire();
+      return;
+    }
+
+    const parsed = this.parseDeviceWatcherPath(event);
+    if (!parsed) {
+      return;
+    }
+
+    const { deviceId, relativePath } = parsed;
+    await this.applyDeviceEntryChange(
+      deviceId,
+      relativePath,
+      event.changeType,
+      event.entityType
+    );
+    this.onDidChangeDataEmitter.fire();
+  }
+
+  private parseDeviceWatcherPath(event: FileWatcherEvent): { deviceId: string; relativePath: string } | undefined {
+    if (event.scope !== 'device') {
+      return undefined;
+    }
+
+    const queryDeviceId = new URLSearchParams(event.uri.query).get('deviceId') ?? undefined;
+    const segments = event.workspaceRelativePath.split('/').filter((item) => item.length > 0);
+    const segmentDeviceId = segments.length > 0
+      ? this.resolveDeviceIdFromUriSegment(decodeURIComponent(segments[0]))
+      : undefined;
+    const deviceId = queryDeviceId ?? segmentDeviceId;
+    if (!deviceId) {
+      return undefined;
+    }
+
+    const relativePath = toRelativePath(segments.slice(1).join('/'));
+    return { deviceId, relativePath };
+  }
+
+  private async applyHostEntryChangeForAllDevices(
+    workspaceRelativePath: string,
+    changeType: 'created' | 'modified' | 'deleted',
+    entityType: 'file' | 'folder' | 'unknown',
+    uri: vscode.Uri
+  ): Promise<void> {
+    const impactedDeviceIds: string[] = [];
+    for (const deviceId of this.knownDeviceIds) {
+      const mappedFolder = toRelativePath(this.deviceHostFolderMappings[deviceId] ?? '');
+      if (!mappedFolder) {
+        continue;
+      }
+
+      const scoped = this.toScopedRelativePath(mappedFolder, workspaceRelativePath);
+      if (scoped === undefined) {
+        continue;
+      }
+
+      const changed = await this.applyComputerEntryChange(deviceId, scoped, changeType, entityType, uri);
+      if (!changed) {
+        continue;
+      }
+
+      impactedDeviceIds.push(deviceId);
+      this.recomputeSyncStateForDevicePath(deviceId, scoped, entityType === 'folder');
+      this.pushDeviceSnapshotToGlobalStore(deviceId);
+    }
+
+    if (impactedDeviceIds.length === 0) {
+      return;
+    }
+
+    if (this.activeDeviceId && impactedDeviceIds.includes(this.activeDeviceId)) {
+      this.activateDevice(this.activeDeviceId);
+    }
+  }
+
+  private async applyDeviceEntryChange(
+    deviceId: string,
+    relativePath: string,
+    changeType: 'created' | 'modified' | 'deleted',
+    entityType: 'file' | 'folder' | 'unknown'
+  ): Promise<void> {
+    if (!this.knownDeviceIds.has(deviceId)) {
+      this.knownDeviceIds.add(deviceId);
+    }
+
+    const current = this.deviceEntriesByDeviceId.get(deviceId) ?? [{ relativePath: '', isDirectory: true }];
+    const map = this.toEntryMap(current);
+    const normalised = toRelativePath(relativePath);
+    if (!normalised) {
+      return;
+    }
+
+    if (changeType === 'deleted') {
+      this.removeEntryPathAndDescendants(map, normalised);
+    } else {
+      const isDirectory = entityType === 'folder';
+      map.set(normalised, { relativePath: normalised, isDirectory });
+    }
+
+    this.deviceEntriesByDeviceId.set(deviceId, this.fromEntryMap(map));
+    this.recomputeSyncStateForDevicePath(deviceId, normalised, entityType === 'folder');
+    this.pushDeviceSnapshotToGlobalStore(deviceId);
+
+    if (this.activeDeviceId === deviceId) {
+      this.activateDevice(deviceId);
+    }
+  }
+
+  private async applyComputerEntryChange(
+    deviceId: string,
+    relativePath: string,
+    changeType: 'created' | 'modified' | 'deleted',
+    entityType: 'file' | 'folder' | 'unknown',
+    uri: vscode.Uri
+  ): Promise<boolean> {
+    const current = this.computerEntriesByDeviceId.get(deviceId) ?? [{ relativePath: '', isDirectory: true }];
+    const map = this.toEntryMap(current);
+    const normalised = toRelativePath(relativePath);
+    if (!normalised) {
+      return false;
+    }
+
+    if (changeType === 'deleted') {
+      const removed = this.removeEntryPathAndDescendants(map, normalised);
+      this.computerEntriesByDeviceId.set(deviceId, this.fromEntryMap(map));
+      return removed;
+    }
+
+    const entry = await this.toComputerFileEntry(normalised, entityType, uri);
+    if (!entry) {
+      return false;
+    }
+
+    map.set(normalised, entry);
+    this.computerEntriesByDeviceId.set(deviceId, this.fromEntryMap(map));
+    return true;
+  }
+
+  private async toComputerFileEntry(
+    relativePath: string,
+    entityType: 'file' | 'folder' | 'unknown',
+    uri: vscode.Uri
+  ): Promise<FileEntry | undefined> {
+    if (entityType === 'folder') {
+      return { relativePath, isDirectory: true };
+    }
+
+    if (entityType === 'unknown') {
+      try {
+        const stat = await fs.stat(uri.fsPath);
+        if (stat.isDirectory()) {
+          return { relativePath, isDirectory: true };
+        }
+      } catch {
+        return undefined;
+      }
+    }
+
+    try {
+      const data = await fs.readFile(uri.fsPath);
+      const sha1 = createHash('sha1').update(data).digest('hex');
+      return {
+        relativePath,
+        isDirectory: false,
+        size: data.byteLength,
+        sha1
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  private recomputeSyncStateForDevicePath(deviceId: string, relativePath: string, includeDescendants: boolean): void {
+    const normalised = toRelativePath(relativePath);
+    if (!normalised) {
+      return;
+    }
+
+    const syncStates = new Map(this.syncStatesByDeviceId.get(deviceId) ?? new Map<string, SyncState>());
+    const computerMap = this.toEntryMap(this.computerEntriesByDeviceId.get(deviceId) ?? []);
+    const deviceMap = this.toEntryMap(this.deviceEntriesByDeviceId.get(deviceId) ?? []);
+
+    const targets: string[] = [];
+    if (includeDescendants) {
+      const prefix = `${normalised}/`;
+      const all = new Set<string>([
+        ...[...computerMap.values()].filter((entry) => !entry.isDirectory).map((entry) => entry.relativePath),
+        ...[...deviceMap.values()].filter((entry) => !entry.isDirectory).map((entry) => entry.relativePath),
+        ...syncStates.keys()
+      ]);
+      for (const candidate of all) {
+        if (candidate === normalised || candidate.startsWith(prefix)) {
+          targets.push(candidate);
+        }
+      }
+    } else {
+      targets.push(normalised);
+    }
+
+    for (const target of targets) {
+      const next = this.computeSyncStateForPath(target, computerMap.get(target), deviceMap.get(target));
+      if (!next) {
+        syncStates.delete(target);
+      } else {
+        syncStates.set(target, next);
+      }
+    }
+
+    this.syncStatesByDeviceId.set(deviceId, syncStates);
+  }
+
+  private computeSyncStateForPath(relativePath: string, computer?: FileEntry, device?: FileEntry): SyncState | undefined {
+    if (!relativePath) {
+      return undefined;
+    }
+    if ((computer && computer.isDirectory) || (device && device.isDirectory)) {
+      return undefined;
+    }
+    if (!computer && device) {
+      return 'device_only';
+    }
+    if (computer && !device) {
+      return 'computer_only';
+    }
+    if (!computer || !device) {
+      return undefined;
+    }
+    if (computer.sha1 && device.sha1 && computer.sha1 === device.sha1) {
+      return 'synced';
+    }
+    if (!device.sha1 && computer.size !== undefined && device.size !== undefined && computer.size === device.size) {
+      return 'synced';
+    }
+    return 'out_of_sync';
+  }
+
+  private toScopedRelativePath(baseFolder: string, workspaceRelativePath: string): string | undefined {
+    const base = toRelativePath(baseFolder);
+    const target = toRelativePath(workspaceRelativePath);
+    if (!base) {
+      return target;
+    }
+    if (target === base) {
+      return '';
+    }
+    const prefix = `${base}/`;
+    if (!target.startsWith(prefix)) {
+      return undefined;
+    }
+    return toRelativePath(target.slice(prefix.length));
+  }
+
+  private toEntryMap(entries: FileEntry[]): Map<string, FileEntry> {
+    return new Map(entries.map((entry) => [toRelativePath(entry.relativePath), entry]));
+  }
+
+  private fromEntryMap(entries: Map<string, FileEntry>): FileEntry[] {
+    const values = [...entries.values()];
+    values.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+    return values;
+  }
+
+  private removeEntryPathAndDescendants(entries: Map<string, FileEntry>, relativePath: string): boolean {
+    const prefix = `${relativePath}/`;
+    let removed = false;
+    for (const key of [...entries.keys()]) {
+      if (key === relativePath || key.startsWith(prefix)) {
+        entries.delete(key);
+        removed = true;
+      }
+    }
+    return removed;
+  }
+
+  private pushDeviceSnapshotToGlobalStore(deviceId: string): void {
+    syncStateStore.setDeviceSnapshot({
+      deviceId,
+      syncRootPath: this.syncRootByDeviceId.get(deviceId),
+      computerEntries: this.computerEntriesByDeviceId.get(deviceId) ?? [{ relativePath: '', isDirectory: true }],
+      deviceEntries: this.deviceEntriesByDeviceId.get(deviceId) ?? [{ relativePath: '', isDirectory: true }],
+      syncStates: this.syncStatesByDeviceId.get(deviceId) ?? new Map()
+    });
   }
 
   private async openDeviceDiff(node: SyncNode): Promise<void> {
@@ -5345,6 +5701,7 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext, f
   context.subscriptions.push(vscode.workspace.registerFileSystemProvider(deviceDocumentScheme, deviceFsProvider, { isCaseSensitive: true }));
   if (fileWatcher) {
     context.subscriptions.push(fileWatcher.addDeviceEventSource(deviceFsProvider.onDidChangeFile));
+    context.subscriptions.push(fileWatcher.subscribe((event) => void model.handleFileWatcherEvent(event)));
   }
 
   context.subscriptions.push(treeView.onDidChangeSelection(async (event) => {
@@ -5387,8 +5744,10 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext, f
       }
     })
   );
-  context.subscriptions.push(vscode.workspace.onDidDeleteFiles((event) => event.files.forEach((uri) => model.handlePossibleSyncFileChange(uri.fsPath))));
-  context.subscriptions.push(vscode.workspace.onDidCreateFiles((event) => event.files.forEach((uri) => model.handlePossibleSyncFileChange(uri.fsPath))));
+  if (!fileWatcher) {
+    context.subscriptions.push(vscode.workspace.onDidDeleteFiles((event) => event.files.forEach((uri) => model.handlePossibleSyncFileChange(uri.fsPath))));
+    context.subscriptions.push(vscode.workspace.onDidCreateFiles((event) => event.files.forEach((uri) => model.handlePossibleSyncFileChange(uri.fsPath))));
+  }
 
   context.subscriptions.push(vscode.commands.registerCommand(commandRefreshId, async () => model.refresh(true, false)));
   context.subscriptions.push(vscode.commands.registerCommand(commandSyncFromDeviceId, async () => model.syncFromDevice()));
@@ -5491,9 +5850,10 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext, f
     const message = summary.length > 0 ? `PyDevice workspace initialized. ${summary}` : 'PyDevice workspace initialized.';
     vscode.window.showInformationMessage(message);
     logChannelOutput(message, true);
-    await model.refresh(true, false);
+    await model.refresh(true, true);
   }));
 
-  await model.refresh(false, false);
+  await model.refresh(true, true);
+  void vscode.commands.executeCommand(`${syncViewId}.focus`);
   await ensureNativeExplorerRoots(model);
 };

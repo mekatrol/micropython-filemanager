@@ -93,6 +93,15 @@ const wait = async (ms: number): Promise<void> => {
   await new Promise((resolve) => setTimeout(resolve, ms));
 };
 
+const isTransientPortLockError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message.toLocaleLowerCase() : String(error).toLocaleLowerCase();
+  return message.includes('cannot lock port')
+    || message.includes('resource temporarily unavailable')
+    || message.includes('access denied')
+    || message.includes('permission denied')
+    || message.includes('device or resource busy');
+};
+
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> => {
   return await new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -723,7 +732,15 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
     }
 
     try {
-      await connectBoardForPath(devicePath, baudRate, true, recoveryMode);
+      try {
+        await connectBoardForPath(devicePath, baudRate, true, recoveryMode);
+      } catch (error) {
+        if (!isTransientPortLockError(error)) {
+          throw error;
+        }
+        await wait(350);
+        await connectBoardForPath(devicePath, baudRate, true, recoveryMode);
+      }
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       const msg = `Failed to connect to board on ${devicePath} @ ${baudRate}${recoveryMode ? ' (recovery mode)' : ''}. ${reason}`;
@@ -908,9 +925,7 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
             `Connect attempt for ${initialRow.devicePath}`
           );
         } catch (error) {
-          const message = error instanceof Error ? error.message.toLocaleLowerCase() : String(error).toLocaleLowerCase();
-          const transientLock = message.includes('cannot lock port') || message.includes('resource temporarily unavailable');
-          if (!transientLock) {
+          if (!isTransientPortLockError(error)) {
             throw error;
           }
           await wait(350);
