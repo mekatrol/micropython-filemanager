@@ -6159,13 +6159,19 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext, f
   }, deviceExplorerAutoRefreshIntervalMs);
   context.subscriptions.push(new vscode.Disposable(() => clearInterval(deviceExplorerAutoRefreshTimer)));
 
-  context.subscriptions.push(onBoardConnectionStateChanged(() => model.refresh(false, false)));
+  context.subscriptions.push(onBoardConnectionStateChanged((connected) => {
+    if (!connected) {
+      void model.refresh(false, false);
+    }
+  }));
   context.subscriptions.push(onBoardConnectionsChanged((snapshots) => {
     const nextConnectedDeviceIds = snapshots.map((item) => item.deviceId).sort((a, b) => a.localeCompare(b));
+    const previousConnectedIds = new Set(lastConnectedDeviceIds);
+    const hasNewConnection = nextConnectedDeviceIds.some((deviceId) => !previousConnectedIds.has(deviceId));
     deviceFsProvider.notifyConnectedDeviceRootsChanged(lastConnectedDeviceIds, nextConnectedDeviceIds);
     lastConnectedDeviceIds = nextConnectedDeviceIds;
     void ensureNativeExplorerRoots(model);
-    void model.refresh(false, false);
+    void model.refresh(hasNewConnection, false);
   }));
   context.subscriptions.push(vscode.workspace.onDidSaveTextDocument((document) => model.handleDocumentSaved(document)));
   context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => void deviceFsProvider.updateWorkingCopyFromDocument(event.document)));
