@@ -702,7 +702,7 @@
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
     "check-types": "tsc --noEmit",
-    "lint": "eslint src",
+    "lint": "npm run check-types && eslint src",
     "test": "vscode-test",
     "arch:prepare": "node -e \"require('fs').mkdirSync('docs/architecture', { recursive: true })\"",
     "arch:dot": "npm run arch:prepare && depcruise --no-config src --include-only \"^src\" --exclude \"^src/test\" --output-type dot > docs/architecture/deps.dot",

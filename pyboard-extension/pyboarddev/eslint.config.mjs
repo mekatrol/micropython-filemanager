@@ -57,7 +57,7 @@ export default [
       'no-unused-vars': 'off',
       'no-var': 'error',
       '@typescript-eslint/no-unused-vars': [
-        isProduction ? 'error' : 'warn',
+        'error',
         {
           argsIgnorePattern: '^_.*$',
           varsIgnorePattern: '^_.*$',

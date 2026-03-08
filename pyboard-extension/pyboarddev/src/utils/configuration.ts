@@ -627,27 +627,3 @@ export const resetDefaultConfiguration = async (): Promise<[PyDeviceConfiguratio
     return [PyDeviceConfigurationResult.Error, e?.toString()];
   }
 };
-
-const _clampNumberUndefinable = (value: number | undefined, min: number, max: number | undefined = undefined): number | undefined => {
-  if (!value) {
-    return undefined;
-  }
-
-  return clampNumber(value, min, max);
-};
-
-const clampNumber = (value: number, min: number, max: number | undefined = undefined): number => {
-  if (isNaN(value)) {
-    return min;
-  }
-
-  if (min && value < min) {
-    return min;
-  }
-
-  if (max && value > max) {
-    return max;
-  }
-
-  return value;
-};

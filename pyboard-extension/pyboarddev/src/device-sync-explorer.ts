@@ -199,11 +199,9 @@ class DeviceSyncModel {
   private nameHistoryByLower: Record<string, string>;
   private lastRefreshError: string | undefined;
   private hasWarnedNoWorkspaceFolder = false;
-  private hasWarnedMissingConfiguration = false;
   private explorerReady = false;
   private hasConfigurationFile = false;
-  private hasSyncFolder = true;
-
+  
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly notifyDeviceFilesChanged?: (relativePaths: string[]) => Promise<void>,
@@ -5310,12 +5308,12 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
         return;
       }
 
-      const candidateRelativePath = this.toRelativeDevicePathForDeleteMatching(uri);
-      if (!candidateRelativePath) {
+      const raw = toRelativePath(uri.path.replace(/^\/+/, ''));
+      if (!raw) {
         return;
       }
 
-      if (!this.matchesDeletedPath(candidateRelativePath, normalisedTarget, includeDescendants)) {
+      if (!this.matchesDeletedPath(raw, normalisedTarget, includeDescendants)) {
         return;
       }
 
@@ -5343,31 +5341,6 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
     }
 
     this.onDidChangeFileEmitter.fire(events);
-  }
-
-  private toRelativeDevicePathForDeleteMatching(uri: vscode.Uri): string {
-    const rawPath = toRelativePath(uri.path.replace(/^\/+/, ''));
-    const segments = rawPath
-      .split('/')
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0);
-    if (segments.length === 0) {
-      return '';
-    }
-
-    // Device document URIs are shaped like /<device-segment>/<relative-path>.
-    const queryDeviceId = new URLSearchParams(uri.query).get('deviceId')?.trim();
-    if (queryDeviceId && segments.length > 1) {
-      segments.shift();
-    } else {
-      const decodedFirst = this.decodeDeviceDeviceSegment(segments[0]);
-      const resolvedDeviceId = decodedFirst ? this.deviceIdFromUriSegment(decodedFirst) : undefined;
-      if (resolvedDeviceId && segments.length > 1) {
-        segments.shift();
-      }
-    }
-
-    return toRelativePath(segments.join('/'));
   }
 
   private toRelativeDevicePath(uri: vscode.Uri, board: NonNullable<ReturnType<typeof getConnectedPyDevice>>): string {
