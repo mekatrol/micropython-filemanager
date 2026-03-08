@@ -15,6 +15,7 @@ import { logChannelOutput } from './output-channel';
 import { getDeviceHostFolderMappings, loadConfiguration } from './utils/configuration';
 import { toRelativePath } from './utils/device-filesystem';
 import { pyDeviceInternalTimeouts } from './constants/timeout-constants';
+import { showErrorMessage, t } from './utils/i18n';
 
 const debugType = 'pydevice';
 const deviceDocumentScheme = 'pydevice-device';
@@ -299,7 +300,7 @@ class PyDeviceDebugAdapter implements vscode.DebugAdapter {
                   description: `${item.devicePath} @ ${item.baudRate}`
                 })),
                 {
-                  placeHolder: 'Multiple mapped devices match this computer folder. Select target device.',
+                  placeHolder: t('Multiple mapped devices match this computer folder. Select target device.'),
                   canPickMany: false,
                   ignoreFocusOut: true
                 }
@@ -404,7 +405,7 @@ class PyDeviceDebugConfigurationProvider implements vscode.DebugConfigurationPro
   private buildDefaultConfig(): vscode.DebugConfiguration | undefined {
     const activeUri = vscode.window.activeTextEditor?.document.uri;
     if (!activeUri || (activeUri.scheme !== 'file' && activeUri.scheme !== deviceDocumentScheme)) {
-      vscode.window.showErrorMessage('Open a computer or device Python file before running.');
+      showErrorMessage('Open a computer or device Python file before running.');
       return undefined;
     }
 

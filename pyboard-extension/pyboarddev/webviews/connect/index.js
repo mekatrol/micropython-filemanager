@@ -13,6 +13,8 @@
     const connectTimeoutMs = typeof initialState.connectAttemptTimeoutMs === 'number'
       ? initialState.connectAttemptTimeoutMs
       : 0;
+    const i18n = initialState.i18n && typeof initialState.i18n === 'object' ? initialState.i18n : {};
+    const msg = (key, fallback) => (typeof i18n[key] === 'string' ? i18n[key] : fallback);
     const unconnectedTbody = document.getElementById('unconnectedRows');
     const connectedTbody = document.getElementById('connectedRows');
     const connectAllButton = document.getElementById('connectAll');
@@ -50,12 +52,12 @@
 
     const operationTitle = (operation) => {
       if (operation === 'connectAll') {
-        return 'Connecting devices';
+        return msg('connectingDevices', 'Connecting devices');
       }
       if (operation === 'disconnectAll') {
-        return 'Disconnecting devices';
+        return msg('disconnectingDevices', 'Disconnecting devices');
       }
-      return 'Probing devices';
+      return msg('probingDevices', 'Probing devices');
     };
 
     const updateProbeModal = (nextState, message, current, total, operation) => {
@@ -69,15 +71,17 @@
       }
       probeModal.classList.remove('hidden');
       probeTitle.textContent = operationTitle(modalOperation);
-      probeStatus.textContent = message || (nextState === 'cancelling' ? 'Cancelling...' : 'Probing...');
+      probeStatus.textContent = message || (nextState === 'cancelling'
+        ? msg('cancelling', 'Cancelling...')
+        : msg('probingDevices', 'Probing devices'));
       const ratio = total > 0 ? Math.max(0, Math.min(1, current / total)) : 0;
       probeProgressBar.style.width = (ratio * 100) + '%';
       if (nextState === 'cancelling') {
         cancelProbeButton.disabled = true;
-        cancelProbeButton.textContent = 'Cancelling...';
+        cancelProbeButton.textContent = msg('cancelling', 'Cancelling...');
       } else {
         cancelProbeButton.disabled = false;
-        cancelProbeButton.textContent = 'Cancel';
+        cancelProbeButton.textContent = msg('cancel', 'Cancel');
       }
     };
 
@@ -88,26 +92,28 @@
           ? Math.max(0, connectTimeoutMs - (Date.now() - startedAt))
           : connectTimeoutMs;
         const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
-        return '<span class="status-wrap"><span class="spinner"></span><span>Connecting... (' + remainingSeconds + 's)</span></span>';
+        return '<span class="status-wrap"><span class="spinner"></span><span>'
+          + msg('connectingWithSeconds', 'Connecting... ({0}s)').replace('{0}', String(remainingSeconds))
+          + '</span></span>';
       }
       if (row.status === status.connected) {
         return '<span class="status-actions">'
-          + '<span class="status-wrap ok"><span class="icon">' + passIconSvg + '</span><span>Connected</span></span>'
-          + '<button type="button" class="link" data-action="disconnect" data-id="' + row.id + '">Disconnect</button>'
+          + '<span class="status-wrap ok"><span class="icon">' + passIconSvg + '</span><span>' + msg('connected', 'Connected') + '</span></span>'
+          + '<button type="button" class="link" data-action="disconnect" data-id="' + row.id + '">' + msg('disconnect', 'Disconnect') + '</button>'
           + '</span>';
       }
       if (row.status === status.error) {
         const errText = row.errorText ? ' - ' + row.errorText : '';
         return '<span class="status-actions">'
-          + '<span class="status-wrap err"><span class="icon">' + warningIconSvg + '</span><span>Error' + errText + '</span></span>'
-          + '<button type="button" class="link" data-action="connect" data-id="' + row.id + '">Retry</button>'
+          + '<span class="status-wrap err"><span class="icon">' + warningIconSvg + '</span><span>' + msg('error', 'Error') + errText + '</span></span>'
+          + '<button type="button" class="link" data-action="connect" data-id="' + row.id + '">' + msg('retry', 'Retry') + '</button>'
           + '</span>';
       }
       if (row.status === status.notConnected) {
-        const notConnectedText = row.errorText || 'Not connected';
+        const notConnectedText = row.errorText || msg('notConnected', 'Not connected');
         return '<span class="status-wrap secondary-text"><span class="icon">' + disconnectedIconSvg + '</span><span>' + notConnectedText + '</span></span>';
       }
-      return '<button type="button" class="link" data-action="connect" data-id="' + row.id + '">Connect</button>';
+      return '<button type="button" class="link" data-action="connect" data-id="' + row.id + '">' + msg('connect', 'Connect') + '</button>';
     };
 
     const syncConnectingTimers = (incomingRows) => {
@@ -164,7 +170,7 @@
           const nameHtml = row.deviceName
             ? row.deviceName
             : (isConnectedRow(row)
-              ? ('<button type="button" class="link" data-action="set-name" data-id="' + row.id + '">Set device name</button>')
+              ? ('<button type="button" class="link" data-action="set-name" data-id="' + row.id + '">' + msg('setDeviceName', 'Set device name') + '</button>')
               : '');
           tr.innerHTML =
             '<td class="name">' + nameHtml + '</td>' +

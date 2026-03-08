@@ -7,16 +7,18 @@
       initialState = {};
     }
     let rows = Array.isArray(initialState.rows) ? initialState.rows : [];
+    const i18n = initialState.i18n && typeof initialState.i18n === 'object' ? initialState.i18n : {};
+    const msg = (key, fallback) => (typeof i18n[key] === 'string' ? i18n[key] : fallback);
     const tbody = document.getElementById('rows');
     const toClass = (action) => action === 'create' ? 'action-create' : (action === 'modify' ? 'action-modify' : 'action-delete');
-    const noteText = 'this path is configured to be excluded by default';
+    const noteText = msg('excludedPathNote', 'this path is configured to be excluded by default');
 
     if (rows.length === 0) {
       const tr = document.createElement('tr');
       const td = document.createElement('td');
       td.colSpan = 6;
       td.className = 'empty';
-      td.textContent = 'Nothing needs synchronisation';
+      td.textContent = msg('nothingToSynchronise', 'Nothing needs synchronisation');
       tr.appendChild(td);
       tbody.appendChild(tr);
     } else {
@@ -56,7 +58,7 @@
 
         const statusTd = document.createElement('td');
         statusTd.className = 'status status-pending';
-        statusTd.textContent = row.checked ? 'pending' : 'skipped';
+        statusTd.textContent = row.checked ? msg('pending', 'pending') : msg('skipped', 'skipped');
         statusTd.dataset.status = 'pending';
         statusTd.dataset.id = row.id;
         tr.appendChild(statusTd);
@@ -88,7 +90,7 @@
         const id = checkbox.dataset.id;
         const statusCell = document.querySelector('td.status[data-id="' + id + '"]');
         if (statusCell) {
-          statusCell.textContent = checkbox.checked ? 'pending' : 'skipped';
+          statusCell.textContent = checkbox.checked ? msg('pending', 'pending') : msg('skipped', 'skipped');
           statusCell.className = 'status ' + (checkbox.checked ? 'status-pending' : 'status-skipped');
         }
       });

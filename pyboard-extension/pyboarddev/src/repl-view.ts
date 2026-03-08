@@ -7,10 +7,11 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConnectedPyDevice, getConnectedPyDevices, onBoardConnectionsChanged } from './commands/connect-board-command';
 import { pyDeviceTimeoutSettings } from './constants/timeout-constants';
-import { createWebviewNonce, getWebviewAssetUri, loadWebviewTemplate } from './utils/webview-template';
+import { createWebviewNonce, escapeJsonForHtml, getWebviewAssetUri, loadWebviewTemplate } from './utils/webview-template';
 import { configurationFileName, getDeviceNames, loadConfiguration, onPyDeviceConfigurationUpdated } from './utils/configuration';
 import { getTimeoutSettingMs } from './utils/timeout-settings';
 import { getWorkspaceCacheValue, setWorkspaceCacheValue } from './utils/workspace-cache';
+import { t } from './utils/i18n';
 
 const openReplCommandId = 'mekatrol.pydevice.openrepl';
 const clearReplCommandId = 'mekatrol.pydevice.clearrepl';
@@ -603,12 +604,33 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     const template = loadWebviewTemplate(this.context.extensionUri, 'repl');
     const cssUri = getWebviewAssetUri(webview, this.context.extensionUri, 'repl', 'index.css');
     const scriptUri = getWebviewAssetUri(webview, this.context.extensionUri, 'repl', 'index.js');
+    const initialState = escapeJsonForHtml({
+      i18n: {
+        noConnectedDevices: t('No connected devices.'),
+        noActiveDevice: t('No active device.'),
+        reopenPort: t('Reopen Port'),
+        reopenPortNamed: t('Reopen {0}'),
+        reopeningPortNamed: t('Reopening {0}...'),
+        portLabelFallback: t('Port')
+      }
+    });
 
     return template
       .replace('__CSP_SOURCE__', webview.cspSource)
       .replaceAll('__NONCE__', nonce)
       .replace('__CSS_URI__', cssUri.toString())
-      .replace('__SCRIPT_URI__', scriptUri.toString());
+      .replace('__SCRIPT_URI__', scriptUri.toString())
+      .replace('__INITIAL_STATE__', initialState)
+      .replace('__CTRL_C_ARIA__', t('Send Ctrl-C to device'))
+      .replace('__CTRL_D_ARIA__', t('Send Ctrl-D to device'))
+      .replace('__CTRL_E_ARIA__', t('Send Ctrl-E to device'))
+      .replace('__REOPEN_PORT_ARIA__', t('Close and reopen serial port'))
+      .replace('__CTRL_C__', t('Ctrl-C Interrupt'))
+      .replace('__CTRL_D__', t('Ctrl-D Soft reset'))
+      .replace('__CTRL_E__', t('Ctrl-E Paste mode'))
+      .replace('__REOPEN_PORT__', t('Reopen Port'))
+      .replace('__REPL_INPUT_ARIA__', t('REPL command input'))
+      .replace('__RUNNING__', t('Running...'));
   }
 }
 

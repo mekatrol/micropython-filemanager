@@ -10,25 +10,25 @@
 <body>
   <div class="wrap">
     <h2>__TITLE__</h2>
-    <div class="direction">Sync direction: __DIRECTION__</div>
-    <p class="hint">Unchecking a folder unchecks all children. Checking a folder does not auto-check children.</p>
+    <div class="direction">__SYNC_DIRECTION__ __DIRECTION__</div>
+    <p class="hint">__HINT__</p>
     <table>
       <thead>
         <tr>
           <th class="check"></th>
-          <th class="action">Action</th>
-          <th>Path</th>
+          <th class="action">__ACTION__</th>
+          <th>__PATH__</th>
           <th></th>
-          <th class="status">Status</th>
+          <th class="status">__STATUS__</th>
           <th class="error"></th>
         </tr>
       </thead>
       <tbody id="rows"></tbody>
     </table>
     <div class="buttons">
-      <button id="cancel" class="secondary">Cancel</button>
-      <button id="continue">Continue</button>
-      <button id="close" class="secondary" style="display:none">Close</button>
+      <button id="cancel" class="secondary">__CANCEL__</button>
+      <button id="continue">__CONTINUE__</button>
+      <button id="close" class="secondary" style="display:none">__CLOSE__</button>
     </div>
     <p id="summary" class="hint" style="display:none; margin-top:12px;"></p>
   </div>

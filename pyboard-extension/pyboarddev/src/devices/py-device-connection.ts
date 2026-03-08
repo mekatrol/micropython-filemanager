@@ -8,6 +8,7 @@ import { logChannelOutput } from '../output-channel';
 import { emitPyDeviceLoggerEvent } from '../pydevice-logger-events';
 import { pyDeviceInternalTimeouts, pyDeviceTimeoutSettings } from '../constants/timeout-constants';
 import { getTimeoutSettingMs, resolveTimeoutMs } from '../utils/timeout-settings';
+import { showErrorMessage } from '../utils/i18n';
 import { PyDeviceIOEvent } from './py-device-io-event';
 import { PyDeviceRuntimeInfo } from './py-device-runtime-info';
 export class PyDeviceConnection {
@@ -811,7 +812,7 @@ export class PyDeviceConnection {
     const detail = error instanceof Error ? error.message : String(error);
     const message = `${context}: ${detail}`;
     if (this.reportErrorsToUser && this.shouldSurfaceErrorToUser(message)) {
-      vscode.window.showErrorMessage(message);
+      showErrorMessage(message);
     }
     logChannelOutput(message, true);
     return new Error(message);

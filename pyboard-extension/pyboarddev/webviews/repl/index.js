@@ -1,4 +1,13 @@
     const vscode = acquireVsCodeApi();
+    const initialStateElement = document.getElementById('initial-state');
+    let initialState = {};
+    try {
+      initialState = initialStateElement ? JSON.parse(initialStateElement.textContent || '{}') : {};
+    } catch {
+      initialState = {};
+    }
+    const i18n = initialState.i18n && typeof initialState.i18n === 'object' ? initialState.i18n : {};
+    const msg = (key, fallback) => (typeof i18n[key] === 'string' ? i18n[key] : fallback);
     let currentState = { devices: [], activeDeviceId: undefined };
 
     const tabsEl = document.getElementById('tabs');
@@ -20,17 +29,18 @@
 
     const renderReopenPortButton = (active) => {
       if (!active) {
-        reopenPortButtonEl.textContent = 'Reopen Port';
+        reopenPortButtonEl.textContent = msg('reopenPort', 'Reopen Port');
         return;
       }
 
-      const portLabel = active.portLabel || active.devicePath || 'Port';
+      const portLabel = active.portLabel || active.devicePath || msg('portLabelFallback', 'Port');
       if (active.isPortRestarting) {
-        reopenPortButtonEl.innerHTML = '<span class="spinner"></span> Reopening ' + portLabel + '...';
+        reopenPortButtonEl.innerHTML = '<span class="spinner"></span> '
+          + msg('reopeningPortNamed', 'Reopening {0}...').replace('{0}', portLabel);
         return;
       }
 
-      reopenPortButtonEl.textContent = 'Reopen ' + portLabel;
+      reopenPortButtonEl.textContent = msg('reopenPortNamed', 'Reopen {0}').replace('{0}', portLabel);
     };
 
     const resetHistoryCursor = (deviceId, nextLength) => {
@@ -122,7 +132,7 @@
     const render = () => {
       tabsEl.innerHTML = '';
       if (currentState.devices.length === 0) {
-        outputEl.textContent = 'No connected devices.';
+        outputEl.textContent = msg('noConnectedDevices', 'No connected devices.');
         promptRowEl.classList.add('disabled');
         inputEl.disabled = true;
         busyIndicatorEl.classList.add('hidden');
@@ -163,7 +173,7 @@
 
       const active = getActiveDevice();
       if (!active) {
-        outputEl.textContent = 'No active device.';
+        outputEl.textContent = msg('noActiveDevice', 'No active device.');
         promptRowEl.classList.add('disabled');
         inputEl.disabled = true;
         busyIndicatorEl.classList.add('hidden');

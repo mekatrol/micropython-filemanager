@@ -51,7 +51,7 @@ class ExtensionStatusViewProvider implements vscode.TreeDataProvider<ExtensionSt
           '[ Soft Reboot Device ]',
           'debug-restart',
           'Click to soft reboot one connected device',
-          { command: softRebootCommandId, title: 'Soft reboot device' }
+          { command: softRebootCommandId, title: vscode.l10n.t('Soft reboot device') }
         )
       );
     }

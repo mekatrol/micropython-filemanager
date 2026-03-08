@@ -23,6 +23,7 @@ import { renderConnectHtml } from './connect-webview';
 import { emitPyDeviceLoggerEvent } from '../pydevice-logger-events';
 import { pyDeviceInternalTimeouts, pyDeviceTimeoutSettings } from '../constants/timeout-constants';
 import { getTimeoutSettingMs } from '../utils/timeout-settings';
+import { showErrorMessage, showInformationMessage, showWarningMessage, t } from '../utils/i18n';
 
 const reconnectDevicePathsStateKey = 'reconnectDevicePaths';
 const defaultBaudRate = 115200;
@@ -88,7 +89,7 @@ const getDistinctConfiguredDeviceNames = (namesByDeviceId: Record<string, string
       .join('; ');
     const message = `Duplicate device names detected in .pydevice/config.json. ${summary}`;
     logChannelOutput(message, true);
-    void vscode.window.showWarningMessage(message);
+    void showWarningMessage(message);
   }
 
   return distinct;
@@ -150,7 +151,7 @@ const readBoardRuntimeInfoWithRetries = async (
   const reason = lastError instanceof Error ? lastError.message : String(lastError);
   const message = `Connected, but failed to read board runtime info for ${devicePath} after ${attempts} attempt(s): ${reason}`;
   logChannelOutput(message, true);
-  void vscode.window.showWarningMessage(message);
+  void showWarningMessage(message);
   return undefined;
 };
 
@@ -189,7 +190,7 @@ const readBoardRuntimeInfoWithRecovery = async (
   const reason = lastError instanceof Error ? lastError.message : String(lastError);
   const message = `Recovery connect: failed to read board runtime info for ${devicePath} after ${runtimeInfoRecoveryProbeAttempts + runtimeInfoRecoveryRebootAttempts} attempt(s): ${reason}`;
   logChannelOutput(message, true);
-  void vscode.window.showWarningMessage(message);
+  void showWarningMessage(message);
   return undefined;
 };
 
@@ -235,7 +236,7 @@ const saveDirtyDeviceDocumentsBeforeDisconnect = async (deviceId?: string): Prom
     return true;
   }
 
-  const action = await vscode.window.showWarningMessage(
+  const action = await showWarningMessage(
     `You have ${dirtyDocuments.length} unsaved device file(s). Save all to device before disconnecting?`,
     { modal: true },
     'Save & Disconnect'
@@ -250,7 +251,7 @@ const saveDirtyDeviceDocumentsBeforeDisconnect = async (deviceId?: string): Prom
     const saved = await document.save();
     if (!saved || document.isDirty) {
       const msg = `Could not save device file before disconnect: ${document.uri.path}`;
-      vscode.window.showErrorMessage(msg);
+      showErrorMessage(msg);
       logChannelOutput(msg, true);
       return false;
     }
@@ -395,7 +396,7 @@ const connectBoardForPath = async (
   if (existingForPath) {
     if (showMessages) {
       const msg = `Device already connected: ${existingForPath.deviceId} on ${devicePath}.`;
-      vscode.window.showInformationMessage(msg);
+      showInformationMessage(msg);
       logChannelOutput(msg, true);
     }
     return existingForPath;
@@ -479,7 +480,7 @@ const connectBoardForPath = async (
         const reason = lastError instanceof Error ? lastError.message : String(lastError);
         const message = `Runtime info remained unavailable for ${state.deviceId} after ${runtimeInfoBackgroundRetryAttempts} background attempt(s): ${reason}`;
         logChannelOutput(message, true);
-        void vscode.window.showWarningMessage(message);
+        void showWarningMessage(message);
       }
     })();
   }
@@ -498,7 +499,7 @@ export const closeConnectedPyDeviceByDeviceId = async (
   if (!state) {
     if (showSuccessMessage) {
       const msg = `No active board connection found for ${deviceId}.`;
-      vscode.window.showInformationMessage(msg);
+      showInformationMessage(msg);
       logChannelOutput(msg, true);
     }
     return true;
@@ -573,7 +574,7 @@ export const closeConnectedPyDevice = async (
   if (!active) {
     if (showSuccessMessage) {
       const msg = 'No active board connection to close.';
-      vscode.window.showInformationMessage(msg);
+      showInformationMessage(msg);
       logChannelOutput(msg, true);
     }
     return true;
@@ -656,7 +657,7 @@ const pickSerialPortToConnect = async (
 
   if (candidatePorts.length === 0) {
     const msg = 'No additional serial devices available to connect.';
-    vscode.window.showWarningMessage(msg);
+    showWarningMessage(msg);
     logChannelOutput(msg, true);
     return undefined;
   }
@@ -686,7 +687,7 @@ const pickSerialPortToConnect = async (
   });
 
   const selected = await vscode.window.showQuickPick(items, {
-    placeHolder: 'Select a serial port to connect',
+    placeHolder: t('Select a serial port to connect'),
     canPickMany: false,
     ignoreFocusOut: true
   });
@@ -716,7 +717,7 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         const msg = `Unable to list serial ports. ${reason}`;
-        vscode.window.showErrorMessage(msg);
+        showErrorMessage(msg);
         logChannelOutput(msg, true);
         return;
       }
@@ -728,13 +729,13 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
 
     if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
       const workspaceWarning = 'No workspace folder is open. Device can connect, but it will not appear in PyDevice Explorer until you open a workspace folder.';
-      vscode.window.showWarningMessage(workspaceWarning);
+      showWarningMessage(workspaceWarning);
       logChannelOutput(workspaceWarning, true);
     }
 
     if (getConnectedPyDeviceByPortPath(devicePath)) {
       const msg = `Device on ${devicePath} is already connected. Choose another serial port.`;
-      vscode.window.showWarningMessage(msg);
+      showWarningMessage(msg);
       logChannelOutput(msg, true);
       return;
     }
@@ -752,7 +753,7 @@ export const initConnectBoardCommand = (context: vscode.ExtensionContext) => {
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       const msg = `Failed to connect to board on ${devicePath} @ ${baudRate}${recoveryMode ? ' (recovery mode)' : ''}. ${reason}`;
-      vscode.window.showErrorMessage(msg);
+      showErrorMessage(msg);
       logChannelOutput(msg, true);
     }
   });
@@ -784,7 +785,7 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       const msg = `Unable to list serial ports. ${reason}`;
-      vscode.window.showErrorMessage(msg);
+      showErrorMessage(msg);
       logChannelOutput(msg, true);
       return;
     }
@@ -1247,7 +1248,7 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
           message: 'Probe aborted because serial port listing failed.',
           details: { error: reason }
         });
-        vscode.window.showErrorMessage(msg);
+        showErrorMessage(msg);
         logChannelOutput(msg, true);
         updateProbeStatus('hidden');
         probeInProgress = false;
@@ -1670,7 +1671,7 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
           await refreshConfiguredMappings();
           const suggested = row.deviceName || '';
           const name = await vscode.window.showInputBox({
-            title: 'Set Device Name',
+            title: t('Set Device Name'),
             prompt: `Set device name for ${row.deviceId}`,
             value: suggested,
             ignoreFocusOut: true,
@@ -1703,7 +1704,7 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
           } catch (error) {
             const reason = error instanceof Error ? error.message : String(error);
             const msg = `Failed to set device name for ${row.deviceId}. ${reason}`;
-            vscode.window.showErrorMessage(msg);
+            showErrorMessage(msg);
             logChannelOutput(msg, true);
           }
         })();
@@ -1739,7 +1740,7 @@ export const initDisconnectBoardCommand = (context: vscode.ExtensionContext) => 
       ? arg
       : typeof arg === 'object' && arg && 'deviceId' in arg && typeof (arg as { deviceId?: unknown }).deviceId === 'string'
         ? (arg as { deviceId: string }).deviceId
-        : await pickConnectedDeviceId('Select a connected device to disconnect');
+        : await pickConnectedDeviceId(t('Select a connected device to disconnect'));
 
     if (!targetDeviceId) {
       return;
@@ -1757,16 +1758,16 @@ export const initToggleBoardConnectionCommand = (context: vscode.ExtensionContex
       const action = await vscode.window.showQuickPick(
         [
           {
-            label: 'Connect another board',
-            description: 'Select a serial port and add another active connection'
+            label: t('Connect another board'),
+            description: t('Select a serial port and add another active connection')
           },
           {
-            label: 'Disconnect a board',
-            description: 'Choose one connected board to disconnect'
+            label: t('Disconnect a board'),
+            description: t('Choose one connected board to disconnect')
           }
         ],
         {
-          placeHolder: 'Manage connected boards',
+          placeHolder: t('Manage connected boards'),
           canPickMany: false,
           ignoreFocusOut: true
         }
@@ -1776,12 +1777,12 @@ export const initToggleBoardConnectionCommand = (context: vscode.ExtensionContex
         return;
       }
 
-      if (action.label === 'Connect another board') {
+      if (action.label === t('Connect another board')) {
         await vscode.commands.executeCommand('mekatrol.pydevice.connectboard', { forcePickPort: true });
         return;
       }
 
-      const targetDeviceId = await pickConnectedDeviceId('Select a connected device to disconnect');
+      const targetDeviceId = await pickConnectedDeviceId(t('Select a connected device to disconnect'));
       if (!targetDeviceId) {
         return;
       }
@@ -1840,18 +1841,18 @@ export const initSetAutoReconnectCommand = (context: vscode.ExtensionContext) =>
     const selected = await vscode.window.showQuickPick(
       [
         {
-          label: 'Enable',
-          description: 'Reconnect previously connected devices on startup when the last session had active connections',
+          label: t('Enable'),
+          description: t('Reconnect previously connected devices on startup when the last session had active connections'),
           picked: currentValue
         },
         {
-          label: 'Disable',
-          description: 'Do not auto reconnect on startup',
+          label: t('Disable'),
+          description: t('Do not auto reconnect on startup'),
           picked: !currentValue
         }
       ],
       {
-        placeHolder: 'Set auto reconnect behavior'
+        placeHolder: t('Set auto reconnect behavior')
       }
     );
 
@@ -1859,11 +1860,11 @@ export const initSetAutoReconnectCommand = (context: vscode.ExtensionContext) =>
       return;
     }
 
-    const enabled = selected.label === 'Enable';
+    const enabled = selected.label === t('Enable');
     await setWorkspaceCacheValue(autoReconnectDevicesCacheKey, enabled);
 
     const msg = `Auto reconnect is now ${enabled ? 'enabled' : 'disabled'}.`;
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     logChannelOutput(msg, true);
   });
 
@@ -1880,7 +1881,7 @@ export const initSoftRebootBoardCommand = (context: vscode.ExtensionContext) => 
 
     if (!targetDeviceId) {
       const msg = 'Connect to a board before soft rebooting.';
-      vscode.window.showWarningMessage(msg);
+      showWarningMessage(msg);
       logChannelOutput(msg, true);
       return;
     }
@@ -1888,14 +1889,14 @@ export const initSoftRebootBoardCommand = (context: vscode.ExtensionContext) => 
     const state = boardRegistry.getByDeviceId(targetDeviceId);
     if (!state) {
       const msg = `Device ${targetDeviceId} is not connected.`;
-      vscode.window.showWarningMessage(msg);
+      showWarningMessage(msg);
       logChannelOutput(msg, true);
       return;
     }
 
     if (state.executionCount > 0) {
       const msg = `Device ${targetDeviceId} is currently executing. Stop execution before soft rebooting.`;
-      vscode.window.showWarningMessage(msg);
+      showWarningMessage(msg);
       logChannelOutput(msg, true);
       return;
     }
@@ -1904,7 +1905,7 @@ export const initSoftRebootBoardCommand = (context: vscode.ExtensionContext) => 
     if (activeDebugSession?.type === pydeviceDebugType) {
       await vscode.debug.stopDebugging(activeDebugSession);
       const msg = 'Stopped active debug session. Device will soft reboot on debug termination.';
-      vscode.window.showInformationMessage(msg);
+      showInformationMessage(msg);
       logChannelOutput(msg, true);
       return;
     }
@@ -1912,12 +1913,12 @@ export const initSoftRebootBoardCommand = (context: vscode.ExtensionContext) => 
     try {
       await state.board.softReboot();
       const msg = `Device soft reboot complete for ${targetDeviceId}.`;
-      vscode.window.showInformationMessage(msg);
+      showInformationMessage(msg);
       logChannelOutput(msg, true);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       const msg = `Device soft reboot failed for ${targetDeviceId}. ${reason}`;
-      vscode.window.showErrorMessage(msg);
+      showErrorMessage(msg);
       logChannelOutput(msg, true);
     }
   });

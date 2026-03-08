@@ -8,6 +8,7 @@ import { logChannelOutput } from '../output-channel';
 import { listAllSerialPorts } from '../utils/serial-port';
 import { getConnectedPyDeviceByPortPath } from './connect-board-command';
 import { ProbedSerialDevice, SerialDeviceProber } from '../devices/serial-device-prober';
+import { showErrorMessage, showWarningMessage, t } from '../utils/i18n';
 
 const autoDetectDevicesCommandId = 'mekatrol.pydevice.autodetectdevices';
 const defaultBaudRate = 115200;
@@ -20,7 +21,7 @@ interface DetectedDevicePickItem extends vscode.QuickPickItem {
 
 const buildDeviceDetails = (device: DetectedDevice): string => {
   const parts = [device.port.manufacturer, `VID:${device.port.vendorId}`, `PID:${device.port.productId}`].filter(Boolean);
-  return parts.length > 0 ? parts.join(' | ') : 'No USB metadata';
+  return parts.length > 0 ? parts.join(' | ') : t('No USB metadata');
 };
 
 export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): void => {
@@ -31,7 +32,7 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
       detectedDevices = await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
-          title: 'PyDevice: Detecting serial devices...',
+          title: t('PyDevice: Detecting serial devices...'),
           cancellable: false
         },
         async (progress) => {
@@ -62,14 +63,14 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       const msg = `Auto detect failed. ${reason}`;
-      vscode.window.showErrorMessage(msg);
+      showErrorMessage(msg);
       logChannelOutput(msg, true);
       return;
     }
 
     if (detectedDevices.length === 0) {
       const msg = 'No accessible serial devices detected (connected ports are skipped).';
-      vscode.window.showWarningMessage(msg);
+      showWarningMessage(msg);
       logChannelOutput(msg, true);
       return;
     }
@@ -78,14 +79,14 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
       label: device.port.path,
       description: device.runtimeInfo
         ? `${device.runtimeInfo.banner}${device.runtimeInfo.uniqueId ? ` | UID:${device.runtimeInfo.uniqueId}` : ''}`
-        : 'Detected device',
+        : t('Detected device'),
       detail: `${buildDeviceDetails(device)}${device.runtimeInfo?.uniqueId ? ` | Unique ID: ${device.runtimeInfo.uniqueId}` : ''}`,
       picked: false,
       device
     }));
 
     const selected = await vscode.window.showQuickPick(items, {
-      placeHolder: 'Select a detected serial device to connect',
+      placeHolder: t('Select a detected serial device to connect'),
       canPickMany: false,
       ignoreFocusOut: true
     });

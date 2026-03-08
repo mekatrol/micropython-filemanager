@@ -4,56 +4,56 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src __CSP_SOURCE__; script-src 'nonce-__NONCE__';">
-  <title>Device connect</title>
+  <title>__TITLE__</title>
   <link rel="stylesheet" href="__CSS_URI__">
 </head>
 <body>
   <div class="wrap">
-    <h2>Device connect</h2>
-    <p class="hint">Connect individual rows or use Connect all.</p>
+    <h2>__TITLE__</h2>
+    <p class="hint">__HINT__</p>
     <div class="table-section">
-      <h3 class="table-title">Unconnected serial ports</h3>
+      <h3 class="table-title">__UNCONNECTED_PORTS_TITLE__</h3>
       <table>
         <thead>
           <tr>
-            <th class="unconnectedPort">Serial Port</th>
-            <th class="unconnectedStatus">Status</th>
+            <th class="unconnectedPort">__SERIAL_PORT__</th>
+            <th class="unconnectedStatus">__STATUS__</th>
           </tr>
         </thead>
         <tbody id="unconnectedRows"></tbody>
       </table>
     </div>
     <div class="table-section">
-      <h3 class="table-title">Connected serial ports</h3>
+      <h3 class="table-title">__CONNECTED_PORTS_TITLE__</h3>
       <table>
         <thead>
           <tr>
-            <th class="name">Device Name</th>
-            <th class="id">Device ID</th>
-            <th class="port">Serial Port</th>
-            <th class="deviceInfo">Device Info</th>
-            <th class="status">Status</th>
+            <th class="name">__DEVICE_NAME__</th>
+            <th class="id">__DEVICE_ID__</th>
+            <th class="port">__SERIAL_PORT__</th>
+            <th class="deviceInfo">__DEVICE_INFO__</th>
+            <th class="status">__STATUS__</th>
           </tr>
         </thead>
         <tbody id="connectedRows"></tbody>
       </table>
     </div>
     <div class="buttons">
-      <button id="probeDevices" class="secondary">Probe devices</button>
-      <button id="connectAll">Connect all</button>
-      <button id="disconnectAll" class="secondary">Disconnect all</button>
-      <button id="close" class="secondary">Close</button>
+      <button id="probeDevices" class="secondary">__PROBE_DEVICES__</button>
+      <button id="connectAll">__CONNECT_ALL__</button>
+      <button id="disconnectAll" class="secondary">__DISCONNECT_ALL__</button>
+      <button id="close" class="secondary">__CLOSE__</button>
     </div>
   </div>
-  <div id="probeModal" class="probe-modal hidden" role="dialog" aria-modal="true" aria-label="Probe devices status">
+  <div id="probeModal" class="probe-modal hidden" role="dialog" aria-modal="true" aria-label="__PROBE_STATUS_ARIA__">
     <div class="probe-dialog">
-      <h3 id="probeTitle" class="probe-title">Probing devices</h3>
-      <p id="probeStatus" class="probe-status">Preparing probe...</p>
+      <h3 id="probeTitle" class="probe-title">__PROBING_DEVICES__</h3>
+      <p id="probeStatus" class="probe-status">__PREPARING_PROBE__</p>
       <div class="probe-progress">
         <div id="probeProgressBar" class="probe-progress-bar"></div>
       </div>
       <div class="probe-actions">
-        <button id="cancelProbe" class="secondary">Cancel</button>
+        <button id="cancelProbe" class="secondary">__CANCEL__</button>
       </div>
     </div>
   </div>

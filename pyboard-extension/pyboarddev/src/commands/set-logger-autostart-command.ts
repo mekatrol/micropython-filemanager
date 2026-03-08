@@ -5,6 +5,7 @@
 import * as vscode from 'vscode';
 import { logChannelOutput } from '../output-channel';
 import { getWorkspaceCacheValue, loggerAutoStartCacheKey, setWorkspaceCacheValue } from '../utils/workspace-cache';
+import { showInformationMessage, t } from '../utils/i18n';
 
 export const initSetLoggerAutoStartCommand = (
   context: vscode.ExtensionContext,
@@ -16,18 +17,18 @@ export const initSetLoggerAutoStartCommand = (
     const selected = await vscode.window.showQuickPick(
       [
         {
-          label: 'Enable',
-          description: 'Create and subscribe the PyDevice Logger on extension startup',
+          label: t('Enable'),
+          description: t('Create and subscribe the PyDevice Logger on extension startup'),
           picked: currentValue
         },
         {
-          label: 'Disable',
-          description: 'Do not auto-start the PyDevice Logger on extension startup',
+          label: t('Disable'),
+          description: t('Do not auto-start the PyDevice Logger on extension startup'),
           picked: !currentValue
         }
       ],
       {
-        placeHolder: 'Set logger auto-start behavior'
+        placeHolder: t('Set logger auto-start behavior')
       }
     );
 
@@ -35,12 +36,12 @@ export const initSetLoggerAutoStartCommand = (
       return;
     }
 
-    const enabled = selected.label === 'Enable';
+    const enabled = selected.label === t('Enable');
     await setWorkspaceCacheValue(loggerAutoStartCacheKey, enabled);
     onDidChange?.(enabled);
 
     const msg = `PyDevice Logger auto-start is now ${enabled ? 'enabled' : 'disabled'}.`;
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     logChannelOutput(msg, true);
   });
 

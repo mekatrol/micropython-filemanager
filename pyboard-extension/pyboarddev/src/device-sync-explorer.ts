@@ -43,6 +43,7 @@ import { FileWatcher, FileWatcherEvent } from './utils/file-watcher';
 import { createWebviewNonce, escapeJsonForHtml, getWebviewAssetUri, loadWebviewTemplate } from './utils/webview-template';
 import { syncStateStore } from './sync-state-store';
 import { emitPyDeviceLoggerEvent } from './pydevice-logger-events';
+import { showErrorMessage, showInformationMessage, showWarningMessage, t } from './utils/i18n';
 
 const syncViewId = 'mekatrol.pydevice.syncExplorer';
 const commandRefreshId = 'mekatrol.pydevice.refreshsyncview';
@@ -288,7 +289,7 @@ class DeviceSyncModel {
       if (!this.hasWarnedNoWorkspaceFolder) {
         const message = 'Open a workspace folder to show devices in PyDevice Explorer.';
         this.hasWarnedNoWorkspaceFolder = true;
-        vscode.window.showWarningMessage(message);
+        showWarningMessage(message);
         logChannelOutput(message, true);
       }
       this.computerEntries = [{ relativePath: '', isDirectory: true }];
@@ -308,7 +309,7 @@ class DeviceSyncModel {
       if (!this.hasWarnedMissingConfiguration) {
         const message = `Create "${configurationFileName}" to enable PyDevice Explorer.`;
         this.hasWarnedMissingConfiguration = true;
-        vscode.window.showWarningMessage(message);
+        showWarningMessage(message);
         logChannelOutput(message, true);
       }
       this.computerEntries = [{ relativePath: '', isDirectory: true }];
@@ -403,7 +404,7 @@ class DeviceSyncModel {
       logChannelOutput(`Sync refresh failed: ${message}`, true);
       if (this.lastRefreshError !== message) {
         this.lastRefreshError = message;
-        vscode.window.showErrorMessage(`PyDevice Explorer refresh failed: ${message}`);
+        showErrorMessage(`PyDevice Explorer refresh failed: ${message}`);
       }
     }
   }
@@ -541,7 +542,7 @@ class DeviceSyncModel {
     const selected = await vscode.window.showQuickPick(
       candidates.map((deviceId) => {
         const name = this.getDeviceName(deviceId);
-        const mapping = this.getMappedHostFolder(deviceId) ?? 'not mapped';
+        const mapping = this.getMappedHostFolder(deviceId) ?? t('not mapped');
         return {
           deviceId,
           label: name ?? deviceId,
@@ -572,7 +573,7 @@ class DeviceSyncModel {
       this.logSyncEvent('sync-from-device-skipped', 'Sync from device skipped because no board is connected.', {
         deviceId: this.activeDeviceId
       });
-      vscode.window.showWarningMessage('Connect to a board before syncing from device.');
+      showWarningMessage('Connect to a board before syncing from device.');
       return;
     }
 
@@ -580,7 +581,7 @@ class DeviceSyncModel {
       this.logSyncEvent('sync-from-device-skipped', 'Sync from device skipped because no host folder is mapped.', {
         deviceId: this.activeDeviceId
       });
-      vscode.window.showWarningMessage('Map this device to a computer folder before syncing from device.');
+      showWarningMessage('Map this device to a computer folder before syncing from device.');
       return;
     }
     const deviceEntries = await listDeviceEntries(board);
@@ -681,7 +682,7 @@ class DeviceSyncModel {
         deviceId: this.activeDeviceId,
         totalOperations: syncOperations.length
       });
-      vscode.window.showInformationMessage('Sync from device cancelled.');
+      showInformationMessage('Sync from device cancelled.');
       return;
     }
 
@@ -771,7 +772,7 @@ class DeviceSyncModel {
         ? `Sync from device finished with ${failedCount} error(s).`
         : 'Sync from device complete.';
       await syncDialog.finish(msg);
-      vscode.window.showInformationMessage(msg);
+      showInformationMessage(msg);
       logChannelOutput(msg, true);
       this.logSyncEvent('sync-from-device-completed', msg, {
         deviceId: this.activeDeviceId,
@@ -802,13 +803,13 @@ class DeviceSyncModel {
     const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
       this.logSyncEvent('sync-from-device-node-skipped', 'Scoped sync skipped because no board is connected.', { deviceId });
-      vscode.window.showWarningMessage('Connect to a board before syncing from device.');
+      showWarningMessage('Connect to a board before syncing from device.');
       return;
     }
 
     if (!this.syncRootPath) {
       this.logSyncEvent('sync-from-device-node-skipped', 'Scoped sync skipped because no host folder is mapped.', { deviceId });
-      vscode.window.showWarningMessage('Map this device to a computer folder before syncing from device.');
+      showWarningMessage('Map this device to a computer folder before syncing from device.');
       return;
     }
 
@@ -1004,7 +1005,7 @@ class DeviceSyncModel {
         deviceId,
         totalOperations: syncOperations.length
       });
-      vscode.window.showInformationMessage('Sync from device cancelled.');
+      showInformationMessage('Sync from device cancelled.');
       return;
     }
 
@@ -1098,7 +1099,7 @@ class DeviceSyncModel {
       ? `Sync from device finished with ${failedCount} error(s).`
       : 'Sync from device complete.';
     await syncDialog.finish(msg);
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     logChannelOutput(msg, true);
     this.logSyncEvent('sync-from-device-node-completed', msg, {
       deviceId,
@@ -1124,7 +1125,7 @@ class DeviceSyncModel {
       this.logSyncEvent('sync-to-device-skipped', 'Sync to device skipped because no board is connected.', {
         deviceId: this.activeDeviceId
       });
-      vscode.window.showWarningMessage('Connect to a board before syncing to device.');
+      showWarningMessage('Connect to a board before syncing to device.');
       return;
     }
 
@@ -1132,7 +1133,7 @@ class DeviceSyncModel {
       this.logSyncEvent('sync-to-device-skipped', 'Sync to device skipped because no host folder is mapped.', {
         deviceId: this.activeDeviceId
       });
-      vscode.window.showWarningMessage('Map this device to a computer folder before syncing to device.');
+      showWarningMessage('Map this device to a computer folder before syncing to device.');
       return;
     }
 
@@ -1245,7 +1246,7 @@ class DeviceSyncModel {
         deviceId: this.activeDeviceId,
         totalOperations: syncOperations.length
       });
-      vscode.window.showInformationMessage('Sync to device cancelled.');
+      showInformationMessage('Sync to device cancelled.');
       return;
     }
 
@@ -1322,7 +1323,7 @@ class DeviceSyncModel {
       ? `Sync to device finished with ${failedCount} error(s).`
       : 'Sync to device complete.';
     await syncDialog.finish(msg);
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     logChannelOutput(msg, true);
     this.logSyncEvent('sync-to-device-completed', msg, {
       deviceId: this.activeDeviceId,
@@ -1352,7 +1353,7 @@ class DeviceSyncModel {
     }
     if (this.isNodeExcludedFromSync(targetNode)) {
       const excludedPath = targetNode ? toRelativePath(targetNode.data.relativePath) : '';
-      vscode.window.showInformationMessage(`File is excluded from sync: /${excludedPath}`);
+      showInformationMessage(`File is excluded from sync: /${excludedPath}`);
       return;
     }
     if (targetNode?.data.side === 'computer') {
@@ -1380,7 +1381,7 @@ class DeviceSyncModel {
     }
     if (this.isNodeExcludedFromSync(targetNode)) {
       const excludedPath = targetNode ? toRelativePath(targetNode.data.relativePath) : '';
-      vscode.window.showInformationMessage(`File is excluded from sync: /${excludedPath}`);
+      showInformationMessage(`File is excluded from sync: /${excludedPath}`);
       return;
     }
     if (targetNode?.data.side === 'device') {
@@ -1419,11 +1420,11 @@ class DeviceSyncModel {
     const targetNode = this.resolveTargetNode(node);
     await this.ensureActiveDevice(targetNode);
     if (!targetNode || targetNode.data.isRoot || targetNode.data.isIndicator) {
-      vscode.window.showWarningMessage('Select a file or folder to rename.');
+      showWarningMessage('Select a file or folder to rename.');
       return;
     }
     if (targetNode.data.isLibraryNode) {
-      vscode.window.showWarningMessage('Library root names are derived from mapped host folders. Remove and re-add the mapping to change it.');
+      showWarningMessage('Library root names are derived from mapped host folders. Remove and re-add the mapping to change it.');
       return;
     }
 
@@ -1439,11 +1440,11 @@ class DeviceSyncModel {
     const targetNode = this.resolveTargetNode(node);
     await this.ensureActiveDevice(targetNode);
     if (!targetNode || targetNode.data.isRoot || targetNode.data.isIndicator) {
-      vscode.window.showWarningMessage('Select a file or folder to delete.');
+      showWarningMessage('Select a file or folder to delete.');
       return;
     }
     if (targetNode.data.isLibraryNode) {
-      vscode.window.showWarningMessage('Use "Remove device library folder" to remove a library mapping.');
+      showWarningMessage('Use "Remove device library folder" to remove a library mapping.');
       return;
     }
 
@@ -1528,7 +1529,7 @@ class DeviceSyncModel {
   async pullDeviceNodeAndOpen(node: SyncNode, options?: OpenEditorOptions): Promise<void> {
     const deviceId = await this.ensureActiveDevice(node);
     if (!deviceId || !getConnectedPyDevice(deviceId)) {
-      vscode.window.showWarningMessage('Connect to a board before opening a device file.');
+      showWarningMessage('Connect to a board before opening a device file.');
       return;
     }
 
@@ -1552,7 +1553,7 @@ class DeviceSyncModel {
 
     const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
-      vscode.window.showWarningMessage('Connect to a board before opening a device file.');
+      showWarningMessage('Connect to a board before opening a device file.');
       return;
     }
 
@@ -1561,14 +1562,14 @@ class DeviceSyncModel {
       .sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 
     if (files.length === 0) {
-      vscode.window.showInformationMessage('No device files available to open.');
+      showInformationMessage('No device files available to open.');
       return;
     }
 
     const selected = await vscode.window.showQuickPick(
       files.map((item) => ({ label: item.relativePath })),
       {
-        placeHolder: 'Select a device file to open',
+        placeHolder: t('Select a device file to open'),
         canPickMany: false,
         ignoreFocusOut: true
       }
@@ -1606,7 +1607,7 @@ class DeviceSyncModel {
     const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
       this.logSyncEvent('single-file-sync-diff-skipped', 'Sync file diff request skipped because no board is connected.');
-      vscode.window.showWarningMessage('Connect to a board before comparing a device file.');
+      showWarningMessage('Connect to a board before comparing a device file.');
       return;
     }
 
@@ -1616,14 +1617,14 @@ class DeviceSyncModel {
 
     if (files.length === 0) {
       this.logSyncEvent('single-file-sync-diff-skipped', 'Sync file diff request skipped because device has no files.');
-      vscode.window.showInformationMessage('No device files available to diff.');
+      showInformationMessage('No device files available to diff.');
       return;
     }
 
     const selected = await vscode.window.showQuickPick(
       files.map((item) => ({ label: item.relativePath })),
       {
-        placeHolder: 'Select a device file to diff',
+        placeHolder: t('Select a device file to diff'),
         canPickMany: false,
         ignoreFocusOut: true
       }
@@ -1654,7 +1655,7 @@ class DeviceSyncModel {
     const deviceId = await this.ensureActiveDevice(targetNode);
     if (!deviceId) {
       this.logSyncEvent('sync-view-skipped', 'Sync view request skipped because no device is selected.');
-      vscode.window.showWarningMessage('Select a device before opening sync files.');
+      showWarningMessage('Select a device before opening sync files.');
       return;
     }
     this.logSyncEvent('sync-view-started', 'Opening sync view for device.', {
@@ -1665,7 +1666,7 @@ class DeviceSyncModel {
     const board = getConnectedPyDevice(deviceId);
     if (!board) {
       this.logSyncEvent('sync-view-skipped', 'Sync view request skipped because no board is connected.', { deviceId });
-      vscode.window.showWarningMessage('Connect to a board before opening sync files.');
+      showWarningMessage('Connect to a board before opening sync files.');
       return;
     }
 
@@ -1916,15 +1917,15 @@ class DeviceSyncModel {
     const deviceId = this.activeDeviceId;
     const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
-      vscode.window.showWarningMessage('Connect to a board before creating a device file.');
+      showWarningMessage('Connect to a board before creating a device file.');
       return;
     }
 
     const parentPath = this.getDeviceCreateParentPath(node);
     const fileName = await vscode.window.showInputBox({
-      title: 'Create Device File',
+      title: t('Create Device File'),
       prompt: parentPath ? `Create in /${parentPath}` : 'Create in /',
-      placeHolder: 'filename.py',
+      placeHolder: t('filename.py'),
       ignoreFocusOut: true,
       validateInput: (value) => this.validateDeviceName(value)
     });
@@ -1940,7 +1941,7 @@ class DeviceSyncModel {
     await this.revealNode({ side: 'device', relativePath: parentPath, deviceId });
     if (!confirmed) {
       const warning = `Timed out waiting for created device file: /${relativePath}`;
-      vscode.window.showWarningMessage(warning);
+      showWarningMessage(warning);
       logChannelOutput(warning, true);
       return;
     }
@@ -1960,7 +1961,7 @@ class DeviceSyncModel {
     await this.pullDeviceNodeAndOpen(createdNode);
 
     const msg = `Created device file: /${relativePath}`;
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
 
@@ -1969,15 +1970,15 @@ class DeviceSyncModel {
     const deviceId = this.activeDeviceId;
     const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
-      vscode.window.showWarningMessage('Connect to a board before creating a device folder.');
+      showWarningMessage('Connect to a board before creating a device folder.');
       return;
     }
 
     const parentPath = this.getDeviceCreateParentPath(node);
     const folderName = await vscode.window.showInputBox({
-      title: 'Create Device Folder',
+      title: t('Create Device Folder'),
       prompt: parentPath ? `Create in /${parentPath}` : 'Create in /',
-      placeHolder: 'folder',
+      placeHolder: t('folder'),
       ignoreFocusOut: true,
       validateInput: (value) => this.validateDeviceName(value)
     });
@@ -1993,13 +1994,13 @@ class DeviceSyncModel {
     await this.revealNode({ side: 'device', relativePath: parentPath, deviceId });
     if (!confirmed) {
       const warning = `Timed out waiting for created device folder: /${relativePath}`;
-      vscode.window.showWarningMessage(warning);
+      showWarningMessage(warning);
       logChannelOutput(warning, true);
       return;
     }
 
     const msg = `Created device folder: /${relativePath}`;
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
 
@@ -2007,13 +2008,13 @@ class DeviceSyncModel {
     node = this.resolveTargetNode(node);
     await this.ensureActiveDevice(node);
     if (!node || node.data.side !== 'device') {
-      vscode.window.showWarningMessage('Select a device file or folder to rename.');
+      showWarningMessage('Select a device file or folder to rename.');
       return;
     }
 
     const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
-      vscode.window.showWarningMessage('Connect to a board before renaming device items.');
+      showWarningMessage('Connect to a board before renaming device items.');
       return;
     }
 
@@ -2044,7 +2045,7 @@ class DeviceSyncModel {
     }
 
     const msg = `Renamed device path: /${currentPath} -> /${nextPath}`;
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
 
@@ -2052,18 +2053,18 @@ class DeviceSyncModel {
     node = this.resolveTargetNode(node);
     await this.ensureActiveDevice(node);
     if (!node || node.data.side !== 'device') {
-      vscode.window.showWarningMessage('Select a device file or folder to delete.');
+      showWarningMessage('Select a device file or folder to delete.');
       return;
     }
 
     const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
-      vscode.window.showWarningMessage('Connect to a board before deleting device items.');
+      showWarningMessage('Connect to a board before deleting device items.');
       return;
     }
 
     const targetPath = toRelativePath(node.data.relativePath);
-    const action = await vscode.window.showWarningMessage(
+    const action = await showWarningMessage(
       `Delete device ${node.data.isDirectory ? 'folder' : 'file'} "/${targetPath}"?`,
       { modal: true },
       'Delete'
@@ -2078,7 +2079,7 @@ class DeviceSyncModel {
       if (this.isDevicePathNotFoundError(error)) {
         await this.refresh(true, false);
         const msg = `Device path already missing: /${targetPath}`;
-        vscode.window.showInformationMessage(msg);
+        showInformationMessage(msg);
         logChannelOutput(msg, true);
         return;
       }
@@ -2093,7 +2094,7 @@ class DeviceSyncModel {
     await this.refresh(true, false);
 
     const msg = `Deleted device path: /${targetPath}`;
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
 
@@ -2497,24 +2498,24 @@ class DeviceSyncModel {
     const targetNode = this.resolveTargetNode(node);
     await this.ensureActiveDevice(targetNode);
     if (!targetNode || targetNode.data.isRoot || targetNode.data.isIndicator) {
-      vscode.window.showWarningMessage('Select a file or folder to exclude from sync.');
+      showWarningMessage('Select a file or folder to exclude from sync.');
       return;
     }
 
     const deviceId = this.getNodeDeviceId(targetNode);
     if (!deviceId) {
-      vscode.window.showWarningMessage('Select a mapped device path to exclude from sync.');
+      showWarningMessage('Select a mapped device path to exclude from sync.');
       return;
     }
 
     const relativePath = toRelativePath(targetNode.data.relativePath);
     if (!relativePath) {
-      vscode.window.showWarningMessage('Select a file or folder to exclude from sync.');
+      showWarningMessage('Select a file or folder to exclude from sync.');
       return;
     }
 
     if (this.isPathExcludedFromSync(relativePath, deviceId)) {
-      vscode.window.showInformationMessage(`Already excluded from sync: /${relativePath}`);
+      showInformationMessage(`Already excluded from sync: /${relativePath}`);
       return;
     }
 
@@ -2522,7 +2523,7 @@ class DeviceSyncModel {
     await this.refresh(false);
 
     const msg = `Excluded from sync for ${this.getDeviceDisplayNameWithId(deviceId)}: /${relativePath}`;
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
 
@@ -2530,25 +2531,25 @@ class DeviceSyncModel {
     const targetNode = this.resolveTargetNode(node);
     await this.ensureActiveDevice(targetNode);
     if (!targetNode || targetNode.data.isRoot || targetNode.data.isIndicator) {
-      vscode.window.showWarningMessage('Select an excluded file or folder to remove from sync exclusions.');
+      showWarningMessage('Select an excluded file or folder to remove from sync exclusions.');
       return;
     }
 
     const deviceId = this.getNodeDeviceId(targetNode);
     if (!deviceId) {
-      vscode.window.showWarningMessage('Select a mapped device path to update sync exclusions.');
+      showWarningMessage('Select a mapped device path to update sync exclusions.');
       return;
     }
 
     const relativePath = toRelativePath(targetNode.data.relativePath);
     if (!relativePath) {
-      vscode.window.showWarningMessage('Select an excluded file or folder to remove from sync exclusions.');
+      showWarningMessage('Select an excluded file or folder to remove from sync exclusions.');
       return;
     }
 
     const exclusionPath = this.findNearestExcludedPath(relativePath, deviceId);
     if (!exclusionPath) {
-      vscode.window.showInformationMessage(`Path is not excluded from sync: /${relativePath}`);
+      showInformationMessage(`Path is not excluded from sync: /${relativePath}`);
       return;
     }
 
@@ -2556,7 +2557,7 @@ class DeviceSyncModel {
     await this.refresh(false);
 
     const msg = `Removed sync exclusion for ${this.getDeviceDisplayNameWithId(deviceId)}: /${exclusionPath}`;
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
 
@@ -2572,13 +2573,13 @@ class DeviceSyncModel {
 
     const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
-      vscode.window.showWarningMessage('Connect to a board before syncing from device.');
+      showWarningMessage('Connect to a board before syncing from device.');
       return;
     }
 
     const computerRootPath = scope?.computerRootPath ?? this.syncRootPath;
     if (!computerRootPath) {
-      vscode.window.showWarningMessage('Map this device to a computer folder before syncing from device.');
+      showWarningMessage('Map this device to a computer folder before syncing from device.');
       return;
     }
 
@@ -2588,7 +2589,7 @@ class DeviceSyncModel {
       ? this.stripLibraryDeviceRoot(normalisedTarget, libraryDeviceRoot)
       : normalisedTarget;
     if (scopedTarget === undefined) {
-      vscode.window.showWarningMessage('Selected path is outside the mapped library folder.');
+      showWarningMessage('Selected path is outside the mapped library folder.');
       return;
     }
 
@@ -2665,7 +2666,7 @@ class DeviceSyncModel {
 
     const targetLabel = scopedTarget ? `/${scopedTarget}` : '/';
     const msg = `Sync from device complete for ${targetLabel}.`;
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
 
@@ -2681,13 +2682,13 @@ class DeviceSyncModel {
 
     const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
-      vscode.window.showWarningMessage('Connect to a board before syncing to device.');
+      showWarningMessage('Connect to a board before syncing to device.');
       return;
     }
 
     const computerRootPath = scope?.computerRootPath ?? this.syncRootPath;
     if (!computerRootPath) {
-      vscode.window.showWarningMessage('Map this device to a computer folder before syncing to device.');
+      showWarningMessage('Map this device to a computer folder before syncing to device.');
       return;
     }
 
@@ -2697,7 +2698,7 @@ class DeviceSyncModel {
       ? this.stripLibraryDeviceRoot(normalisedTarget, libraryDeviceRoot)
       : normalisedTarget;
     if (scopedTarget === undefined) {
-      vscode.window.showWarningMessage('Selected path is outside the mapped library folder.');
+      showWarningMessage('Selected path is outside the mapped library folder.');
       return;
     }
 
@@ -2789,7 +2790,7 @@ class DeviceSyncModel {
 
     const targetLabel = scopedTarget ? `/${scopedTarget}` : '/';
     const msg = `Sync to device complete for ${targetLabel}.`;
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
 
@@ -2894,15 +2895,15 @@ class DeviceSyncModel {
   private async createComputerFile(node?: SyncNode): Promise<void> {
     const computerRootPath = await this.resolveComputerWriteRootPath();
     if (!computerRootPath) {
-      vscode.window.showWarningMessage('Open a workspace before creating files on computer.');
+      showWarningMessage('Open a workspace before creating files on computer.');
       return;
     }
 
     const parentPath = this.getComputerParentPath(node);
     const fileName = await vscode.window.showInputBox({
-      title: 'Create File on Computer',
+      title: t('Create File on Computer'),
       prompt: parentPath ? `Create in /${parentPath}` : 'Create in /',
-      placeHolder: 'filename.py',
+      placeHolder: t('filename.py'),
       ignoreFocusOut: true,
       validateInput: (value) => this.validateComputerName(value)
     });
@@ -2920,22 +2921,22 @@ class DeviceSyncModel {
     await vscode.window.showTextDocument(document, { preview: false });
 
     const msg = `Created file on computer: /${relativePath}`;
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
 
   private async createComputerFolder(node?: SyncNode): Promise<void> {
     const computerRootPath = await this.resolveComputerWriteRootPath();
     if (!computerRootPath) {
-      vscode.window.showWarningMessage('Open a workspace before creating computer folders.');
+      showWarningMessage('Open a workspace before creating computer folders.');
       return;
     }
 
     const parentPath = this.getComputerParentPath(node);
     const folderName = await vscode.window.showInputBox({
-      title: 'Create Folder on Computer',
+      title: t('Create Folder on Computer'),
       prompt: parentPath ? `Create in /${parentPath}` : 'Create in /',
-      placeHolder: 'folder',
+      placeHolder: t('folder'),
       ignoreFocusOut: true,
       validateInput: (value) => this.validateComputerName(value)
     });
@@ -2950,14 +2951,14 @@ class DeviceSyncModel {
     await this.refresh(false);
 
     const msg = `Created folder on computer: /${relativePath}`;
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
 
   private async renameComputerPath(node: SyncNode): Promise<void> {
     const computerRootPath = this.resolveComputerReadRootPath(node);
     if (!computerRootPath) {
-      vscode.window.showWarningMessage('Open a workspace before renaming computer items.');
+      showWarningMessage('Open a workspace before renaming computer items.');
       return;
     }
 
@@ -2981,19 +2982,19 @@ class DeviceSyncModel {
     await this.refresh(false);
 
     const msg = `Renamed computer path: /${currentPath} -> /${nextPath}`;
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
 
   private async deleteComputerPath(node: SyncNode): Promise<void> {
     const computerRootPath = this.resolveComputerReadRootPath(node);
     if (!computerRootPath) {
-      vscode.window.showWarningMessage('Open a workspace before deleting computer items.');
+      showWarningMessage('Open a workspace before deleting computer items.');
       return;
     }
 
     const targetPath = toRelativePath(node.data.relativePath);
-    const action = await vscode.window.showWarningMessage(
+    const action = await showWarningMessage(
       `Delete computer ${node.data.isDirectory ? 'folder' : 'file'} "/${targetPath}"?`,
       { modal: true },
       'Delete'
@@ -3006,7 +3007,7 @@ class DeviceSyncModel {
     await this.refresh(false);
 
     const msg = `Deleted computer path: /${targetPath}`;
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     logChannelOutput(msg, true);
   }
 
@@ -3289,7 +3290,7 @@ class DeviceSyncModel {
       .map((item) => `${item.name} (${item.deviceIds.join(', ')})`)
       .join('; ');
     const message = `Duplicate device names found in configuration: ${details}. Names must be unique.`;
-    vscode.window.showErrorMessage(message);
+    showErrorMessage(message);
     logChannelOutput(message, true);
   }
 
@@ -3420,7 +3421,7 @@ class DeviceSyncModel {
     }
 
     if (skippedDirtyCount > 0) {
-      vscode.window.showWarningMessage(
+      showWarningMessage(
         `Name updated, but ${skippedDirtyCount} dirty tab(s) were not retitled to avoid losing unsaved changes. Save/reopen those tabs to apply the new name title.`
       );
     }
@@ -3524,7 +3525,7 @@ class DeviceSyncModel {
     }
 
     if (skippedDirtyCount > 0) {
-      vscode.window.showWarningMessage(
+      showWarningMessage(
         `Name configuration changed, but ${skippedDirtyCount} dirty tab(s) were not retitled to avoid losing unsaved changes. Save/reopen those tabs to apply name titles.`
       );
     }
@@ -3539,7 +3540,7 @@ class DeviceSyncModel {
       }
     }
     if (!deviceId || !this.workspaceFolder) {
-      vscode.window.showWarningMessage('Select a device to map.');
+      showWarningMessage('Select a device to map.');
       return;
     }
 
@@ -3553,7 +3554,7 @@ class DeviceSyncModel {
     });
 
     if (folderOptions.length === 0) {
-      vscode.window.showWarningMessage('No computer folders available at workspace root.');
+      showWarningMessage('No computer folders available at workspace root.');
       return;
     }
 
@@ -3568,7 +3569,7 @@ class DeviceSyncModel {
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       const msg = `Failed to create computer folder "${normalised}". ${reason}`;
-      vscode.window.showErrorMessage(msg);
+      showErrorMessage(msg);
       logChannelOutput(msg, true);
       return;
     }
@@ -3578,7 +3579,7 @@ class DeviceSyncModel {
 
     const msg = `Mapped ${deviceId} to computer folder: ${normalised}`;
     logChannelOutput(msg, true);
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     await this.refresh(true, false);
   }
 
@@ -3610,11 +3611,11 @@ class DeviceSyncModel {
         const rawValue = selected?.relativePath ?? picker.value;
         const normalised = toRelativePath(rawValue);
         if (!normalised) {
-          void vscode.window.showWarningMessage('Enter a folder name.');
+          void showWarningMessage('Enter a folder name.');
           return;
         }
         if (path.isAbsolute(normalised) || normalised.split('/').includes('..')) {
-          void vscode.window.showWarningMessage('Use a workspace-relative folder path.');
+          void showWarningMessage('Use a workspace-relative folder path.');
           return;
         }
         finish(normalised);
@@ -3634,17 +3635,17 @@ class DeviceSyncModel {
       }
     }
     if (!deviceId) {
-      vscode.window.showWarningMessage('Select a device to unmap.');
+      showWarningMessage('Select a device to unmap.');
       return;
     }
 
     const current = this.getMappedHostFolder(deviceId);
     if (!current) {
-      vscode.window.showInformationMessage(`No mapped computer folder exists for ${deviceId}.`);
+      showInformationMessage(`No mapped computer folder exists for ${deviceId}.`);
       return;
     }
 
-    const action = await vscode.window.showWarningMessage(
+    const action = await showWarningMessage(
       `Unmap ${deviceId} from computer folder "${current}"?`,
       { modal: true },
       'Unmap'
@@ -3658,7 +3659,7 @@ class DeviceSyncModel {
 
     const msg = `Unmapped ${deviceId} from computer folder: ${current}`;
     logChannelOutput(msg, true);
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     await this.refresh(true, false);
   }
 
@@ -3671,7 +3672,7 @@ class DeviceSyncModel {
       }
     }
     if (!deviceId || !this.workspaceFolder) {
-      vscode.window.showWarningMessage('Select a device and open a workspace to add a library folder.');
+      showWarningMessage('Select a device and open a workspace to add a library folder.');
       return;
     }
 
@@ -3692,7 +3693,7 @@ class DeviceSyncModel {
     const relativeToWorkspace = path.relative(workspacePath, selectedPath);
     const normalisedRelativePath = toRelativePath(relativeToWorkspace);
     if (!normalisedRelativePath || path.isAbsolute(normalisedRelativePath) || /^[A-Za-z]:\//.test(normalisedRelativePath)) {
-      vscode.window.showWarningMessage('Selected folder must resolve to a relative path from the current workspace.');
+      showWarningMessage('Selected folder must resolve to a relative path from the current workspace.');
       return;
     }
 
@@ -3704,7 +3705,7 @@ class DeviceSyncModel {
     const deviceLibraryName = path.posix.basename(normalisedRelativePath);
     const msg = `Added library for ${deviceId}: ${normalisedRelativePath} -> /${deviceLibraryName}`;
     logChannelOutput(msg, true);
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     await this.refresh(true, false);
   }
 
@@ -3717,13 +3718,13 @@ class DeviceSyncModel {
       }
     }
     if (!deviceId) {
-      vscode.window.showWarningMessage('Select a device to remove a library folder.');
+      showWarningMessage('Select a device to remove a library folder.');
       return;
     }
 
     const existingLibraries = this.deviceLibraryFolderMappings[deviceId] ?? [];
     if (existingLibraries.length === 0) {
-      vscode.window.showInformationMessage(`No library folders configured for ${deviceId}.`);
+      showInformationMessage(`No library folders configured for ${deviceId}.`);
       return;
     }
 
@@ -3739,7 +3740,7 @@ class DeviceSyncModel {
           libraryPath
         })),
         {
-          title: 'Remove Device Library Folder',
+          title: t('Remove Device Library Folder'),
           placeHolder: `Select library folder to remove for ${this.getDeviceDisplayNameWithId(deviceId)}`,
           canPickMany: false,
           ignoreFocusOut: true
@@ -3755,7 +3756,7 @@ class DeviceSyncModel {
       return;
     }
 
-    const action = await vscode.window.showWarningMessage(
+    const action = await showWarningMessage(
       `Remove library folder "${libraryToRemove}" from ${this.getDeviceDisplayNameWithId(deviceId)}?`,
       { modal: true },
       'Remove'
@@ -3770,26 +3771,26 @@ class DeviceSyncModel {
 
     const msg = `Removed library for ${deviceId}: ${libraryToRemove}`;
     logChannelOutput(msg, true);
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     await this.refresh(true, false);
   }
 
   async setDeviceName(node?: SyncNode): Promise<void> {
     let deviceId = await this.ensureActiveDevice(node);
     if (!deviceId) {
-      deviceId = await this.pickKnownDeviceId('Select device to set name');
+      deviceId = await this.pickKnownDeviceId(t('Select device to set name'));
       if (deviceId) {
         this.activateDevice(deviceId);
       }
     }
     if (!deviceId) {
-      vscode.window.showWarningMessage('Select a device to set a name.');
+      showWarningMessage('Select a device to set a name.');
       return;
     }
 
     const existingName = this.getDeviceName(deviceId) ?? '';
     const input = await vscode.window.showInputBox({
-      title: 'Set Device Name',
+      title: t('Set Device Name'),
       prompt: `Set a friendly name for ${this.getDeviceDisplayNameWithId(deviceId)}. Leave empty to clear.`,
       value: existingName,
       ignoreFocusOut: true,
@@ -3828,7 +3829,7 @@ class DeviceSyncModel {
         return existingDeviceName.trim().toLocaleLowerCase() === needle;
       });
       if (duplicate) {
-        vscode.window.showErrorMessage(`Name "${name}" is already used by ${duplicate[0]}.`);
+        showErrorMessage(`Name "${name}" is already used by ${duplicate[0]}.`);
         return;
       }
     }
@@ -3837,7 +3838,7 @@ class DeviceSyncModel {
       updated = await updateDeviceName(deviceId, name.length > 0 ? name : undefined);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      vscode.window.showErrorMessage(message);
+      showErrorMessage(message);
       return;
     }
     this.deviceNames = getDeviceNames(updated);
@@ -3848,14 +3849,14 @@ class DeviceSyncModel {
       ? `Set name for ${deviceId}: ${name}`
       : `Cleared name for ${deviceId}`;
     logChannelOutput(msg, true);
-    vscode.window.showInformationMessage(msg);
+    showInformationMessage(msg);
     await this.refresh(true, false);
   }
 
   async closeDeviceConnection(node?: SyncNode): Promise<void> {
     const deviceId = this.getNodeDeviceId(node);
     if (!deviceId) {
-      vscode.window.showWarningMessage('Select a connected device to disconnect.');
+      showWarningMessage('Select a connected device to disconnect.');
       return;
     }
 
@@ -3865,11 +3866,11 @@ class DeviceSyncModel {
   async closeAllDeviceConnections(): Promise<void> {
     const connected = this.getConnectedDeviceIds();
     if (connected.length === 0) {
-      vscode.window.showInformationMessage('No active board connections to disconnect.');
+      showInformationMessage('No active board connections to disconnect.');
       return;
     }
 
-    const action = await vscode.window.showWarningMessage(
+    const action = await showWarningMessage(
       `Disconnect all ${connected.length} active board connection(s)?`,
       { modal: true },
       'Disconnect All'
@@ -4381,7 +4382,7 @@ class DeviceSyncModel {
       this.logSyncEvent('sync-diff-skipped', 'Sync diff skipped because device is not connected.', {
         deviceId
       });
-      vscode.window.showWarningMessage('Connect to a board before comparing a device file.');
+      showWarningMessage('Connect to a board before comparing a device file.');
       return;
     }
 
@@ -4404,7 +4405,7 @@ class DeviceSyncModel {
         deviceId,
         relativePath: node.data.relativePath
       });
-      vscode.window.showWarningMessage('Map this device to a computer folder before comparing files.');
+      showWarningMessage('Map this device to a computer folder before comparing files.');
       return;
     }
 
@@ -4414,7 +4415,7 @@ class DeviceSyncModel {
         deviceId,
         relativePath
       });
-      vscode.window.showWarningMessage(`The file "${relativePath}" does not exist on the mapped computer folder.`);
+      showWarningMessage(`The file "${relativePath}" does not exist on the mapped computer folder.`);
       return;
     }
 
@@ -4429,7 +4430,7 @@ class DeviceSyncModel {
         deviceId,
         relativePath
       });
-      vscode.window.showWarningMessage(`No computer sync file exists for "${relativePath}". Sync from device first.`);
+      showWarningMessage(`No computer sync file exists for "${relativePath}". Sync from device first.`);
       return;
     }
 
@@ -4601,13 +4602,29 @@ class DeviceSyncModel {
     const template = loadWebviewTemplate(this.context.extensionUri, 'sync-preview');
     const cssUri = getWebviewAssetUri(webview, this.context.extensionUri, 'sync-preview', 'index.css');
     const scriptUri = getWebviewAssetUri(webview, this.context.extensionUri, 'sync-preview', 'index.js');
-    const initialState = escapeJsonForHtml({ rows });
+    const initialState = escapeJsonForHtml({
+      rows,
+      i18n: {
+        excludedPathNote: t('this path is configured to be excluded by default'),
+        nothingToSynchronise: t('Nothing needs synchronisation'),
+        pending: t('pending'),
+        skipped: t('skipped')
+      }
+    });
 
     return template
       .replaceAll('__CSP_SOURCE__', webview.cspSource)
       .replaceAll('__NONCE__', nonce)
       .replaceAll('__TITLE__', titleText)
       .replace('__DIRECTION__', directionText)
+      .replace('__SYNC_DIRECTION__', t('Sync direction:'))
+      .replace('__HINT__', t('Unchecking a folder unchecks all children. Checking a folder does not auto-check children.'))
+      .replace('__ACTION__', t('Action'))
+      .replace('__PATH__', t('Path'))
+      .replace('__STATUS__', t('Status'))
+      .replace('__CANCEL__', t('Cancel'))
+      .replace('__CONTINUE__', t('Continue'))
+      .replace('__CLOSE__', t('Close'))
       .replace('__CSS_URI__', cssUri.toString())
       .replace('__SCRIPT_URI__', scriptUri.toString())
       .replace('__INITIAL_STATE__', initialState);
@@ -4624,12 +4641,31 @@ class DeviceSyncModel {
     const template = loadWebviewTemplate(this.context.extensionUri, 'device-file-sync');
     const cssUri = getWebviewAssetUri(webview, this.context.extensionUri, 'device-file-sync', 'index.css');
     const scriptUri = getWebviewAssetUri(webview, this.context.extensionUri, 'device-file-sync', 'index.js');
-    const initialState = escapeJsonForHtml({ rows, hasDifferences });
+    const initialState = escapeJsonForHtml({
+      rows,
+      hasDifferences,
+      i18n: {
+        filesMatch: t('Files match'),
+        filesDiffer: t('Files differ'),
+        missingOnComputer: t('Missing on computer'),
+        missingOnDevice: t('Missing on device'),
+        noFilesToSync: t('No files to sync'),
+        compare: t('Compare')
+      }
+    });
 
     return template
       .replaceAll('__CSP_SOURCE__', webview.cspSource)
       .replaceAll('__NONCE__', nonce)
       .replaceAll('__TITLE__', titleText)
+      .replace('__HINT__', t('Review differences, optionally Compare mismatched files, then choose a sync direction.'))
+      .replace('__PATH__', t('Path'))
+      .replace('__SCOPE__', t('Scope'))
+      .replace('__STATUS__', t('Status'))
+      .replace('__ACTION__', t('Action'))
+      .replace('__SYNC_TO_DEVICE__', t('Sync Computer to Device'))
+      .replace('__SYNC_FROM_DEVICE__', t('Sync Device to Computer'))
+      .replace('__CLOSE__', t('Close'))
       .replace('__CSS_URI__', cssUri.toString())
       .replace('__SCRIPT_URI__', scriptUri.toString())
       .replace('__INITIAL_STATE__', initialState);
@@ -4740,7 +4776,7 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const friendlyMessage = `device no longer available for the file. File: ${fallbackFilePath}. ${this.getDeviceDetails()}`;
-      vscode.window.showWarningMessage(friendlyMessage);
+      showWarningMessage(friendlyMessage);
       logChannelOutput(`Device file not opened. ${friendlyMessage}`, true);
       await this.closeDeviceTabsForUriWithRetry(uri);
       throw vscode.FileSystemError.Unavailable(`${friendlyMessage} (${message})`);
@@ -4764,7 +4800,7 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
       if (/no such file|enoent|not found/i.test(message)) {
         if (!this.shouldSuppressMissingPathWarning(relativePath)) {
           const friendlyMessage = `the file no longer exists on the device. File: ${relativePath}. ${this.getDeviceDetails(board)}`;
-          vscode.window.showWarningMessage(friendlyMessage);
+          showWarningMessage(friendlyMessage);
           logChannelOutput(`Device file not opened. ${friendlyMessage}`, true);
           await this.closeDeviceTabsForUriWithRetry(uri);
         }
@@ -5332,11 +5368,11 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
     if (data.isIndicator) {
       element.contextValue = 'pydevice.deviceIndicator';
       element.iconPath = new vscode.ThemeIcon('files');
-      element.description = 'setup required';
-      element.tooltip = 'Click to open Explorer view and complete setup.';
+      element.description = t('setup required');
+      element.tooltip = t('Click to open Explorer view and complete setup.');
       element.command = this.model.hasWorkspaceFolder()
-        ? { command: commandExplorerInitialiseWorkspaceId, title: 'Initialize PyDevice Workspace' }
-        : { command: commandExplorerPrerequisitesHintId, title: 'Setup PyDevice Explorer' };
+        ? { command: commandExplorerInitialiseWorkspaceId, title: t('Initialize PyDevice Workspace') }
+        : { command: commandExplorerPrerequisitesHintId, title: t('Setup PyDevice Explorer') };
       return element;
     }
 
@@ -5355,13 +5391,13 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
         }
         if (data.side === 'device') {
           const connected = this.model.getConnectedDevice(data.deviceId);
-          const state = connected ? 'connected' : 'disconnected';
+          const state = connected ? t('connected') : t('disconnected');
           element.description = mappedFolder ? `${state} | computer:${mappedFolder}` : state;
         } else {
-          element.description = mappedFolder ?? 'not mapped';
+          element.description = mappedFolder ?? t('not mapped');
         }
       } else {
-        element.description = data.side === 'device' ? 'connected' : 'sync';
+        element.description = data.side === 'device' ? t('connected') : t('sync');
       }
       element.command = undefined;
       return element;
@@ -5371,7 +5407,7 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
       element.contextValue = data.isLibraryMissing ? 'pydevice.deviceLibraryNodeMissing' : 'pydevice.deviceLibraryNode';
       element.iconPath = data.isLibraryMissing ? new vscode.ThemeIcon('warning') : new vscode.ThemeIcon('library');
       if (data.libraryHostFolder) {
-        element.description = data.isLibraryMissing ? `missing | ${data.libraryHostFolder}` : data.libraryHostFolder;
+        element.description = data.isLibraryMissing ? `${t('missing')} | ${data.libraryHostFolder}` : data.libraryHostFolder;
         element.tooltip = `${data.libraryHostFolder} -> /${data.relativePath}`;
       }
       element.command = undefined;
@@ -5395,19 +5431,19 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
             : (syncAvailability === 'hostMissing' ? 'pydevice.deviceFileHostMissing' : 'pydevice.deviceFileMapped');
         }
       }
-      element.command = data.isDirectory ? undefined : { command: commandOpenDeviceFileFromTreeId, title: 'Open', arguments: [element] };
+      element.command = data.isDirectory ? undefined : { command: commandOpenDeviceFileFromTreeId, title: t('Open'), arguments: [element] };
     } else {
       if (data.isDirectory) {
         element.contextValue = isExcludedFromSync ? 'pydevice.hostFolderExcluded' : 'pydevice.hostFolder';
       } else {
         element.contextValue = isExcludedFromSync ? 'pydevice.hostFileExcluded' : 'pydevice.hostFile';
       }
-      element.command = data.isDirectory ? undefined : { command: commandOpenComputerItemFromTreeId, title: 'Open', arguments: [element] };
+      element.command = data.isDirectory ? undefined : { command: commandOpenComputerItemFromTreeId, title: t('Open'), arguments: [element] };
     }
     element.iconPath = data.isDirectory ? vscode.ThemeIcon.Folder : vscode.ThemeIcon.File;
-    element.description = isExcludedFromSync ? 'excluded' : undefined;
+    element.description = isExcludedFromSync ? t('excluded') : undefined;
     if (data.side === 'device' && !data.isDirectory && syncAvailability === 'hostMissing') {
-      const diffHint = 'Diff unavailable: file does not exist on mapped computer folder.';
+      const diffHint = t('Diff unavailable: file does not exist on mapped computer folder.');
       element.tooltip = element.tooltip ? `${element.tooltip}\n${diffHint}` : diffHint;
     }
 
@@ -5891,7 +5927,7 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext, f
     await vscode.commands.executeCommand('workbench.view.explorer');
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
-      const action = await vscode.window.showWarningMessage(
+      const action = await showWarningMessage(
         'Open a workspace folder first to enable PyDevice Explorer.',
         'Open Folder'
       );
@@ -5907,7 +5943,7 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext, f
     try {
       await vscode.workspace.fs.stat(configUri);
     } catch {
-      const action = await vscode.window.showWarningMessage(
+      const action = await showWarningMessage(
         `${configurationFileName} was not found in this workspace. Create it to enable PyDevice Explorer.`,
         `Create ${configurationFileName}`
       );
@@ -5917,12 +5953,12 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext, f
       return;
     }
 
-    vscode.window.showInformationMessage('PyDevice Explorer is ready.');
+    showInformationMessage('PyDevice Explorer is ready.');
   }));
   context.subscriptions.push(vscode.commands.registerCommand(commandExplorerInitialiseWorkspaceId, async () => {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
-      const action = await vscode.window.showWarningMessage(
+      const action = await showWarningMessage(
         'Open a workspace folder first to Initialize PyDevice Workspace.',
         'Open Folder'
       );
@@ -5954,7 +5990,7 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext, f
       existingItems.length > 0 ? `Already existed: ${existingItems.join(', ')}` : undefined
     ].filter((item): item is string => !!item).join(' | ');
     const message = summary.length > 0 ? `PyDevice workspace initialized. ${summary}` : 'PyDevice workspace initialized.';
-    vscode.window.showInformationMessage(message);
+    showInformationMessage(message);
     logChannelOutput(message, true);
     await model.refresh(true, true);
   }));
