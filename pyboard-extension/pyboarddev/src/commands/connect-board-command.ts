@@ -20,6 +20,7 @@ import {
   toDeviceInfoSummary
 } from './connect-state';
 import { renderConnectHtml } from './connect-webview';
+import { emitPyDeviceLoggerEvent } from '../pydevice-logger-events';
 
 const reconnectDevicePathsStateKey = 'reconnectDevicePaths';
 const defaultBaudRate = 115200;
@@ -35,6 +36,7 @@ const connectionStateMonitorIntervalMs = 2000;
 const recoveryConnectAttemptTimeoutMs = 25000;
 const deviceDocumentScheme = 'pydevice-device';
 const pydeviceDebugType = 'pydevice';
+const probeLoggerSource = 'ProbeDevices';
 
 export type { ConnectedPyDeviceSnapshot } from '../devices/connected-py-device-registry';
 
@@ -1012,18 +1014,44 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
 
     const probeDisconnectedPorts = async (): Promise<void> => {
       if (probeInProgress) {
+        emitPyDeviceLoggerEvent({
+          source: probeLoggerSource,
+          level: 'debug',
+          action: 'probe-ignored',
+          message: 'Probe request ignored because probe is already running.'
+        });
         return;
       }
       probeInProgress = true;
       probeCancelRequested = false;
+      emitPyDeviceLoggerEvent({
+        source: probeLoggerSource,
+        level: 'debug',
+        action: 'probe-started',
+        message: 'Probe requested from connection view.'
+      });
       updateProbeStatus('running', 'Preparing probe...', 0, 0);
 
       let ports: Awaited<ReturnType<typeof listSerialDevices>>;
       try {
         ports = await listSerialDevices();
+        emitPyDeviceLoggerEvent({
+          source: probeLoggerSource,
+          level: 'debug',
+          action: 'ports-listed',
+          message: 'Serial ports listed for probing.',
+          details: { totalPorts: ports.length }
+        });
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         const msg = `Unable to list serial ports for probing. ${reason}`;
+        emitPyDeviceLoggerEvent({
+          source: probeLoggerSource,
+          level: 'debug',
+          action: 'probe-failed',
+          message: 'Probe aborted because serial port listing failed.',
+          details: { error: reason }
+        });
         vscode.window.showErrorMessage(msg);
         logChannelOutput(msg, true);
         updateProbeStatus('hidden');
@@ -1033,7 +1061,23 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
       }
 
       const availablePorts = ports.filter((port) => !getConnectedPyDeviceByPortPath(port.path) && !connectingPaths.has(port.path));
+      emitPyDeviceLoggerEvent({
+        source: probeLoggerSource,
+        level: 'debug',
+        action: 'ports-filtered',
+        message: 'Filtered serial ports to disconnected, non-connecting ports.',
+        details: {
+          totalPorts: ports.length,
+          availablePorts: availablePorts.length
+        }
+      });
       if (availablePorts.length === 0) {
+        emitPyDeviceLoggerEvent({
+          source: probeLoggerSource,
+          level: 'debug',
+          action: 'probe-noop',
+          message: 'No ports available for probing.'
+        });
         await reconcileRows(ports);
         updateProbeStatus('hidden');
         probeInProgress = false;
@@ -1044,10 +1088,28 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
       try {
         for (let index = 0; index < availablePorts.length; index += 1) {
           if (probeCancelRequested) {
+            emitPyDeviceLoggerEvent({
+              source: probeLoggerSource,
+              level: 'debug',
+              action: 'probe-cancel-observed',
+              message: 'Cancellation observed before next port probe.',
+              details: { index, total: availablePorts.length }
+            });
             break;
           }
 
           const port = availablePorts[index];
+          emitPyDeviceLoggerEvent({
+            source: probeLoggerSource,
+            level: 'debug',
+            action: 'probe-port-started',
+            message: `Starting probe for ${port.path}.`,
+            details: {
+              index: index + 1,
+              total: availablePorts.length,
+              portPath: port.path
+            }
+          });
           updateProbeStatus(
             probeCancelRequested ? 'cancelling' : 'running',
             `Probing ${index + 1}/${availablePorts.length}: ${port.path}`,
@@ -1059,16 +1121,59 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
             const detected = await serialDeviceProber.probePort(port);
             if (detected?.runtimeInfo) {
               probedRuntimeInfoByPath.set(port.path, detected.runtimeInfo);
+              emitPyDeviceLoggerEvent({
+                source: probeLoggerSource,
+                level: 'debug',
+                action: 'probe-port-detected',
+                message: `Device detected on ${port.path}.`,
+                details: {
+                  index: index + 1,
+                  total: availablePorts.length,
+                  portPath: port.path,
+                  deviceId: toDeviceId(port.path, detected.runtimeInfo),
+                  machine: detected.runtimeInfo.machine
+                }
+              });
             } else {
               probedRuntimeInfoByPath.delete(port.path);
+              emitPyDeviceLoggerEvent({
+                source: probeLoggerSource,
+                level: 'debug',
+                action: 'probe-port-no-device',
+                message: `No supported device detected on ${port.path}.`,
+                details: {
+                  index: index + 1,
+                  total: availablePorts.length,
+                  portPath: port.path
+                }
+              });
             }
           } catch (error) {
             const reason = error instanceof Error ? error.message : String(error);
             logChannelOutput(`Probe failed for ${port.path}: ${reason}`, false);
             probedRuntimeInfoByPath.delete(port.path);
+            emitPyDeviceLoggerEvent({
+              source: probeLoggerSource,
+              level: 'debug',
+              action: 'probe-port-error',
+              message: `Probe failed on ${port.path}.`,
+              details: {
+                index: index + 1,
+                total: availablePorts.length,
+                portPath: port.path,
+                error: reason
+              }
+            });
           }
 
           if (probeCancelRequested) {
+            emitPyDeviceLoggerEvent({
+              source: probeLoggerSource,
+              level: 'debug',
+              action: 'probe-cancelling',
+              message: 'Probe cancellation in progress; stopping after current port.',
+              details: { index: index + 1, total: availablePorts.length }
+            });
             updateProbeStatus('cancelling', 'Cancelling...', index + 1, availablePorts.length);
             break;
           }
@@ -1077,6 +1182,14 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
         }
       } finally {
         await reconcileRows(ports);
+        emitPyDeviceLoggerEvent({
+          source: probeLoggerSource,
+          level: 'debug',
+          action: probeCancelRequested ? 'probe-cancelled' : 'probe-completed',
+          message: probeCancelRequested
+            ? 'Probe cancelled after current operation completed.'
+            : 'Probe completed successfully.'
+        });
         updateProbeStatus('hidden');
         probeInProgress = false;
         probeCancelRequested = false;
@@ -1158,6 +1271,12 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
       if (typed.type === 'cancelProbe') {
         if (probeInProgress && !probeCancelRequested) {
           probeCancelRequested = true;
+          emitPyDeviceLoggerEvent({
+            source: probeLoggerSource,
+            level: 'debug',
+            action: 'probe-cancel-requested',
+            message: 'User requested probe cancellation from connection view.'
+          });
           updateProbeStatus('cancelling', 'Cancelling...');
         }
         return;

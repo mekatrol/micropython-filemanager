@@ -4,8 +4,10 @@
  */
 import * as vscode from 'vscode';
 import { FileWatcherEvent } from './utils/file-watcher';
+import { onPyDeviceLoggerEvent } from './pydevice-logger-events';
 
 let loggerChannel: vscode.OutputChannel | undefined;
+let loggerEventSubscription: vscode.Disposable | undefined;
 const recentFileWatcherLogs = new Map<string, number>();
 const duplicateLogWindowMs = 300;
 
@@ -19,6 +21,12 @@ const ensureLoggerChannel = (): vscode.OutputChannel => {
 
 export const initPyDeviceLogger = (): void => {
   ensureLoggerChannel();
+  if (!loggerEventSubscription) {
+    loggerEventSubscription = onPyDeviceLoggerEvent((event) => {
+      const detailsText = event.details ? ` ${JSON.stringify(event.details)}` : '';
+      logPyDeviceLogger(`[${event.level.toUpperCase()}][${event.source}] ${event.action}: ${event.message}${detailsText}`);
+    });
+  }
 };
 
 export const logPyDeviceLogger = (message: string): void => {
@@ -51,6 +59,9 @@ export const logFileWatcherEventToPyDeviceLogger = (event: FileWatcherEvent): vo
 };
 
 export const disposePyDeviceLogger = (): void => {
+  loggerEventSubscription?.dispose();
+  loggerEventSubscription = undefined;
+
   if (!loggerChannel) {
     return;
   }
