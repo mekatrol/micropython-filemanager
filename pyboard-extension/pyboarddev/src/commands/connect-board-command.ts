@@ -820,6 +820,8 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
     let reconcilePending = false;
     let probeInProgress = false;
     let probeCancelRequested = false;
+    let bulkOperationInProgress: 'connectAll' | 'disconnectAll' | undefined;
+    let bulkOperationCancelRequested = false;
 
     panel.onDidDispose(() => {
       disposed = true;
@@ -844,6 +846,15 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
       total?: number
     ): void => {
       void panel.webview.postMessage({ type: 'probeStatus', state, message, current, total });
+    };
+    const updateBulkStatus = (
+      operation: 'connectAll' | 'disconnectAll',
+      state: 'hidden' | 'running' | 'cancelling',
+      message?: string,
+      current?: number,
+      total?: number
+    ): void => {
+      void panel.webview.postMessage({ type: 'bulkStatus', operation, state, message, current, total });
     };
     const enqueueConnectOperation = (name: string, task: () => Promise<void>): Promise<void> => {
       const run = async (): Promise<void> => {
@@ -1153,9 +1164,25 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
         message: 'Connect all requested.',
         details: { totalCandidates: candidates.length }
       });
-      for (const row of candidates) {
+      updateBulkStatus('connectAll', 'running', `Connecting 0/${candidates.length}`, 0, candidates.length);
+      for (let index = 0; index < candidates.length; index += 1) {
+        if (bulkOperationCancelRequested) {
+          emitPyDeviceLoggerEvent({
+            source: 'ConnectDevices',
+            level: 'debug',
+            action: 'connect-all-cancelled',
+            message: 'Connect all cancelled by user.',
+            details: { completed: index, totalCandidates: candidates.length }
+          });
+          updateBulkStatus('connectAll', 'cancelling', 'Cancelling...', index, candidates.length);
+          await reconcileRows();
+          return;
+        }
+        const row = candidates[index];
+        updateBulkStatus('connectAll', 'running', `Connecting ${index + 1}/${candidates.length}: ${row.serialPortName || row.devicePath}`, index, candidates.length);
         // Sequential connect to avoid multiple simultaneous serial handshake collisions.
         await connectRow(row);
+        updateBulkStatus('connectAll', 'running', `Connected ${index + 1}/${candidates.length}`, index + 1, candidates.length);
       }
       emitPyDeviceLoggerEvent({
         source: 'ConnectDevices',
@@ -1458,6 +1485,7 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
         action: 'disconnect-all-started',
         message: 'Disconnect all requested.'
       });
+      updateBulkStatus('disconnectAll', 'running', 'Preparing disconnect...', 0, 0);
       const canClose = await saveDirtyDeviceDocumentsBeforeDisconnect();
       if (!canClose) {
         emitPyDeviceLoggerEvent({
@@ -1478,8 +1506,24 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
         message: 'Resolved disconnect-all candidates.',
         details: { totalCandidates: candidates.length }
       });
-      for (const row of candidates) {
+      updateBulkStatus('disconnectAll', 'running', `Disconnecting 0/${candidates.length}`, 0, candidates.length);
+      for (let index = 0; index < candidates.length; index += 1) {
+        if (bulkOperationCancelRequested) {
+          emitPyDeviceLoggerEvent({
+            source: 'DisconnectDevices',
+            level: 'debug',
+            action: 'disconnect-all-cancelled',
+            message: 'Disconnect all cancelled by user.',
+            details: { completed: index, totalCandidates: candidates.length }
+          });
+          updateBulkStatus('disconnectAll', 'cancelling', 'Cancelling...', index, candidates.length);
+          await reconcileRows();
+          return;
+        }
+        const row = candidates[index];
+        updateBulkStatus('disconnectAll', 'running', `Disconnecting ${index + 1}/${candidates.length}: ${row.serialPortName || row.devicePath}`, index, candidates.length);
         await disconnectRow(row, false, false, false);
+        updateBulkStatus('disconnectAll', 'running', `Disconnected ${index + 1}/${candidates.length}`, index + 1, candidates.length);
       }
       await closeOpenDeviceTabsAfterDisconnect();
       await reconcileRows();
@@ -1500,6 +1544,24 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
         void panel.webview.postMessage({ type: 'setBusy', busy: false });
       }
     };
+    const runCancellableBulkTask = async (
+      operation: 'connectAll' | 'disconnectAll',
+      task: () => Promise<void>
+    ): Promise<void> => {
+      if (bulkOperationInProgress) {
+        return;
+      }
+      bulkOperationInProgress = operation;
+      bulkOperationCancelRequested = false;
+      updateBulkStatus(operation, 'running', operation === 'connectAll' ? 'Preparing connect...' : 'Preparing disconnect...', 0, 0);
+      try {
+        await task();
+      } finally {
+        updateBulkStatus(operation, 'hidden');
+        bulkOperationInProgress = undefined;
+        bulkOperationCancelRequested = false;
+      }
+    };
 
     panel.webview.onDidReceiveMessage((message: unknown) => {
       if (!message || typeof message !== 'object') {
@@ -1511,11 +1573,11 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
         return;
       }
       if (typed.type === 'connectAll') {
-        void runBulkTask(async () => enqueueConnectOperation('connectAll', connectAll));
+        void runBulkTask(async () => runCancellableBulkTask('connectAll', async () => enqueueConnectOperation('connectAll', connectAll)));
         return;
       }
       if (typed.type === 'disconnectAll') {
-        void runBulkTask(disconnectAll);
+        void runBulkTask(async () => runCancellableBulkTask('disconnectAll', disconnectAll));
         return;
       }
       if (typed.type === 'probeDevices') {
@@ -1532,6 +1594,19 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
             message: 'User requested probe cancellation from connection view.'
           });
           updateProbeStatus('cancelling', 'Cancelling...');
+        }
+        return;
+      }
+      if (typed.type === 'cancelBulk') {
+        if (bulkOperationInProgress && !bulkOperationCancelRequested) {
+          bulkOperationCancelRequested = true;
+          emitPyDeviceLoggerEvent({
+            source: bulkOperationInProgress === 'connectAll' ? 'ConnectDevices' : 'DisconnectDevices',
+            level: 'debug',
+            action: bulkOperationInProgress === 'connectAll' ? 'connect-all-cancel-requested' : 'disconnect-all-cancel-requested',
+            message: `User requested ${bulkOperationInProgress === 'connectAll' ? 'connect all' : 'disconnect all'} cancellation from connection view.`
+          });
+          updateBulkStatus(bulkOperationInProgress, 'cancelling', 'Cancelling...');
         }
         return;
       }

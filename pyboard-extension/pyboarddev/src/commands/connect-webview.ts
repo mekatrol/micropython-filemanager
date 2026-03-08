@@ -172,7 +172,7 @@ export const renderConnectHtml = (rows: ConnectRow[], connectAttemptTimeoutMs: n
   </div>
   <div id="probeModal" class="probe-modal hidden" role="dialog" aria-modal="true" aria-label="Probe devices status">
     <div class="probe-dialog">
-      <h3 class="probe-title">Probing devices</h3>
+      <h3 id="probeTitle" class="probe-title">Probing devices</h3>
       <p id="probeStatus" class="probe-status">Preparing probe...</p>
       <div class="probe-progress">
         <div id="probeProgressBar" class="probe-progress-bar"></div>
@@ -194,12 +194,14 @@ export const renderConnectHtml = (rows: ConnectRow[], connectAttemptTimeoutMs: n
     const probeDevicesButton = document.getElementById('probeDevices');
     const closeButton = document.getElementById('close');
     const probeModal = document.getElementById('probeModal');
+    const probeTitle = document.getElementById('probeTitle');
     const probeStatus = document.getElementById('probeStatus');
     const probeProgressBar = document.getElementById('probeProgressBar');
     const cancelProbeButton = document.getElementById('cancelProbe');
     const connectingSinceById = new Map();
     let isBusy = false;
     let probeModalState = 'hidden';
+    let modalOperation = 'probe';
     const passIconSvg = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.6484 5.64648C10.8434 5.45148 11.1605 5.45148 11.3555 5.64648C11.5498 5.84137 11.5499 6.15766 11.3555 6.35254L7.35547 10.3525C7.25747 10.4495 7.12898 10.499 7.00098 10.499C6.87299 10.499 6.74545 10.4505 6.64746 10.3525L4.64746 8.35254C4.45247 8.15754 4.45248 7.84148 4.64746 7.64648C4.84246 7.45148 5.15949 7.45148 5.35449 7.64648L7 9.29199L10.6465 5.64648H10.6484Z"></path><path fill-rule="evenodd" clip-rule="evenodd" d="M8 1C11.86 1 15 4.14 15 8C15 11.86 11.86 15 8 15C4.14 15 1 11.86 1 8C1 4.14 4.14 1 8 1ZM8 2C4.691 2 2 4.691 2 8C2 11.309 4.691 14 8 14C11.309 14 14 11.309 14 8C14 4.691 11.309 2 8 2Z"></path></svg>';
     const warningIconSvg = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M14.831 11.965L9.206 1.714C8.965 1.274 8.503 1 8 1C7.497 1 7.035 1.274 6.794 1.714L1.169 11.965C1.059 12.167 1 12.395 1 12.625C1 13.383 1.617 14 2.375 14H13.625C14.383 14 15 13.383 15 12.625C15 12.395 14.941 12.167 14.831 11.965ZM13.625 13H2.375C2.168 13 2 12.832 2 12.625C2 12.561 2.016 12.5 2.046 12.445L7.671 2.195C7.736 2.075 7.863 2 8 2C8.137 2 8.264 2.075 8.329 2.195L13.954 12.445C13.984 12.501 14 12.561 14 12.625C14 12.832 13.832 13 13.625 13ZM8.75 11.25C8.75 11.664 8.414 12 8 12C7.586 12 7.25 11.664 7.25 11.25C7.25 10.836 7.586 10.5 8 10.5C8.414 10.5 8.75 10.836 8.75 11.25ZM7.5 9V5.5C7.5 5.224 7.724 5 8 5C8.276 5 8.5 5.224 8.5 5.5V9C8.5 9.276 8.276 9.5 8 9.5C7.724 9.5 7.5 9.276 7.5 9Z"></path></svg>';
     const disconnectedIconSvg = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 2.5C7 2.224 7.224 2 7.5 2C7.776 2 8 2.224 8 2.5V7.5C8 7.776 7.776 8 7.5 8C7.224 8 7 7.776 7 7.5V2.5ZM7.5 11.5C7.086 11.5 6.75 11.164 6.75 10.75C6.75 10.336 7.086 10 7.5 10C7.914 10 8.25 10.336 8.25 10.75C8.25 11.164 7.914 11.5 7.5 11.5ZM12.884 13.591L11.586 12.293C10.506 13.345 9.03 14 7.4 14C4.093 14 1.4 11.309 1.4 8C1.4 5.316 3.172 3.041 5.607 2.284C5.871 2.202 6.149 2.35 6.231 2.613C6.313 2.877 6.165 3.155 5.902 3.237C3.874 3.867 2.4 5.762 2.4 8C2.4 10.758 4.643 13 7.4 13C8.753 13 9.979 12.46 10.88 11.586L9.62 10.326C9.425 10.131 9.425 9.815 9.62 9.62C9.815 9.425 10.131 9.425 10.326 9.62L13.591 12.884C13.786 13.079 13.786 13.395 13.591 13.59C13.396 13.786 13.079 13.786 12.884 13.591Z"></path></svg>';
@@ -220,13 +222,27 @@ export const renderConnectHtml = (rows: ConnectRow[], connectAttemptTimeoutMs: n
       closeButton.disabled = isBusy;
     };
 
-    const updateProbeModal = (nextState, message, current, total) => {
+    const operationTitle = (operation) => {
+      if (operation === 'connectAll') {
+        return 'Connecting devices';
+      }
+      if (operation === 'disconnectAll') {
+        return 'Disconnecting devices';
+      }
+      return 'Probing devices';
+    };
+
+    const updateProbeModal = (nextState, message, current, total, operation) => {
+      if (typeof operation === 'string' && operation.length > 0) {
+        modalOperation = operation;
+      }
       probeModalState = nextState;
       if (nextState === 'hidden') {
         probeModal.classList.add('hidden');
         return;
       }
       probeModal.classList.remove('hidden');
+      probeTitle.textContent = operationTitle(modalOperation);
       probeStatus.textContent = message || (nextState === 'cancelling' ? 'Cancelling...' : 'Probing...');
       const ratio = total > 0 ? Math.max(0, Math.min(1, current / total)) : 0;
       probeProgressBar.style.width = (ratio * 100) + '%';
@@ -418,7 +434,18 @@ export const renderConnectHtml = (rows: ConnectRow[], connectAttemptTimeoutMs: n
           message.state,
           typeof message.message === 'string' ? message.message : '',
           typeof message.current === 'number' ? message.current : 0,
-          typeof message.total === 'number' ? message.total : 0
+          typeof message.total === 'number' ? message.total : 0,
+          'probe'
+        );
+        return;
+      }
+      if (message.type === 'bulkStatus' && typeof message.state === 'string' && typeof message.operation === 'string') {
+        updateProbeModal(
+          message.state,
+          typeof message.message === 'string' ? message.message : '',
+          typeof message.current === 'number' ? message.current : 0,
+          typeof message.total === 'number' ? message.total : 0,
+          message.operation
         );
       }
     });
@@ -446,7 +473,11 @@ export const renderConnectHtml = (rows: ConnectRow[], connectAttemptTimeoutMs: n
         return;
       }
       updateProbeModal('cancelling', 'Cancelling...', 0, 0);
-      vscode.postMessage({ type: 'cancelProbe' });
+      if (modalOperation === 'probe') {
+        vscode.postMessage({ type: 'cancelProbe' });
+        return;
+      }
+      vscode.postMessage({ type: 'cancelBulk' });
     });
     closeButton.addEventListener('click', () => {
       if (isBusy) {
