@@ -1,6 +1,6 @@
 # Build Instructions (Architecture Diagrams)
 
-This project includes npm scripts to generate a code dependency/architecture diagram from `src`.
+This project includes npm scripts to generate a code dependency/architecture diagram from `src` (excluding `src/test`).
 
 Outputs are written to:
 - `docs/architecture/deps.dot`

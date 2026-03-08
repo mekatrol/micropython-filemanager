@@ -102,23 +102,6 @@ strict digraph "dependency-cruiser output"{
     subgraph "cluster_src" {label="src" "src/sync-state-store.ts" [label=<sync-state-store.ts> tooltip="sync-state-store.ts" URL="src/sync-state-store.ts" fillcolor="#ddfeff"] }
     subgraph "cluster_src" {label="src" "src/terminal.ts" [label=<terminal.ts> tooltip="terminal.ts" URL="src/terminal.ts" fillcolor="#ddfeff"] }
     "src/terminal.ts" -> "src/commands/connect-board-command.ts"
-    subgraph "cluster_src" {label="src" subgraph "cluster_src/test" {label="test" subgraph "cluster_src/test/unit" {label="unit" "src/test/unit/configuration-device-config.test.ts" [label=<configuration-device-config.test.ts> tooltip="configuration-device-config.test.ts" URL="src/test/unit/configuration-device-config.test.ts" fillcolor="#ddfeff"] } } }
-    "src/test/unit/configuration-device-config.test.ts" -> "src/utils/configuration.ts"
-    subgraph "cluster_src" {label="src" subgraph "cluster_src/test" {label="test" subgraph "cluster_src/test/unit" {label="unit" "src/test/unit/connected-py-device-registry.test.ts" [label=<connected-py-device-registry.test.ts> tooltip="connected-py-device-registry.test.ts" URL="src/test/unit/connected-py-device-registry.test.ts" fillcolor="#ddfeff"] } } }
-    "src/test/unit/connected-py-device-registry.test.ts" -> "src/devices/connected-py-device-registry.ts"
-    subgraph "cluster_src" {label="src" subgraph "cluster_src/test" {label="test" subgraph "cluster_src/test/unit" {label="unit" "src/test/unit/device-filesystem-utils.test.ts" [label=<device-filesystem-utils.test.ts> tooltip="device-filesystem-utils.test.ts" URL="src/test/unit/device-filesystem-utils.test.ts" fillcolor="#ddfeff"] } } }
-    "src/test/unit/device-filesystem-utils.test.ts" -> "src/utils/device-filesystem.ts"
-    subgraph "cluster_src" {label="src" subgraph "cluster_src/test" {label="test" subgraph "cluster_src/test/unit" {label="unit" "src/test/unit/device-id.test.ts" [label=<device-id.test.ts> tooltip="device-id.test.ts" URL="src/test/unit/device-id.test.ts" fillcolor="#ddfeff"] } } }
-    "src/test/unit/device-id.test.ts" -> "src/devices/device-id.ts"
-    subgraph "cluster_src" {label="src" subgraph "cluster_src/test" {label="test" subgraph "cluster_src/test/unit" {label="unit" "src/test/unit/device-serial-port.test.ts" [label=<device-serial-port.test.ts> tooltip="device-serial-port.test.ts" URL="src/test/unit/device-serial-port.test.ts" fillcolor="#ddfeff"] } } }
-    "src/test/unit/device-serial-port.test.ts" -> "src/devices/device-serial-port.ts"
-    subgraph "cluster_src" {label="src" subgraph "cluster_src/test" {label="test" subgraph "cluster_src/test/unit" {label="unit" "src/test/unit/device.test.ts" [label=<device.test.ts> tooltip="device.test.ts" URL="src/test/unit/device.test.ts" fillcolor="#ddfeff"] } } }
-    "src/test/unit/device.test.ts" -> "src/devices/device-serial-port.ts"
-    "src/test/unit/device.test.ts" -> "src/devices/py-device.ts"
-    subgraph "cluster_src" {label="src" subgraph "cluster_src/test" {label="test" subgraph "cluster_src/test/unit" {label="unit" "src/test/unit/py-device-controller.test.ts" [label=<py-device-controller.test.ts> tooltip="py-device-controller.test.ts" URL="src/test/unit/py-device-controller.test.ts" fillcolor="#ddfeff"] } } }
-    "src/test/unit/py-device-controller.test.ts" -> "src/devices/py-device-controller.ts"
-    subgraph "cluster_src" {label="src" subgraph "cluster_src/test" {label="test" subgraph "cluster_src/test/unit" {label="unit" "src/test/unit/reconnect-state-store.test.ts" [label=<reconnect-state-store.test.ts> tooltip="reconnect-state-store.test.ts" URL="src/test/unit/reconnect-state-store.test.ts" fillcolor="#ddfeff"] } } }
-    "src/test/unit/reconnect-state-store.test.ts" -> "src/devices/reconnect-state-store.ts"
     subgraph "cluster_src" {label="src" subgraph "cluster_src/util" {label="util" "src/util/file-watcher.ts" [label=<file-watcher.ts> tooltip="file-watcher.ts" URL="src/util/file-watcher.ts" fillcolor="#ddfeff"] } }
     "src/util/file-watcher.ts" -> "src/output-channel.ts"
     subgraph "cluster_src" {label="src" subgraph "cluster_src/utils" {label="utils" "src/utils/configuration.ts" [label=<configuration.ts> tooltip="configuration.ts" URL="src/utils/configuration.ts" fillcolor="#ddfeff"] } }

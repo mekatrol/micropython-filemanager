@@ -667,9 +667,9 @@
     "lint": "eslint src",
     "test": "vscode-test",
     "arch:prepare": "node -e \"require('fs').mkdirSync('docs/architecture', { recursive: true })\"",
-    "arch:dot": "npm run arch:prepare && depcruise --no-config src --include-only \"^src\" --output-type dot > docs/architecture/deps.dot",
+    "arch:dot": "npm run arch:prepare && depcruise --no-config src --include-only \"^src\" --exclude \"^src/test\" --output-type dot > docs/architecture/deps.dot",
     "arch:svg": "npm run arch:dot && node scripts/render-arch-svg.js",
-    "arch:html": "npm run arch:prepare && depcruise --no-config src --include-only \"^src\" --output-type html > docs/architecture/deps.html",
+    "arch:html": "npm run arch:prepare && depcruise --no-config src --include-only \"^src\" --exclude \"^src/test\" --output-type html > docs/architecture/deps.html",
     "arch:auto": "node -e \"const { spawnSync } = require('child_process'); const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm'; const hasDot = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['dot'], { stdio: 'ignore' }).status === 0; const script = hasDot ? 'arch:svg' : 'arch:html'; console.log('Running ' + script + (hasDot ? '' : ' (Graphviz dot not found)')); const result = spawnSync(npmCmd, ['run', script], { stdio: 'inherit' }); process.exit(result.status ?? 1);\""
   },
   "devDependencies": {
