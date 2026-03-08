@@ -142,6 +142,7 @@ type DeviceFileSyncStatus = 'match' | 'mismatch' | 'missing_computer' | 'missing
 interface DeviceFileSyncRow {
   id: string;
   deviceRelativePath: string;
+  isDirectory: boolean;
   status: DeviceFileSyncStatus;
   libraryHostFolder?: string;
   libraryDeviceRoot?: string;
@@ -4676,7 +4677,7 @@ class DeviceSyncModel {
       || this.matchesTarget(scopedTarget, toRelativePath(relativePath), true);
 
     const syncableDeviceEntries = this.filterSyncableEntries(await listDeviceEntries(board))
-      .filter((entry) => !entry.isDirectory && toRelativePath(entry.relativePath).length > 0)
+      .filter((entry) => toRelativePath(entry.relativePath).length > 0)
       .filter((entry) => isInTarget(entry.relativePath));
     const syncRootPath = this.syncRootByDeviceId.get(deviceId);
     const libraries = this.getDeviceLibraryMappings(deviceId);
@@ -4703,23 +4704,29 @@ class DeviceSyncModel {
 
     const rows: DeviceFileSyncRow[] = [];
     const addRow = (row: Omit<DeviceFileSyncRow, 'id'>): void => {
-      const id = `${row.deviceRelativePath}:${row.status}:${row.libraryHostFolder ?? ''}:${row.libraryDeviceRoot ?? ''}`;
+      const id = `${row.deviceRelativePath}:${row.isDirectory ? 'dir' : 'file'}:${row.status}:${row.libraryHostFolder ?? ''}:${row.libraryDeviceRoot ?? ''}`;
       rows.push({ ...row, id });
     };
-    const toStatus = (deviceFile?: FileEntry, computerFile?: FileEntry): DeviceFileSyncStatus => {
-      if (deviceFile && computerFile) {
-        const shaMatches = !!deviceFile.sha1 && !!computerFile.sha1 && deviceFile.sha1 === computerFile.sha1;
+    const toStatus = (deviceEntry?: FileEntry, computerEntry?: FileEntry): DeviceFileSyncStatus => {
+      if (deviceEntry && computerEntry) {
+        if (deviceEntry.isDirectory !== computerEntry.isDirectory) {
+          return 'mismatch';
+        }
+        if (deviceEntry.isDirectory) {
+          return 'match';
+        }
+        const shaMatches = !!deviceEntry.sha1 && !!computerEntry.sha1 && deviceEntry.sha1 === computerEntry.sha1;
         if (shaMatches) {
           return 'match';
         }
         return 'mismatch';
       }
-      return deviceFile ? 'missing_computer' : 'missing_device';
+      return deviceEntry ? 'missing_computer' : 'missing_device';
     };
 
     const rootComputerFiles = syncRootPath
       ? this.filterSyncableEntries(await scanComputerSyncEntries(syncRootPath))
-        .filter((entry) => !entry.isDirectory)
+        .filter((entry) => toRelativePath(entry.relativePath).length > 0)
         .filter((entry) => isInTarget(entry.relativePath))
         .filter((entry) => !this.isWithinLibraryRoots(toRelativePath(entry.relativePath), libraryRoots))
       : [];
@@ -4731,6 +4738,7 @@ class DeviceSyncModel {
       const computerFile = rootComputerMap.get(relativePath);
       addRow({
         deviceRelativePath: relativePath,
+        isDirectory: (deviceFile?.isDirectory ?? computerFile?.isDirectory) ?? false,
         status: toStatus(deviceFile, computerFile),
         scopeLabel: syncRootPath ? this.getMappedHostFolder(deviceId) ?? 'mapped folder' : 'not mapped',
         scopeIcon: 'folder'
@@ -4757,9 +4765,10 @@ class DeviceSyncModel {
       }
 
       if (library.missing) {
-        for (const scopedPath of scopedDeviceMap.keys()) {
+        for (const [scopedPath, deviceFile] of scopedDeviceMap.entries()) {
           addRow({
             deviceRelativePath: this.applyLibraryDeviceRoot(scopedPath, libraryDeviceRoot),
+            isDirectory: deviceFile.isDirectory,
             status: 'missing_computer',
             libraryHostFolder: library.hostRelativePath,
             libraryDeviceRoot: library.devicePath,
@@ -4771,7 +4780,7 @@ class DeviceSyncModel {
       }
 
       const scopedComputerFiles = this.filterSyncableEntries(await scanComputerSyncEntries(library.hostAbsolutePath))
-        .filter((entry) => !entry.isDirectory)
+        .filter((entry) => toRelativePath(entry.relativePath).length > 0)
         .filter((entry) => isInTarget(this.applyLibraryDeviceRoot(entry.relativePath, libraryDeviceRoot)));
       const scopedComputerMap = new Map(scopedComputerFiles.map((entry) => [toRelativePath(entry.relativePath), entry]));
       const scopedPaths = new Set<string>([...scopedDeviceMap.keys(), ...scopedComputerMap.keys()]);
@@ -4780,6 +4789,7 @@ class DeviceSyncModel {
         const computerFile = scopedComputerMap.get(scopedPath);
         addRow({
           deviceRelativePath: this.applyLibraryDeviceRoot(scopedPath, libraryDeviceRoot),
+          isDirectory: (deviceFile?.isDirectory ?? computerFile?.isDirectory) ?? false,
           status: toStatus(deviceFile, computerFile),
           libraryHostFolder: library.hostRelativePath,
           libraryDeviceRoot: library.devicePath,
@@ -4871,7 +4881,7 @@ class DeviceSyncModel {
   </div>
   <script>
     const vscode = acquireVsCodeApi();
-    const rows = ${rowsJson};
+    let rows = ${rowsJson};
     const tbody = document.getElementById('rows');
     const labels = {
       match: {
@@ -4893,6 +4903,9 @@ class DeviceSyncModel {
     };
     const libraryIconSvg = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 3.24941C1 2.55938 1.55917 2 2.24895 2H2.74852C3.4383 2 3.99747 2.55938 3.99747 3.24941V12.745C3.99747 13.435 3.4383 13.9944 2.74852 13.9944H2.24895C1.55917 13.9944 1 13.435 1 12.745V3.24941ZM2.24895 2.99953C2.11099 2.99953 1.99916 3.11141 1.99916 3.24941V12.745C1.99916 12.883 2.11099 12.9948 2.24895 12.9948H2.74852C2.88648 12.9948 2.99831 12.883 2.99831 12.745V3.24941C2.99831 3.11141 2.88648 2.99953 2.74852 2.99953H2.24895ZM4.99663 3.24941C4.99663 2.55938 5.5558 2 6.24557 2H6.74515C7.43492 2 7.9941 2.55938 7.9941 3.24941V12.745C7.9941 13.435 7.43492 13.9944 6.74515 13.9944H6.24557C5.5558 13.9944 4.99663 13.435 4.99663 12.745V3.24941ZM6.24557 2.99953C6.10762 2.99953 5.99578 3.11141 5.99578 3.24941V12.745C5.99578 12.883 6.10762 12.9948 6.24557 12.9948H6.74515C6.88311 12.9948 6.99494 12.883 6.99494 12.745V3.24941C6.99494 3.11141 6.88311 2.99953 6.74515 2.99953H6.24557ZM11.9723 4.77682C11.7231 4.15733 11.0311 3.84331 10.4011 4.06385L9.81888 4.26764C9.14658 4.50297 8.80684 5.25222 9.07268 5.91326L12.0098 13.2166C12.2589 13.8361 12.9509 14.1502 13.581 13.9296L14.1632 13.7258C14.8355 13.4904 15.1752 12.7412 14.9093 12.0802L11.9723 4.77682ZM10.7311 5.00729C10.8571 4.96318 10.9955 5.02598 11.0453 5.14988L13.9824 12.4532C14.0356 12.5854 13.9676 12.7353 13.8332 12.7823L13.251 12.9862C13.1249 13.0303 12.9865 12.9675 12.9367 12.8436L9.99964 5.5402C9.94647 5.40799 10.0144 5.25815 10.1489 5.21108L10.7311 5.00729Z"></path></svg>';
     const folderIconSvg = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.75 3h3.6c.26 0 .51.1.7.28l1.1 1.06c.19.18.44.28.7.28h6.4A1.75 1.75 0 0 1 16 6.38v5.87A1.75 1.75 0 0 1 14.25 14H1.75A1.75 1.75 0 0 1 0 12.25V4.75A1.75 1.75 0 0 1 1.75 3Z"></path></svg>';
+
+    const syncToDeviceButton = document.getElementById('syncToDevice');
+    const syncFromDeviceButton = document.getElementById('syncFromDevice');
 
     const renderRows = (nextRows) => {
       tbody.textContent = '';
@@ -4944,7 +4957,7 @@ class DeviceSyncModel {
 
         const actionTd = document.createElement('td');
         actionTd.className = 'action';
-        if (row.status === 'mismatch') {
+        if (!row.isDirectory && row.status === 'mismatch') {
           const action = document.createElement('button');
           action.type = 'button';
           action.className = 'link';
@@ -4976,7 +4989,6 @@ class DeviceSyncModel {
       });
     }
 
-    const syncFromDeviceButton = document.getElementById('syncFromDevice');
     if (syncFromDeviceButton) {
       syncFromDeviceButton.addEventListener('click', () => {
         vscode.postMessage({ type: 'sync_from_device' });
@@ -5298,12 +5310,12 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
         return;
       }
 
-      const raw = toRelativePath(uri.path.replace(/^\/+/, ''));
-      if (!raw) {
+      const candidateRelativePath = this.toRelativeDevicePathForDeleteMatching(uri);
+      if (!candidateRelativePath) {
         return;
       }
 
-      if (!this.matchesDeletedPath(raw, normalisedTarget, includeDescendants)) {
+      if (!this.matchesDeletedPath(candidateRelativePath, normalisedTarget, includeDescendants)) {
         return;
       }
 
@@ -5331,6 +5343,31 @@ class DeviceDeviceFileSystemProvider implements vscode.FileSystemProvider {
     }
 
     this.onDidChangeFileEmitter.fire(events);
+  }
+
+  private toRelativeDevicePathForDeleteMatching(uri: vscode.Uri): string {
+    const rawPath = toRelativePath(uri.path.replace(/^\/+/, ''));
+    const segments = rawPath
+      .split('/')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+    if (segments.length === 0) {
+      return '';
+    }
+
+    // Device document URIs are shaped like /<device-segment>/<relative-path>.
+    const queryDeviceId = new URLSearchParams(uri.query).get('deviceId')?.trim();
+    if (queryDeviceId && segments.length > 1) {
+      segments.shift();
+    } else {
+      const decodedFirst = this.decodeDeviceDeviceSegment(segments[0]);
+      const resolvedDeviceId = decodedFirst ? this.deviceIdFromUriSegment(decodedFirst) : undefined;
+      if (resolvedDeviceId && segments.length > 1) {
+        segments.shift();
+      }
+    }
+
+    return toRelativePath(segments.join('/'));
   }
 
   private toRelativeDevicePath(uri: vscode.Uri, board: NonNullable<ReturnType<typeof getConnectedPyDevice>>): string {
