@@ -114,14 +114,14 @@
         "title": "Open Device File"
       },
       {
-        "command": "mekatrol.pydevice.comparedevicewithcomputer",
-        "title": "Compare Device File With Computer",
+        "command": "mekatrol.pydevice.syncfilewithcomputer",
+        "title": "Sync File Diff (Device/Computer)",
         "enablement": "viewItem != pydevice.deviceFileUnmapped && viewItem != pydevice.deviceFileExcludedUnmapped && viewItem != pydevice.deviceFileHostMissing && viewItem != pydevice.deviceFileExcludedHostMissing",
         "icon": "$(diff)"
       },
       {
-        "command": "mekatrol.pydevice.comparedevicefiles",
-        "title": "Compare files",
+        "command": "mekatrol.pydevice.opensyncfiles",
+        "title": "Sync files",
         "icon": "$(list-selection)"
       },
       {
@@ -323,11 +323,11 @@
           "when": "false"
         },
         {
-          "command": "mekatrol.pydevice.comparedevicewithcomputer",
+          "command": "mekatrol.pydevice.syncfilewithcomputer",
           "when": "false"
         },
         {
-          "command": "mekatrol.pydevice.comparedevicefiles",
+          "command": "mekatrol.pydevice.opensyncfiles",
           "when": "false"
         },
         {
@@ -476,7 +476,7 @@
           "group": "navigation@2.5"
         },
         {
-          "command": "mekatrol.pydevice.comparedevicefiles",
+          "command": "mekatrol.pydevice.opensyncfiles",
           "when": "view == mekatrol.pydevice.syncExplorer && mekatrol.pydevice.explorerReady && mekatrol.pydevice.boardConnected && (viewItem == pydevice.deviceRoot || viewItem == pydevice.deviceIdNode || viewItem == pydevice.deviceIdNodeMapped || viewItem == pydevice.deviceFolder || viewItem == pydevice.deviceFolderExcluded || viewItem == pydevice.deviceLibraryNode || viewItem == pydevice.deviceLibraryNodeMissing)",
           "group": "navigation@3"
         },
@@ -486,19 +486,9 @@
           "group": "navigation@2"
         },
         {
-          "command": "mekatrol.pydevice.comparedevicewithcomputer",
+          "command": "mekatrol.pydevice.syncfilewithcomputer",
           "when": "view == mekatrol.pydevice.syncExplorer && mekatrol.pydevice.explorerReady && (viewItem == pydevice.hostFile || viewItem == pydevice.hostFileExcluded || viewItem == pydevice.deviceFileMapped || viewItem == pydevice.deviceFileExcludedMapped || viewItem == pydevice.deviceFileHostMissing || viewItem == pydevice.deviceFileExcludedHostMissing)",
           "group": "navigation@3"
-        },
-        {
-          "command": "mekatrol.pydevice.syncnodefromdevice",
-          "when": "view == mekatrol.pydevice.syncExplorer && mekatrol.pydevice.explorerReady && (viewItem == pydevice.deviceFileMapped || viewItem == pydevice.deviceFileHostMissing || viewItem == pydevice.deviceFileUnmapped || viewItem == pydevice.deviceFolder || viewItem == pydevice.deviceIdNode || viewItem == pydevice.deviceIdNodeMapped || viewItem == pydevice.deviceLibraryNode || viewItem == pydevice.deviceLibraryNodeMissing)",
-          "group": "navigation@4"
-        },
-        {
-          "command": "mekatrol.pydevice.syncnodetodevice",
-          "when": "view == mekatrol.pydevice.syncExplorer && mekatrol.pydevice.explorerReady && (viewItem == pydevice.deviceFileMapped || viewItem == pydevice.deviceFileHostMissing || viewItem == pydevice.deviceFileUnmapped || viewItem == pydevice.deviceFolder || viewItem == pydevice.deviceIdNode || viewItem == pydevice.deviceIdNodeMapped || viewItem == pydevice.deviceLibraryNode || viewItem == pydevice.deviceLibraryNodeMissing)",
-          "group": "navigation@5"
         },
         {
           "command": "mekatrol.pydevice.excludedevicefilefromsync",
@@ -575,7 +565,7 @@
         "when": "view == mekatrol.pydevice.syncExplorer && mekatrol.pydevice.explorerReady && listFocus"
       },
       {
-        "command": "mekatrol.pydevice.comparedevicewithcomputer",
+        "command": "mekatrol.pydevice.syncfilewithcomputer",
         "key": "ctrl+alt+d",
         "mac": "cmd+alt+d",
         "when": "view == mekatrol.pydevice.syncExplorer && mekatrol.pydevice.explorerReady && listFocus"

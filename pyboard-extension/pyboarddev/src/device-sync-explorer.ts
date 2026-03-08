@@ -41,6 +41,7 @@ import {
 } from './utils/device-filesystem';
 import { FileWatcher, FileWatcherEvent } from './utils/file-watcher';
 import { syncStateStore } from './sync-state-store';
+import { emitPyDeviceLoggerEvent } from './pydevice-logger-events';
 
 const syncViewId = 'mekatrol.pydevice.syncExplorer';
 const commandRefreshId = 'mekatrol.pydevice.refreshsyncview';
@@ -53,8 +54,8 @@ const commandPullAndOpenDeviceItemId = 'mekatrol.pydevice.pullandopendeviceitem'
 const commandOpenDeviceFileId = 'mekatrol.pydevice.opendevicefile';
 const commandOpenComputerItemFromTreeId = 'mekatrol.pydevice._opencomputersyncitemfromtree';
 const commandOpenDeviceFileFromTreeId = 'mekatrol.pydevice._opendevicefilefromtree';
-const commandCompareDeviceWithComputerId = 'mekatrol.pydevice.comparedevicewithcomputer';
-const commandCompareDeviceFilesId = 'mekatrol.pydevice.comparedevicefiles';
+const commandSyncFileWithComputerId = 'mekatrol.pydevice.syncfilewithcomputer';
+const commandOpenSyncFilesId = 'mekatrol.pydevice.opensyncfiles';
 const commandCreateSyncFileId = 'mekatrol.pydevice.createsyncfile';
 const commandCreateSyncFolderId = 'mekatrol.pydevice.createsyncfolder';
 const commandRenameSyncPathId = 'mekatrol.pydevice.renamesyncpath';
@@ -83,6 +84,7 @@ const explorerHasConfigurationContextKey = 'mekatrol.pydevice.explorerHasConfigu
 const explorerHasSyncFolderContextKey = 'mekatrol.pydevice.explorerHasSyncFolder';
 const explorerReadyContextKey = 'mekatrol.pydevice.explorerReady';
 const nameHistoryStateKey = 'mekatrol.pydevice.nameHistoryByLower';
+const syncLoggerSource = 'SyncView';
 
 type NodeSide = 'device' | 'computer';
 
@@ -100,7 +102,7 @@ interface NodeData {
   isIndicator?: boolean;
 }
 
-type DeviceFileCompareAvailability = 'available' | 'unmapped' | 'hostMissing';
+type DeviceFileSyncAvailability = 'available' | 'unmapped' | 'hostMissing';
 
 interface DeviceLibraryMapping {
   hostRelativePath: string;
@@ -135,12 +137,12 @@ interface OpenEditorOptions {
   explorerClick?: boolean;
 }
 
-type DeviceFileCompareStatus = 'match' | 'mismatch' | 'missing_computer' | 'missing_device';
+type DeviceFileSyncStatus = 'match' | 'mismatch' | 'missing_computer' | 'missing_device';
 
-interface DeviceFileCompareRow {
+interface DeviceFileSyncRow {
   id: string;
   deviceRelativePath: string;
-  status: DeviceFileCompareStatus;
+  status: DeviceFileSyncStatus;
   libraryHostFolder?: string;
   libraryDeviceRoot?: string;
   scopeLabel: string;
@@ -166,6 +168,8 @@ class SyncNode extends vscode.TreeItem {
 class DeviceSyncModel {
   private readonly onDidChangeDataEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeData = this.onDidChangeDataEmitter.event;
+  private readonly fileWatcherEventEmitter = new vscode.EventEmitter<FileWatcherEvent>();
+  readonly onDidFileWatcherEvent = this.fileWatcherEventEmitter.event;
 
   private workspaceFolder: vscode.WorkspaceFolder | undefined;
   private syncRootPath: string | undefined;
@@ -217,6 +221,16 @@ class DeviceSyncModel {
 
   private async wait(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private logSyncEvent(action: string, message: string, details?: Record<string, unknown>): void {
+    emitPyDeviceLoggerEvent({
+      source: syncLoggerSource,
+      level: 'debug',
+      action,
+      message,
+      details
+    });
   }
 
   private async waitForDeviceEntry(
@@ -539,22 +553,31 @@ class DeviceSyncModel {
   }
 
   async syncFromDevice(): Promise<void> {
+    const startedAt = Date.now();
     await this.ensureActiveDevice();
+    this.logSyncEvent('sync-from-device-started', 'Sync from device requested.', {
+      deviceId: this.activeDeviceId
+    });
     if (!this.workspaceFolder || !this.syncRootPath) {
       await this.refresh(false);
     }
 
     const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
+      this.logSyncEvent('sync-from-device-skipped', 'Sync from device skipped because no board is connected.', {
+        deviceId: this.activeDeviceId
+      });
       vscode.window.showWarningMessage('Connect to a board before syncing from device.');
       return;
     }
 
     if (!this.syncRootPath) {
+      this.logSyncEvent('sync-from-device-skipped', 'Sync from device skipped because no host folder is mapped.', {
+        deviceId: this.activeDeviceId
+      });
       vscode.window.showWarningMessage('Map this device to a computer folder before syncing from device.');
       return;
     }
-
     const deviceEntries = await listDeviceEntries(board);
     if (this.activeDeviceId) {
       await this.pruneMissingDeviceSyncExclusions(this.activeDeviceId, deviceEntries);
@@ -649,6 +672,10 @@ class DeviceSyncModel {
       syncOperations
     );
     if (!syncDialog) {
+      this.logSyncEvent('sync-from-device-cancelled', 'Sync from device cancelled from sync preview.', {
+        deviceId: this.activeDeviceId,
+        totalOperations: syncOperations.length
+      });
       vscode.window.showInformationMessage('Sync from device cancelled.');
       return;
     }
@@ -727,20 +754,27 @@ class DeviceSyncModel {
       }
     }
 
-    this.deviceEntries = deviceEntries;
-    this.computerEntries = await scanComputerSyncEntries(this.syncRootPath);
-    this.syncStates = buildSyncStateMap(this.filterSyncableEntries(this.computerEntries), this.filterSyncableEntries(this.deviceEntries));
-    this.onDidChangeDataEmitter.fire();
-    if (this.notifyDeviceFilesChanged) {
-      await this.notifyDeviceFilesChanged(updatedDeviceFiles);
-    }
+      this.deviceEntries = deviceEntries;
+      this.computerEntries = await scanComputerSyncEntries(this.syncRootPath);
+      this.syncStates = buildSyncStateMap(this.filterSyncableEntries(this.computerEntries), this.filterSyncableEntries(this.deviceEntries));
+      this.onDidChangeDataEmitter.fire();
+      if (this.notifyDeviceFilesChanged) {
+        await this.notifyDeviceFilesChanged(updatedDeviceFiles);
+      }
 
-    const msg = failedCount > 0
-      ? `Sync from device finished with ${failedCount} error(s).`
-      : 'Sync from device complete.';
-    await syncDialog.finish(msg);
-    vscode.window.showInformationMessage(msg);
-    logChannelOutput(msg, true);
+      const msg = failedCount > 0
+        ? `Sync from device finished with ${failedCount} error(s).`
+        : 'Sync from device complete.';
+      await syncDialog.finish(msg);
+      vscode.window.showInformationMessage(msg);
+      logChannelOutput(msg, true);
+      this.logSyncEvent('sync-from-device-completed', msg, {
+        deviceId: this.activeDeviceId,
+        totalOperations: syncOperations.length,
+        selectedOperations: selectedOperations.length,
+        failedCount,
+        elapsedMs: Date.now() - startedAt
+      });
   }
 
   private isWithinLibraryRoots(relativePath: string, libraryRoots: Set<string>): boolean {
@@ -753,18 +787,22 @@ class DeviceSyncModel {
   }
 
   private async syncFromDeviceForDeviceNode(deviceId: string): Promise<void> {
+    const startedAt = Date.now();
     await this.ensureActiveDevice();
+    this.logSyncEvent('sync-from-device-node-started', 'Scoped sync from device requested.', { deviceId });
     if (!this.workspaceFolder || !this.syncRootPath) {
       await this.refresh(false);
     }
 
     const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
+      this.logSyncEvent('sync-from-device-node-skipped', 'Scoped sync skipped because no board is connected.', { deviceId });
       vscode.window.showWarningMessage('Connect to a board before syncing from device.');
       return;
     }
 
     if (!this.syncRootPath) {
+      this.logSyncEvent('sync-from-device-node-skipped', 'Scoped sync skipped because no host folder is mapped.', { deviceId });
       vscode.window.showWarningMessage('Map this device to a computer folder before syncing from device.');
       return;
     }
@@ -957,6 +995,10 @@ class DeviceSyncModel {
       syncOperations
     );
     if (!syncDialog) {
+      this.logSyncEvent('sync-from-device-node-cancelled', 'Scoped sync from device cancelled from sync preview.', {
+        deviceId,
+        totalOperations: syncOperations.length
+      });
       vscode.window.showInformationMessage('Sync from device cancelled.');
       return;
     }
@@ -1053,21 +1095,38 @@ class DeviceSyncModel {
     await syncDialog.finish(msg);
     vscode.window.showInformationMessage(msg);
     logChannelOutput(msg, true);
+    this.logSyncEvent('sync-from-device-node-completed', msg, {
+      deviceId,
+      totalOperations: syncOperations.length,
+      selectedOperations: selectedOperations.length,
+      failedCount,
+      elapsedMs: Date.now() - startedAt
+    });
   }
 
   async syncToDevice(): Promise<void> {
+    const startedAt = Date.now();
     await this.ensureActiveDevice();
+    this.logSyncEvent('sync-to-device-started', 'Sync to device requested.', {
+      deviceId: this.activeDeviceId
+    });
     if (!this.workspaceFolder || !this.syncRootPath) {
       await this.refresh(false);
     }
 
     const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
+      this.logSyncEvent('sync-to-device-skipped', 'Sync to device skipped because no board is connected.', {
+        deviceId: this.activeDeviceId
+      });
       vscode.window.showWarningMessage('Connect to a board before syncing to device.');
       return;
     }
 
     if (!this.syncRootPath) {
+      this.logSyncEvent('sync-to-device-skipped', 'Sync to device skipped because no host folder is mapped.', {
+        deviceId: this.activeDeviceId
+      });
       vscode.window.showWarningMessage('Map this device to a computer folder before syncing to device.');
       return;
     }
@@ -1177,6 +1236,10 @@ class DeviceSyncModel {
       syncOperations
     );
     if (!syncDialog) {
+      this.logSyncEvent('sync-to-device-cancelled', 'Sync to device cancelled from sync preview.', {
+        deviceId: this.activeDeviceId,
+        totalOperations: syncOperations.length
+      });
       vscode.window.showInformationMessage('Sync to device cancelled.');
       return;
     }
@@ -1256,10 +1319,22 @@ class DeviceSyncModel {
     await syncDialog.finish(msg);
     vscode.window.showInformationMessage(msg);
     logChannelOutput(msg, true);
+    this.logSyncEvent('sync-to-device-completed', msg, {
+      deviceId: this.activeDeviceId,
+      totalOperations: syncOperations.length,
+      selectedOperations: selectedOperations.length,
+      failedCount,
+      elapsedMs: Date.now() - startedAt
+    });
   }
 
   async syncNodeFromDevice(node?: SyncNode): Promise<void> {
     const targetNode = this.resolveTargetNode(node);
+    this.logSyncEvent('sync-node-from-device-requested', 'Scoped sync from device requested.', {
+      side: targetNode?.data.side,
+      relativePath: targetNode?.data.relativePath,
+      isDirectory: targetNode?.data.isDirectory
+    });
     await this.ensureActiveDevice(targetNode);
     if (targetNode?.data.isDeviceIdNode && targetNode.data.deviceId) {
       await this.syncFromDeviceForDeviceNode(targetNode.data.deviceId);
@@ -1287,6 +1362,11 @@ class DeviceSyncModel {
 
   async syncNodeToDevice(node?: SyncNode): Promise<void> {
     const targetNode = this.resolveTargetNode(node);
+    this.logSyncEvent('sync-node-to-device-requested', 'Scoped sync to device requested.', {
+      side: targetNode?.data.side,
+      relativePath: targetNode?.data.relativePath,
+      isDirectory: targetNode?.data.isDirectory
+    });
     await this.ensureActiveDevice(targetNode);
     const scope = this.resolveNodeSyncScope(targetNode);
     if (!targetNode || targetNode.data.isRoot || targetNode.data.isDeviceIdNode) {
@@ -1507,7 +1587,10 @@ class DeviceSyncModel {
     await this.pullDeviceNodeAndOpen(quickPickNode, options);
   }
 
-  async compareDeviceWithComputer(node?: SyncNode): Promise<void> {
+  async syncFileWithComputer(node?: SyncNode): Promise<void> {
+    this.logSyncEvent('single-file-sync-diff-requested', 'Sync file diff (device/computer) requested.', {
+      hasNode: !!node
+    });
     const targetNode = this.resolveTargetNode(node);
     await this.ensureActiveDevice(targetNode);
     if (targetNode) {
@@ -1517,6 +1600,7 @@ class DeviceSyncModel {
 
     const board = getConnectedPyDevice(this.activeDeviceId);
     if (!board) {
+      this.logSyncEvent('single-file-sync-diff-skipped', 'Sync file diff request skipped because no board is connected.');
       vscode.window.showWarningMessage('Connect to a board before comparing a device file.');
       return;
     }
@@ -1526,20 +1610,22 @@ class DeviceSyncModel {
       .sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 
     if (files.length === 0) {
-      vscode.window.showInformationMessage('No device files available to compare.');
+      this.logSyncEvent('single-file-sync-diff-skipped', 'Sync file diff request skipped because device has no files.');
+      vscode.window.showInformationMessage('No device files available to diff.');
       return;
     }
 
     const selected = await vscode.window.showQuickPick(
       files.map((item) => ({ label: item.relativePath })),
       {
-        placeHolder: 'Select a device file to compare',
+        placeHolder: 'Select a device file to diff',
         canPickMany: false,
         ignoreFocusOut: true
       }
     );
 
     if (!selected) {
+      this.logSyncEvent('single-file-sync-diff-cancelled', 'Sync file diff request cancelled by user.');
       return;
     }
 
@@ -1557,17 +1643,24 @@ class DeviceSyncModel {
     await this.openDeviceDiff(quickPickNode);
   }
 
-  async compareDeviceFiles(node?: SyncNode): Promise<void> {
+  async openSyncFiles(node?: SyncNode): Promise<void> {
+    const startedAt = Date.now();
     const targetNode = this.resolveTargetNode(node);
     const deviceId = await this.ensureActiveDevice(targetNode);
     if (!deviceId) {
-      vscode.window.showWarningMessage('Select a device before comparing files.');
+      this.logSyncEvent('sync-view-skipped', 'Sync view request skipped because no device is selected.');
+      vscode.window.showWarningMessage('Select a device before opening sync files.');
       return;
     }
+    this.logSyncEvent('sync-view-started', 'Opening sync view for device.', {
+      deviceId,
+      relativePath: targetNode?.data.relativePath ?? ''
+    });
 
     const board = getConnectedPyDevice(deviceId);
     if (!board) {
-      vscode.window.showWarningMessage('Connect to a board before comparing files.');
+      this.logSyncEvent('sync-view-skipped', 'Sync view request skipped because no board is connected.', { deviceId });
+      vscode.window.showWarningMessage('Connect to a board before opening sync files.');
       return;
     }
 
@@ -1577,14 +1670,8 @@ class DeviceSyncModel {
       && !scopedTargetNode.data.isDeviceIdNode
       ? toRelativePath(scopedTargetNode.data.relativePath)
       : '';
-    const rows = await this.buildDeviceFileCompareRows(deviceId, board, targetRelativePath);
-    if (rows.length === 0) {
-      const targetLabel = targetRelativePath ? ` in /${targetRelativePath}` : '';
-      vscode.window.showInformationMessage(`No files available to compare${targetLabel}.`);
-      return;
-    }
-
-    const hasDifferences = rows.some((row) => row.status !== 'match');
+    let currentRows = await this.buildDeviceFileSyncRows(deviceId, board, targetRelativePath);
+    let currentHasDifferences = currentRows.some((row) => row.status !== 'match');
     const syncTargetNode = scopedTargetNode ?? new SyncNode(
       {
         side: 'device',
@@ -1598,12 +1685,167 @@ class DeviceSyncModel {
     );
 
     const panel = vscode.window.createWebviewPanel(
-      'pydevice.compareFiles',
-      `Compare Files: ${this.getDeviceDisplayName(deviceId)}`,
+      'pydevice.syncFiles',
+      `Sync Files: ${this.getDeviceDisplayName(deviceId)}`,
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true }
     );
-    panel.webview.html = this.renderDeviceFileCompareHtml(deviceId, rows, hasDifferences);
+    this.logSyncEvent('sync-view-rendered', 'Sync view rendered.', {
+      deviceId,
+      totalRows: currentRows.length,
+      hasDifferences: currentHasDifferences
+    });
+    const renderSyncViewHtml = (): string =>
+      this.renderDeviceFileSyncHtml(deviceId, currentRows, currentHasDifferences);
+    panel.webview.html = renderSyncViewHtml();
+    const pushRowsToPanel = async (
+      nextRows: DeviceFileSyncRow[],
+      nextHasDifferences: boolean,
+      reason: string
+    ): Promise<void> => {
+      const previousHasDifferences = currentHasDifferences;
+      currentRows = nextRows;
+      currentHasDifferences = nextHasDifferences;
+      const posted = await panel.webview.postMessage({
+        type: 'refresh_rows',
+        rows: currentRows,
+        hasDifferences: currentHasDifferences
+      });
+      if (!posted || previousHasDifferences !== currentHasDifferences) {
+        panel.webview.html = renderSyncViewHtml();
+        this.logSyncEvent('sync-view-html-rerendered', 'Re-rendered sync view HTML after refresh update.', {
+          deviceId,
+          reason,
+          posted,
+          previousHasDifferences,
+          currentHasDifferences
+        });
+      }
+    };
+    let watcherRefreshQueued = false;
+    let watcherRefreshPending = false;
+    let pendingWatcherEvent: FileWatcherEvent | undefined;
+    const queueWatcherRefresh = (event: FileWatcherEvent): void => {
+      if (watcherRefreshQueued) {
+        watcherRefreshPending = true;
+        pendingWatcherEvent = event;
+        this.logSyncEvent('sync-view-auto-refresh-coalesced', 'Coalesced watcher event while sync view refresh is in progress.', {
+          deviceId,
+          scope: event.scope,
+          workspaceRelativePath: event.workspaceRelativePath
+        });
+        return;
+      }
+      watcherRefreshQueued = true;
+      void (async () => {
+        try {
+          const refreshedBoard = getConnectedPyDevice(deviceId);
+          if (!refreshedBoard) {
+            this.logSyncEvent('sync-view-auto-refresh-skipped', 'Auto-refresh skipped because board is not connected.', {
+              deviceId,
+              scope: event.scope,
+              workspaceRelativePath: event.workspaceRelativePath
+            });
+            return;
+          }
+
+          const refreshedRows = await this.buildDeviceFileSyncRows(deviceId, refreshedBoard, targetRelativePath);
+          const changed = JSON.stringify(refreshedRows) !== JSON.stringify(currentRows);
+          if (!changed) {
+            this.logSyncEvent('sync-view-auto-refresh-noop', 'Watcher event matched sync scope, but no row changes were detected.', {
+              deviceId,
+              scope: event.scope,
+              workspaceRelativePath: event.workspaceRelativePath,
+              hasDifferences: currentRows.some((row) => row.status !== 'match'),
+              totalRows: currentRows.length,
+              note: 'No-op means this event caused no additional UI delta; rows may already show differences.'
+            });
+            return;
+          }
+
+          const refreshedHasDifferences = refreshedRows.some((row) => row.status !== 'match');
+          await pushRowsToPanel(refreshedRows, refreshedHasDifferences, 'watcher-auto-refresh');
+          this.logSyncEvent('sync-view-auto-refresh-applied', 'Applied watcher-driven sync view refresh.', {
+            deviceId,
+            scope: event.scope,
+            workspaceRelativePath: event.workspaceRelativePath,
+            totalRows: refreshedRows.length,
+            hasDifferences: refreshedHasDifferences
+          });
+
+          // Some host writes (temp-file swap/flush) can emit an early event before final bytes settle.
+          // Run one short delayed pass so rows can transition mismatch->match when content stabilizes.
+          if (event.scope === 'host' && event.changeType !== 'deleted') {
+            await this.wait(300);
+            const settledBoard = getConnectedPyDevice(deviceId);
+            if (!settledBoard) {
+              this.logSyncEvent('sync-view-auto-refresh-stabilize-skipped', 'Stabilization refresh skipped because board is not connected.', {
+                deviceId,
+                workspaceRelativePath: event.workspaceRelativePath
+              });
+            } else {
+              const settledRows = await this.buildDeviceFileSyncRows(deviceId, settledBoard, targetRelativePath);
+              const settledChanged = JSON.stringify(settledRows) !== JSON.stringify(currentRows);
+              if (settledChanged) {
+                const settledHasDifferences = settledRows.some((row) => row.status !== 'match');
+                await pushRowsToPanel(settledRows, settledHasDifferences, 'watcher-stabilization-pass');
+                this.logSyncEvent('sync-view-auto-refresh-stabilized', 'Applied stabilization pass for watcher-driven sync view refresh.', {
+                  deviceId,
+                  scope: event.scope,
+                  workspaceRelativePath: event.workspaceRelativePath,
+                  totalRows: settledRows.length,
+                  hasDifferences: settledHasDifferences
+                });
+              } else {
+                this.logSyncEvent('sync-view-auto-refresh-stabilize-noop', 'Stabilization pass detected no additional row changes.', {
+                  deviceId,
+                  scope: event.scope,
+                  workspaceRelativePath: event.workspaceRelativePath,
+                  hasDifferences: currentRows.some((row) => row.status !== 'match'),
+                  totalRows: currentRows.length
+                });
+              }
+            }
+          }
+        } catch (error) {
+          this.logSyncEvent('sync-view-auto-refresh-failed', 'Watcher-driven sync view refresh failed.', {
+            deviceId,
+            scope: event.scope,
+            workspaceRelativePath: event.workspaceRelativePath,
+            error: this.toErrorMessage(error)
+          });
+        } finally {
+          watcherRefreshQueued = false;
+          if (watcherRefreshPending) {
+            watcherRefreshPending = false;
+            const queuedEvent = pendingWatcherEvent ?? event;
+            pendingWatcherEvent = undefined;
+            queueWatcherRefresh(queuedEvent);
+          }
+        }
+      })();
+    };
+    const watcherSubscription = this.onDidFileWatcherEvent((event) => {
+      const relevant = this.isFileWatcherEventRelevantToSyncView(event, deviceId, targetRelativePath);
+      this.logSyncEvent('sync-view-watcher-event', relevant
+        ? 'Watcher event intersects current sync view scope.'
+        : 'Watcher event ignored for current sync view scope.', {
+        deviceId,
+        targetRelativePath,
+        scope: event.scope,
+        changeType: event.changeType,
+        entityType: event.entityType,
+        workspaceRelativePath: event.workspaceRelativePath
+      });
+      if (!relevant) {
+        return;
+      }
+      queueWatcherRefresh(event);
+    });
+    panel.onDidDispose(() => {
+      watcherSubscription.dispose();
+      this.logSyncEvent('sync-view-closed', 'Sync view closed.', { deviceId, elapsedMs: Date.now() - startedAt });
+    });
     panel.webview.onDidReceiveMessage((message: unknown) => {
       if (!message || typeof message !== 'object') {
         return;
@@ -1614,22 +1856,34 @@ class DeviceSyncModel {
       };
       if (typed.type !== 'compare' || typeof typed.rowId !== 'string') {
         if (typed.type === 'sync_to_device') {
+          this.logSyncEvent('sync-view-action', 'Sync view requested sync computer to device.', { deviceId });
           void this.syncNodeToDevice(syncTargetNode);
           return;
         }
         if (typed.type === 'sync_from_device') {
+          this.logSyncEvent('sync-view-action', 'Sync view requested sync device to computer.', { deviceId });
           void this.syncNodeFromDevice(syncTargetNode);
           return;
         }
         if (typed.type === 'close') {
+          this.logSyncEvent('sync-view-action', 'Sync view close requested.', { deviceId });
           panel.dispose();
+          return;
         }
         return;
       }
-      const row = rows.find((item) => item.id === typed.rowId);
+      const row = currentRows.find((item) => item.id === typed.rowId);
       if (!row || row.status !== 'mismatch') {
+        this.logSyncEvent('sync-view-compare-skipped', 'Sync view compare action ignored for non-mismatch row.', {
+          deviceId,
+          rowId: typed.rowId
+        });
         return;
       }
+      this.logSyncEvent('sync-view-compare-selected', 'Sync view compare action selected.', {
+        deviceId,
+        relativePath: row.deviceRelativePath
+      });
 
       const compareNode = new SyncNode(
         {
@@ -1867,6 +2121,11 @@ class DeviceSyncModel {
     directionLabel: string,
     operations: SyncOperation[]
   ): Promise<SyncOperationsDialog | undefined> {
+    this.logSyncEvent('sync-preview-opened', 'Sync preview opened.', {
+      title,
+      directionLabel,
+      totalOperations: operations.length
+    });
     const rows = operations
       .sort((a, b) => {
         if (a.relativePath === b.relativePath) {
@@ -1978,8 +2237,10 @@ class DeviceSyncModel {
   </div>
   <script>
     const vscode = acquireVsCodeApi();
-    const rows = ${rowsJson};
+    let rows = ${rowsJson};
     const tbody = document.getElementById('rows');
+    const syncToDeviceButton = document.getElementById('syncToDevice');
+    const syncFromDeviceButton = document.getElementById('syncFromDevice');
     const toClass = (action) => action === 'create' ? 'action-create' : (action === 'modify' ? 'action-modify' : 'action-delete');
     const noteText = 'this path is configured to be excluded by default';
 
@@ -2135,6 +2396,10 @@ class DeviceSyncModel {
         }
         const typed = message as { type?: string; selectedIds?: unknown };
         if (typed.type === 'cancel') {
+          this.logSyncEvent('sync-preview-cancelled', 'Sync preview cancelled by user.', {
+            title,
+            directionLabel
+          });
           panel.dispose();
           settle(undefined);
           return;
@@ -2143,6 +2408,12 @@ class DeviceSyncModel {
           const selected = Array.isArray(typed.selectedIds)
             ? typed.selectedIds.filter((item): item is string => typeof item === 'string')
             : [];
+          this.logSyncEvent('sync-preview-continued', 'Sync preview confirmed by user.', {
+            title,
+            directionLabel,
+            selectedOperations: selected.length,
+            totalOperations: rows.length
+          });
           void panel.webview.postMessage({ type: 'lock' });
           settle(new Set(selected));
         }
@@ -2158,6 +2429,11 @@ class DeviceSyncModel {
         void panel.webview.postMessage({ type: 'update', id: operationId, status, errorText });
       },
       finish: async (summary: string) => {
+        this.logSyncEvent('sync-preview-finished', 'Sync preview execution finished.', {
+          title,
+          directionLabel,
+          summary
+        });
         void panel.webview.postMessage({ type: 'finish', summary });
         await new Promise<void>((resolve) => {
           let settled = false;
@@ -2213,7 +2489,19 @@ class DeviceSyncModel {
     if (!normalised) {
       return false;
     }
-    return normalised.split('/').includes('__pycache__');
+    const parts = normalised.split('/');
+    const leaf = parts[parts.length - 1] ?? '';
+    return parts.includes('__pycache__')
+      || leaf.startsWith('.goutputstream-');
+  }
+
+  private isTransientHostTempPath(workspaceRelativePath: string): boolean {
+    const normalised = toRelativePath(workspaceRelativePath);
+    if (!normalised) {
+      return false;
+    }
+    const leaf = path.posix.basename(normalised);
+    return leaf.startsWith('.goutputstream-');
   }
 
   private filterSyncableEntries(entries: FileEntry[]): FileEntry[] {
@@ -2390,7 +2678,7 @@ class DeviceSyncModel {
     return this.isPathExcludedFromSync(data.relativePath, deviceId);
   }
 
-  getDeviceFileCompareAvailability(data: NodeData): DeviceFileCompareAvailability {
+  getDeviceFileSyncAvailability(data: NodeData): DeviceFileSyncAvailability {
     if (data.side !== 'device' || data.isDirectory || data.isRoot || data.isIndicator) {
       return 'available';
     }
@@ -3915,12 +4203,24 @@ class DeviceSyncModel {
     }
 
     const workspaceRelativePath = toRelativePath(path.relative(workspaceRoot, fsPath));
+    if (this.isTransientHostTempPath(workspaceRelativePath)) {
+      return;
+    }
     await this.applyHostEntryChangeForAllDevices(
       workspaceRelativePath,
       'modified',
       'unknown',
       vscode.Uri.file(fsPath)
     );
+    this.fileWatcherEventEmitter.fire({
+      scope: 'host',
+      source: 'manual',
+      changeType: 'modified',
+      entityType: 'unknown',
+      uri: vscode.Uri.file(fsPath),
+      workspaceRelativePath,
+      timestamp: Date.now()
+    });
     this.onDidChangeDataEmitter.fire();
   }
 
@@ -3929,12 +4229,16 @@ class DeviceSyncModel {
       if (event.uri.scheme !== 'file') {
         return;
       }
+      if (this.isTransientHostTempPath(event.workspaceRelativePath)) {
+        return;
+      }
       await this.applyHostEntryChangeForAllDevices(
         event.workspaceRelativePath,
         event.changeType,
         event.entityType,
         event.uri
       );
+      this.fileWatcherEventEmitter.fire(event);
       this.onDidChangeDataEmitter.fire();
       return;
     }
@@ -3951,7 +4255,75 @@ class DeviceSyncModel {
       event.changeType,
       event.entityType
     );
+    this.fileWatcherEventEmitter.fire(event);
     this.onDidChangeDataEmitter.fire();
+  }
+
+  private syncViewPathsIntersect(changedPath: string, targetRelativePath: string): boolean {
+    const changed = toRelativePath(changedPath);
+    const target = toRelativePath(targetRelativePath);
+    if (!target) {
+      return true;
+    }
+    if (!changed) {
+      return false;
+    }
+    return this.matchesTarget(changed, target, true) || this.matchesTarget(target, changed, true);
+  }
+
+  private isFileWatcherEventRelevantToSyncView(
+    event: FileWatcherEvent,
+    deviceId: string,
+    targetRelativePath: string
+  ): boolean {
+    if (event.scope === 'host' && this.isTransientHostTempPath(event.workspaceRelativePath)) {
+      return false;
+    }
+
+    if (event.scope === 'device') {
+      const parsed = this.parseDeviceWatcherPath(event);
+      if (!parsed || parsed.deviceId !== deviceId) {
+        return false;
+      }
+      if (this.isIgnoredSyncPath(parsed.relativePath)) {
+        return false;
+      }
+      return this.syncViewPathsIntersect(parsed.relativePath, targetRelativePath);
+    }
+
+    const workspaceRelativePath = toRelativePath(event.workspaceRelativePath);
+    if (!workspaceRelativePath) {
+      return false;
+    }
+
+    const mappedHostFolder = toRelativePath(this.deviceHostFolderMappings[deviceId] ?? '');
+    if (mappedHostFolder) {
+      const mappedScoped = this.toScopedRelativePath(mappedHostFolder, workspaceRelativePath);
+      if (
+        mappedScoped !== undefined
+        && !this.isIgnoredSyncPath(mappedScoped)
+        && this.syncViewPathsIntersect(mappedScoped, targetRelativePath)
+      ) {
+        return true;
+      }
+    }
+
+    const libraries = this.getDeviceLibraryMappings(deviceId);
+    for (const library of libraries) {
+      const libraryScoped = this.toScopedRelativePath(library.hostRelativePath, workspaceRelativePath);
+      if (libraryScoped === undefined) {
+        continue;
+      }
+      const libraryDevicePath = this.applyLibraryDeviceRoot(libraryScoped, library.devicePath);
+      if (this.isIgnoredSyncPath(libraryDevicePath)) {
+        continue;
+      }
+      if (this.syncViewPathsIntersect(libraryDevicePath, targetRelativePath)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   private parseDeviceWatcherPath(event: FileWatcherEvent): { deviceId: string; relativePath: string } | undefined {
@@ -4165,9 +4537,6 @@ class DeviceSyncModel {
     if (computer.sha1 && device.sha1 && computer.sha1 === device.sha1) {
       return 'synced';
     }
-    if (!device.sha1 && computer.size !== undefined && device.size !== undefined && computer.size === device.size) {
-      return 'synced';
-    }
     return 'out_of_sync';
   }
 
@@ -4220,8 +4589,16 @@ class DeviceSyncModel {
   }
 
   private async openDeviceDiff(node: SyncNode): Promise<void> {
+    const startedAt = Date.now();
+    this.logSyncEvent('sync-diff-started', 'Opening device/computer diff.', {
+      deviceId: node.data.deviceId,
+      relativePath: node.data.relativePath
+    });
     const deviceId = await this.ensureActiveDevice(node);
     if (!deviceId || !getConnectedPyDevice(deviceId)) {
+      this.logSyncEvent('sync-diff-skipped', 'Sync diff skipped because device is not connected.', {
+        deviceId
+      });
       vscode.window.showWarningMessage('Connect to a board before comparing a device file.');
       return;
     }
@@ -4232,17 +4609,29 @@ class DeviceSyncModel {
 
     const computerRootPath = this.resolveComputerReadRootPath(node);
     if (!computerRootPath || node.data.isDirectory || node.data.isRoot || node.data.isIndicator) {
+      this.logSyncEvent('sync-diff-skipped', 'Sync diff skipped because node is not a file.', {
+        deviceId,
+        relativePath: node.data.relativePath
+      });
       return;
     }
 
-    const compareAvailability = this.getDeviceFileCompareAvailability(node.data);
-    if (compareAvailability === 'unmapped') {
+    const syncAvailability = this.getDeviceFileSyncAvailability(node.data);
+    if (syncAvailability === 'unmapped') {
+      this.logSyncEvent('sync-diff-skipped', 'Sync diff skipped because device is not mapped to a host folder.', {
+        deviceId,
+        relativePath: node.data.relativePath
+      });
       vscode.window.showWarningMessage('Map this device to a computer folder before comparing files.');
       return;
     }
 
     const relativePath = this.toNodeScopedComputerRelativePath(node);
-    if (compareAvailability === 'hostMissing') {
+    if (syncAvailability === 'hostMissing') {
+      this.logSyncEvent('sync-diff-skipped', 'Sync diff skipped because host file is missing.', {
+        deviceId,
+        relativePath
+      });
       vscode.window.showWarningMessage(`The file "${relativePath}" does not exist on the mapped computer folder.`);
       return;
     }
@@ -4254,6 +4643,10 @@ class DeviceSyncModel {
         throw new Error('Not a file');
       }
     } catch {
+      this.logSyncEvent('sync-diff-skipped', 'Sync diff skipped because host sync file does not exist.', {
+        deviceId,
+        relativePath
+      });
       vscode.window.showWarningMessage(`No computer sync file exists for "${relativePath}". Sync from device first.`);
       return;
     }
@@ -4263,13 +4656,18 @@ class DeviceSyncModel {
     const deviceUri = vscode.Uri.parse(`${deviceDocumentScheme}:/${deviceSegment}/${relativePath}?deviceId=${encodeURIComponent(deviceId)}`);
     const title = `${relativePath} (Computer <-> Device)`;
     await vscode.commands.executeCommand('vscode.diff', computerUri, deviceUri, title, { preview: false });
+    this.logSyncEvent('sync-diff-completed', 'Opened device/computer diff.', {
+      deviceId,
+      relativePath,
+      elapsedMs: Date.now() - startedAt
+    });
   }
 
-  private async buildDeviceFileCompareRows(
+  private async buildDeviceFileSyncRows(
     deviceId: string,
     board: NonNullable<ReturnType<typeof getConnectedPyDevice>>,
     targetRelativePath: string = ''
-  ): Promise<DeviceFileCompareRow[]> {
+  ): Promise<DeviceFileSyncRow[]> {
     const scopedTarget = toRelativePath(targetRelativePath);
     const isInTarget = (relativePath: string): boolean =>
       this.matchesTarget(toRelativePath(relativePath), scopedTarget, true);
@@ -4303,22 +4701,18 @@ class DeviceSyncModel {
       deviceEntriesByLibrary.set(key, current);
     }
 
-    const rows: DeviceFileCompareRow[] = [];
-    const addRow = (row: Omit<DeviceFileCompareRow, 'id'>): void => {
+    const rows: DeviceFileSyncRow[] = [];
+    const addRow = (row: Omit<DeviceFileSyncRow, 'id'>): void => {
       const id = `${row.deviceRelativePath}:${row.status}:${row.libraryHostFolder ?? ''}:${row.libraryDeviceRoot ?? ''}`;
       rows.push({ ...row, id });
     };
-    const toStatus = (deviceFile?: FileEntry, computerFile?: FileEntry): DeviceFileCompareStatus => {
+    const toStatus = (deviceFile?: FileEntry, computerFile?: FileEntry): DeviceFileSyncStatus => {
       if (deviceFile && computerFile) {
         const shaMatches = !!deviceFile.sha1 && !!computerFile.sha1 && deviceFile.sha1 === computerFile.sha1;
         if (shaMatches) {
           return 'match';
         }
-        const sizeMatches = !deviceFile.sha1
-          && deviceFile.size !== undefined
-          && computerFile.size !== undefined
-          && deviceFile.size === computerFile.size;
-        return sizeMatches ? 'match' : 'mismatch';
+        return 'mismatch';
       }
       return deviceFile ? 'missing_computer' : 'missing_device';
     };
@@ -4398,8 +4792,8 @@ class DeviceSyncModel {
     return rows.sort((a, b) => a.deviceRelativePath.localeCompare(b.deviceRelativePath));
   }
 
-  private renderDeviceFileCompareHtml(deviceId: string, rows: DeviceFileCompareRow[], hasDifferences: boolean): string {
-    const titleText = this.escapeHtml(`Compare files for ${this.getDeviceDisplayNameWithId(deviceId)}`);
+  private renderDeviceFileSyncHtml(deviceId: string, rows: DeviceFileSyncRow[], hasDifferences: boolean): string {
+    const titleText = this.escapeHtml(`Sync files for ${this.getDeviceDisplayNameWithId(deviceId)}`);
     const rowsJson = JSON.stringify(rows);
     return `<!DOCTYPE html>
 <html lang="en">
@@ -4457,7 +4851,7 @@ class DeviceSyncModel {
 <body>
   <div class="wrap">
     <h2>${titleText}</h2>
-    <p class="hint">Use Compare on mismatched files to open a side-by-side diff in a new tab.</p>
+    <p class="hint">Review differences, optionally Compare mismatched files, then choose a sync direction.</p>
     <table>
       <thead>
         <tr>
@@ -4470,8 +4864,8 @@ class DeviceSyncModel {
       <tbody id="rows"></tbody>
     </table>
     <div class="buttons">
-      ${hasDifferences ? '<button id="syncToDevice" class="secondary">Sync Computer to Device</button>' : ''}
-      ${hasDifferences ? '<button id="syncFromDevice" class="secondary">Sync Device to Computer</button>' : ''}
+      <button id="syncToDevice" class="secondary" style="${hasDifferences ? '' : 'display:none;'}">Sync Computer to Device</button>
+      <button id="syncFromDevice" class="secondary" style="${hasDifferences ? '' : 'display:none;'}">Sync Device to Computer</button>
       <button id="close">Close</button>
     </div>
   </div>
@@ -4500,16 +4894,19 @@ class DeviceSyncModel {
     const libraryIconSvg = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 3.24941C1 2.55938 1.55917 2 2.24895 2H2.74852C3.4383 2 3.99747 2.55938 3.99747 3.24941V12.745C3.99747 13.435 3.4383 13.9944 2.74852 13.9944H2.24895C1.55917 13.9944 1 13.435 1 12.745V3.24941ZM2.24895 2.99953C2.11099 2.99953 1.99916 3.11141 1.99916 3.24941V12.745C1.99916 12.883 2.11099 12.9948 2.24895 12.9948H2.74852C2.88648 12.9948 2.99831 12.883 2.99831 12.745V3.24941C2.99831 3.11141 2.88648 2.99953 2.74852 2.99953H2.24895ZM4.99663 3.24941C4.99663 2.55938 5.5558 2 6.24557 2H6.74515C7.43492 2 7.9941 2.55938 7.9941 3.24941V12.745C7.9941 13.435 7.43492 13.9944 6.74515 13.9944H6.24557C5.5558 13.9944 4.99663 13.435 4.99663 12.745V3.24941ZM6.24557 2.99953C6.10762 2.99953 5.99578 3.11141 5.99578 3.24941V12.745C5.99578 12.883 6.10762 12.9948 6.24557 12.9948H6.74515C6.88311 12.9948 6.99494 12.883 6.99494 12.745V3.24941C6.99494 3.11141 6.88311 2.99953 6.74515 2.99953H6.24557ZM11.9723 4.77682C11.7231 4.15733 11.0311 3.84331 10.4011 4.06385L9.81888 4.26764C9.14658 4.50297 8.80684 5.25222 9.07268 5.91326L12.0098 13.2166C12.2589 13.8361 12.9509 14.1502 13.581 13.9296L14.1632 13.7258C14.8355 13.4904 15.1752 12.7412 14.9093 12.0802L11.9723 4.77682ZM10.7311 5.00729C10.8571 4.96318 10.9955 5.02598 11.0453 5.14988L13.9824 12.4532C14.0356 12.5854 13.9676 12.7353 13.8332 12.7823L13.251 12.9862C13.1249 13.0303 12.9865 12.9675 12.9367 12.8436L9.99964 5.5402C9.94647 5.40799 10.0144 5.25815 10.1489 5.21108L10.7311 5.00729Z"></path></svg>';
     const folderIconSvg = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.75 3h3.6c.26 0 .51.1.7.28l1.1 1.06c.19.18.44.28.7.28h6.4A1.75 1.75 0 0 1 16 6.38v5.87A1.75 1.75 0 0 1 14.25 14H1.75A1.75 1.75 0 0 1 0 12.25V4.75A1.75 1.75 0 0 1 1.75 3Z"></path></svg>';
 
-    if (rows.length === 0) {
-      const tr = document.createElement('tr');
-      const td = document.createElement('td');
-      td.colSpan = 4;
-      td.className = 'empty';
-      td.textContent = 'No files to compare';
-      tr.appendChild(td);
-      tbody.appendChild(tr);
-    } else {
-      for (const row of rows) {
+    const renderRows = (nextRows) => {
+      tbody.textContent = '';
+      if (nextRows.length === 0) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 4;
+        td.className = 'empty';
+        td.textContent = 'No files to sync';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
+      for (const row of nextRows) {
         const tr = document.createElement('tr');
 
         const pathTd = document.createElement('td');
@@ -4561,9 +4958,18 @@ class DeviceSyncModel {
 
         tbody.appendChild(tr);
       }
-    }
+    };
+    const setSyncButtonsVisibility = (visible) => {
+      if (syncToDeviceButton) {
+        syncToDeviceButton.style.display = visible ? 'inline-block' : 'none';
+      }
+      if (syncFromDeviceButton) {
+        syncFromDeviceButton.style.display = visible ? 'inline-block' : 'none';
+      }
+    };
+    renderRows(rows);
+    setSyncButtonsVisibility(rows.some((row) => row.status !== 'match'));
 
-    const syncToDeviceButton = document.getElementById('syncToDevice');
     if (syncToDeviceButton) {
       syncToDeviceButton.addEventListener('click', () => {
         vscode.postMessage({ type: 'sync_to_device' });
@@ -4579,6 +4985,23 @@ class DeviceSyncModel {
 
     document.getElementById('close').addEventListener('click', () => {
       vscode.postMessage({ type: 'close' });
+    });
+
+    window.addEventListener('message', (event) => {
+      const message = event.data;
+      if (!message || typeof message !== 'object') {
+        return;
+      }
+      if (message.type === 'refresh_rows') {
+        const nextRows = Array.isArray(message.rows) ? message.rows : [];
+        rows = nextRows;
+        renderRows(rows);
+        if (typeof message.hasDifferences === 'boolean') {
+          setSyncButtonsVisibility(message.hasDifferences);
+        } else {
+          setSyncButtonsVisibility(rows.some((row) => row.status !== 'match'));
+        }
+      }
     });
   </script>
 </body>
@@ -5329,20 +5752,20 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
     }
 
     const isExcludedFromSync = this.model.isNodePathExcludedFromSync(data);
-    let compareAvailability: DeviceFileCompareAvailability = 'available';
+    let syncAvailability: DeviceFileSyncAvailability = 'available';
     if (data.side === 'device') {
       if (data.isDirectory) {
         element.contextValue = isExcludedFromSync ? 'pydevice.deviceFolderExcluded' : 'pydevice.deviceFolder';
       } else {
-        compareAvailability = this.model.getDeviceFileCompareAvailability(data);
+        syncAvailability = this.model.getDeviceFileSyncAvailability(data);
         if (isExcludedFromSync) {
-          element.contextValue = compareAvailability === 'unmapped'
+          element.contextValue = syncAvailability === 'unmapped'
             ? 'pydevice.deviceFileExcludedUnmapped'
-            : (compareAvailability === 'hostMissing' ? 'pydevice.deviceFileExcludedHostMissing' : 'pydevice.deviceFileExcludedMapped');
+            : (syncAvailability === 'hostMissing' ? 'pydevice.deviceFileExcludedHostMissing' : 'pydevice.deviceFileExcludedMapped');
         } else {
-          element.contextValue = compareAvailability === 'unmapped'
+          element.contextValue = syncAvailability === 'unmapped'
             ? 'pydevice.deviceFileUnmapped'
-            : (compareAvailability === 'hostMissing' ? 'pydevice.deviceFileHostMissing' : 'pydevice.deviceFileMapped');
+            : (syncAvailability === 'hostMissing' ? 'pydevice.deviceFileHostMissing' : 'pydevice.deviceFileMapped');
         }
       }
       element.command = data.isDirectory ? undefined : { command: commandOpenDeviceFileFromTreeId, title: 'Open', arguments: [element] };
@@ -5356,9 +5779,9 @@ class SyncTreeProvider implements vscode.TreeDataProvider<SyncNode>, vscode.Disp
     }
     element.iconPath = data.isDirectory ? vscode.ThemeIcon.Folder : vscode.ThemeIcon.File;
     element.description = isExcludedFromSync ? 'excluded' : undefined;
-    if (data.side === 'device' && !data.isDirectory && compareAvailability === 'hostMissing') {
-      const compareHint = 'Compare unavailable: file does not exist on mapped computer folder.';
-      element.tooltip = element.tooltip ? `${element.tooltip}\n${compareHint}` : compareHint;
+    if (data.side === 'device' && !data.isDirectory && syncAvailability === 'hostMissing') {
+      const diffHint = 'Diff unavailable: file does not exist on mapped computer folder.';
+      element.tooltip = element.tooltip ? `${element.tooltip}\n${diffHint}` : diffHint;
     }
 
     return element;
@@ -5763,8 +6186,8 @@ export const initDeviceSyncExplorer = async (context: vscode.ExtensionContext, f
   context.subscriptions.push(
     vscode.commands.registerCommand(commandOpenDeviceFileFromTreeId, async (node?: SyncNode) => model.openDeviceFile(node, { explorerClick: true }))
   );
-  context.subscriptions.push(vscode.commands.registerCommand(commandCompareDeviceWithComputerId, async (node?: SyncNode) => model.compareDeviceWithComputer(node)));
-  context.subscriptions.push(vscode.commands.registerCommand(commandCompareDeviceFilesId, async (node?: SyncNode) => model.compareDeviceFiles(node)));
+  context.subscriptions.push(vscode.commands.registerCommand(commandSyncFileWithComputerId, async (node?: SyncNode) => model.syncFileWithComputer(node)));
+  context.subscriptions.push(vscode.commands.registerCommand(commandOpenSyncFilesId, async (node?: SyncNode) => model.openSyncFiles(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandCreateSyncFileId, async (node?: SyncNode) => model.createSyncFile(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandCreateSyncFolderId, async (node?: SyncNode) => model.createSyncFolder(node)));
   context.subscriptions.push(vscode.commands.registerCommand(commandRenameSyncPathId, async (node?: SyncNode) => model.renameSyncPath(node)));

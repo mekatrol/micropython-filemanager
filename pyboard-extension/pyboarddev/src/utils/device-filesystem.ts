@@ -389,11 +389,6 @@ export const buildSyncStateMap = (
       continue;
     }
 
-    if (!device.sha1 && computer.size !== undefined && device.size !== undefined && computer.size === device.size) {
-      status.set(relativePath, 'synced');
-      continue;
-    }
-
     status.set(relativePath, 'out_of_sync');
   }
 
