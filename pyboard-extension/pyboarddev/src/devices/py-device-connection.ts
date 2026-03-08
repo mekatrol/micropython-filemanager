@@ -6,6 +6,8 @@ import * as vscode from 'vscode';
 import { SerialPort } from 'serialport';
 import { logChannelOutput } from '../output-channel';
 import { emitPyDeviceLoggerEvent } from '../pydevice-logger-events';
+import { pyDeviceInternalTimeouts, pyDeviceTimeoutSettings } from '../constants/timeout-constants';
+import { getTimeoutSettingMs, resolveTimeoutMs } from '../utils/timeout-settings';
 import { PyDeviceIOEvent } from './py-device-io-event';
 import { PyDeviceRuntimeInfo } from './py-device-runtime-info';
 export class PyDeviceConnection {
@@ -28,7 +30,6 @@ export class PyDeviceConnection {
   readonly onDidDisconnect = this.disconnectedEmitter.event;
   private execQueue: Promise<void> = Promise.resolve();
   private static readonly transportLogSettingKey = 'verboseReplTransportLogs';
-  private static readonly writeAckTimeoutMs = 2000;
   private readonly reportErrorsToUser: boolean;
   private serialPortCloseHandler: (() => void) | undefined;
   private ownsSerialPort = false;
@@ -273,6 +274,7 @@ export class PyDeviceConnection {
     }
 
     await new Promise<void>((resolve, reject) => {
+      const writeAckTimeoutMs = getTimeoutSettingMs(pyDeviceTimeoutSettings.pythonSerialWriteAck);
       let settled = false;
       const settleReject = (error: Error): void => {
         if (settled) {
@@ -292,8 +294,8 @@ export class PyDeviceConnection {
       };
 
       const timeout = setTimeout(() => {
-        settleReject(this.reportError('Timed out waiting for serial write acknowledgement', new Error(`Timeout after ${PyDeviceConnection.writeAckTimeoutMs}ms`)));
-      }, PyDeviceConnection.writeAckTimeoutMs);
+        settleReject(this.reportError('Timed out waiting for serial write acknowledgement', new Error(`Timeout after ${writeAckTimeoutMs}ms`)));
+      }, writeAckTimeoutMs);
 
       this.serialPort!.write(buffer, undefined, (err) => {
         if (err) {
@@ -313,19 +315,21 @@ export class PyDeviceConnection {
     });
   }
 
-  async execRawCapture(command: string, timeoutMs: number = 10000): Promise<{ stdout: string; stderr: string }> {
-    return this.enqueueExclusive(() => this.execRawCaptureUnlocked(command, timeoutMs));
+  async execRawCapture(command: string, timeoutMs?: number): Promise<{ stdout: string; stderr: string }> {
+    const effectiveTimeoutMs = resolveTimeoutMs(pyDeviceTimeoutSettings.pythonExecRawCapture, timeoutMs);
+    return this.enqueueExclusive(() => this.execRawCaptureUnlocked(command, effectiveTimeoutMs));
   }
 
-  private async execRawCaptureUnlocked(command: string, timeoutMs: number = 10000): Promise<{ stdout: string; stderr: string }> {
+  private async execRawCaptureUnlocked(command: string, timeoutMs?: number): Promise<{ stdout: string; stderr: string }> {
+    const effectiveTimeoutMs = resolveTimeoutMs(pyDeviceTimeoutSettings.pythonExecRawCapture, timeoutMs);
     this.assertPortOpen();
 
-    await this.enterRawReplUnlocked(timeoutMs);
+    await this.enterRawReplUnlocked(effectiveTimeoutMs);
 
     await this.write(command);
     await this.write('\x04');
 
-    const response = await this.waitForDataEndingWith(Buffer.from([0x04, 0x3e]), timeoutMs);
+    const response = await this.waitForDataEndingWith(Buffer.from([0x04, 0x3e]), effectiveTimeoutMs);
 
     await this.write('\r\x02', { drain: false });
     await this.readUntilIdle(100, 600);
@@ -351,17 +355,20 @@ export class PyDeviceConnection {
     };
   }
 
-  async getBoardRuntimeInfo(timeoutMs: number = 5000): Promise<PyDeviceRuntimeInfo> {
+  async getBoardRuntimeInfo(timeoutMs?: number): Promise<PyDeviceRuntimeInfo> {
+    const runtimeInfoTimeoutMs = resolveTimeoutMs(pyDeviceTimeoutSettings.pythonGetRuntimeInfo, timeoutMs);
+    const softRebootTimeoutMs = getTimeoutSettingMs(pyDeviceTimeoutSettings.pythonSoftReboot);
     return this.enqueueExclusive(async () => {
-      await this.softRebootRawUnlocked(Math.max(timeoutMs, 8000));
-      const { stdout, stderr } = await this.execRawCaptureUnlocked(`${this.buildRuntimeInfoScript()}\n`, timeoutMs);
+      await this.softRebootRawUnlocked(Math.max(runtimeInfoTimeoutMs, softRebootTimeoutMs));
+      const { stdout, stderr } = await this.execRawCaptureUnlocked(`${this.buildRuntimeInfoScript()}\n`, runtimeInfoTimeoutMs);
       const runtimeInfo = this.parseRuntimeInfo(stdout, stderr);
-      runtimeInfo.uniqueId = await this.tryReadBoardUniqueIdUnlocked(timeoutMs);
+      runtimeInfo.uniqueId = await this.tryReadBoardUniqueIdUnlocked(runtimeInfoTimeoutMs);
       return runtimeInfo;
     });
   }
 
-  async probeBoardRuntimeInfo(timeoutMs: number = 2500): Promise<PyDeviceRuntimeInfo> {
+  async probeBoardRuntimeInfo(timeoutMs?: number): Promise<PyDeviceRuntimeInfo> {
+    const probeRuntimeTimeoutMs = resolveTimeoutMs(pyDeviceTimeoutSettings.pythonProbeRuntimeInfo, timeoutMs);
     return this.enqueueExclusive(async () => {
       const startedAt = Date.now();
       emitPyDeviceLoggerEvent({
@@ -369,9 +376,9 @@ export class PyDeviceConnection {
         level: 'debug',
         action: 'probe-runtime-script-started',
         message: `Executing runtime info script on ${this.device}.`,
-        details: { portPath: this.device, timeoutMs }
+        details: { portPath: this.device, timeoutMs: probeRuntimeTimeoutMs }
       });
-      const { stdout, stderr } = await this.execRawCaptureUnlocked(`${this.buildRuntimeInfoScript()}\n`, timeoutMs);
+      const { stdout, stderr } = await this.execRawCaptureUnlocked(`${this.buildRuntimeInfoScript()}\n`, probeRuntimeTimeoutMs);
       const runtimeInfo = this.parseRuntimeInfo(stdout, stderr);
       emitPyDeviceLoggerEvent({
         source: 'ProbeDevices',
@@ -385,9 +392,9 @@ export class PyDeviceConnection {
         level: 'debug',
         action: 'probe-uniqueid-started',
         message: `Reading device ID on ${this.device}.`,
-        details: { portPath: this.device, timeoutMs }
+        details: { portPath: this.device, timeoutMs: probeRuntimeTimeoutMs }
       });
-      runtimeInfo.uniqueId = await this.tryReadBoardUniqueIdUnlocked(timeoutMs);
+      runtimeInfo.uniqueId = await this.tryReadBoardUniqueIdUnlocked(probeRuntimeTimeoutMs);
       emitPyDeviceLoggerEvent({
         source: 'ProbeDevices',
         level: 'debug',
@@ -403,20 +410,22 @@ export class PyDeviceConnection {
     });
   }
 
-  async softReboot(timeoutMs: number = 8000): Promise<void> {
+  async softReboot(timeoutMs?: number): Promise<void> {
+    const softRebootTimeoutMs = resolveTimeoutMs(pyDeviceTimeoutSettings.pythonSoftReboot, timeoutMs);
     return this.enqueueExclusive(async () => {
-      await this.softRebootRawUnlocked(Math.max(timeoutMs, 1000));
+      await this.softRebootRawUnlocked(Math.max(softRebootTimeoutMs, pyDeviceTimeoutSettings.pythonSoftReboot.minimumValueMs));
     });
   }
 
-  async hardReboot(timeoutMs: number = 1500): Promise<void> {
+  async hardReboot(timeoutMs?: number): Promise<void> {
+    const hardRebootTimeoutMs = resolveTimeoutMs(pyDeviceTimeoutSettings.pythonHardReboot, timeoutMs);
     if (!this.serialPort) {
       throw new Error('The serial port must be open to call this method');
     }
 
     if (this.ownsSerialPort) {
       await this.close();
-      await this.delay(Math.max(150, timeoutMs));
+      await this.delay(Math.max(pyDeviceInternalTimeouts.hardRebootOwnedPortReopenDelayMinimumMs, hardRebootTimeoutMs));
       await this.open();
       return;
     }
@@ -432,7 +441,7 @@ export class PyDeviceConnection {
           resolve();
         });
       });
-      await this.delay(Math.max(120, timeoutMs));
+      await this.delay(Math.max(pyDeviceInternalTimeouts.hardRebootSignalToggleDelayMinimumMs, hardRebootTimeoutMs));
       await new Promise<void>((resolve, reject) => {
         serialPort.set({ dtr: true, rts: true }, (err) => {
           if (err) {
@@ -443,7 +452,7 @@ export class PyDeviceConnection {
         });
       });
     } catch {
-      await this.softReboot(Math.max(timeoutMs, 1000));
+      await this.softReboot(Math.max(hardRebootTimeoutMs, pyDeviceTimeoutSettings.pythonSoftReboot.minimumValueMs));
     }
   }
 
@@ -451,15 +460,15 @@ export class PyDeviceConnection {
     await this.write(text, options);
   }
 
-  async getDeviceInfo(timeoutMs: number = 5000): Promise<PyDeviceRuntimeInfo> {
+  async getDeviceInfo(timeoutMs?: number): Promise<PyDeviceRuntimeInfo> {
     return await this.getBoardRuntimeInfo(timeoutMs);
   }
 
-  async probeDeviceInfo(timeoutMs: number = 2500): Promise<PyDeviceRuntimeInfo> {
+  async probeDeviceInfo(timeoutMs?: number): Promise<PyDeviceRuntimeInfo> {
     return await this.probeBoardRuntimeInfo(timeoutMs);
   }
 
-  async execute(command: string, timeoutMs: number = 10000): Promise<{ stdout: string; stderr: string }> {
+  async execute(command: string, timeoutMs?: number): Promise<{ stdout: string; stderr: string }> {
     return await this.execRawCapture(command, timeoutMs);
   }
 
@@ -608,7 +617,7 @@ export class PyDeviceConnection {
     const rawPromptText = Buffer.from('raw REPL; CTRL-B to exit');
     const rawPromptPrefix = Buffer.from('raw REPL');
     const rawPromptTail = Buffer.from('\r\n>');
-    const attempts = timeoutMs < 5000 ? 2 : 3;
+    const attempts = timeoutMs < pyDeviceInternalTimeouts.enterRawReplFastThresholdMs ? 2 : 3;
     const startedAt = Date.now();
     let lastError: unknown;
 
@@ -619,20 +628,23 @@ export class PyDeviceConnection {
         break;
       }
       const attemptsLeft = attempts - attempt + 1;
-      const promptTimeoutMs = Math.min(remainingMs, Math.max(1500, Math.floor(remainingMs / attemptsLeft)));
+      const promptTimeoutMs = Math.min(
+        remainingMs,
+        Math.max(pyDeviceInternalTimeouts.enterRawReplPromptTimeoutMinimumMs, Math.floor(remainingMs / attemptsLeft))
+      );
 
       try {
         await this.write('\r\x03\x03', { drain: false });
-        await this.readUntilIdle(120, 800);
+        await this.readUntilIdle(pyDeviceInternalTimeouts.enterRawReplIdleReadMs, pyDeviceInternalTimeouts.enterRawReplIdleReadMaxMs);
 
         await this.write('\r\x01', { drain: false });
         await this.waitForDataContains([rawPromptText, rawPromptPrefix, rawPromptTail], promptTimeoutMs);
         return;
       } catch (error) {
         lastError = error;
-        await this.readUntilIdle(120, 600);
+        await this.readUntilIdle(pyDeviceInternalTimeouts.enterRawReplIdleReadMs, pyDeviceInternalTimeouts.enterRawReplRetryReadMaxMs);
         if (attempt < attempts) {
-          await this.delay(120);
+          await this.delay(pyDeviceInternalTimeouts.enterRawReplRetryDelayMs);
         }
       }
     }

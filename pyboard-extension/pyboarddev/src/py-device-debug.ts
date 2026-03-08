@@ -14,10 +14,10 @@ import {
 import { logChannelOutput } from './output-channel';
 import { getDeviceHostFolderMappings, loadConfiguration } from './utils/configuration';
 import { toRelativePath } from './utils/device-filesystem';
+import { pyDeviceInternalTimeouts } from './constants/timeout-constants';
 
 const debugType = 'pydevice';
 const deviceDocumentScheme = 'pydevice-device';
-const defaultTimeoutMs = 60000;
 
 interface DapRequest {
   seq: number;
@@ -131,7 +131,9 @@ class PyDeviceDebugAdapter implements vscode.DebugAdapter {
 
       const content = await vscode.workspace.fs.readFile(targetUri);
       const script = Buffer.from(content).toString('utf8');
-      const timeoutMs = typeof args.timeoutMs === 'number' && Number.isFinite(args.timeoutMs) ? args.timeoutMs : defaultTimeoutMs;
+      const timeoutMs = typeof args.timeoutMs === 'number' && Number.isFinite(args.timeoutMs)
+        ? args.timeoutMs
+        : pyDeviceInternalTimeouts.debugExecutionTimeoutMs;
 
       const command = this.buildExecutionCommand(script, this.displayPath(targetUri));
       const { stdout, stderr } = await board.execRawCapture(command, timeoutMs);
@@ -368,7 +370,7 @@ class PyDeviceDebugConfigurationProvider implements vscode.DebugConfigurationPro
         request: 'launch',
         name: 'PyDevice: Run Current File',
         program: '${file}',
-        timeoutMs: defaultTimeoutMs
+        timeoutMs: pyDeviceInternalTimeouts.debugExecutionTimeoutMs
       }
     ];
   }
@@ -411,7 +413,7 @@ class PyDeviceDebugConfigurationProvider implements vscode.DebugConfigurationPro
       request: 'launch',
       name: 'PyDevice: Run Current File',
       program: activeUri.toString(),
-      timeoutMs: defaultTimeoutMs
+      timeoutMs: pyDeviceInternalTimeouts.debugExecutionTimeoutMs
     };
   }
 }

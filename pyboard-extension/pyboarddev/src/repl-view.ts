@@ -6,7 +6,9 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConnectedPyDevice, getConnectedPyDevices, onBoardConnectionsChanged } from './commands/connect-board-command';
+import { pyDeviceTimeoutSettings } from './constants/timeout-constants';
 import { configurationFileName, getDeviceNames, loadConfiguration, onPyDeviceConfigurationUpdated } from './utils/configuration';
+import { getTimeoutSettingMs } from './utils/timeout-settings';
 import { getWorkspaceCacheValue, setWorkspaceCacheValue } from './utils/workspace-cache';
 
 const openReplCommandId = 'mekatrol.pydevice.openrepl';
@@ -208,7 +210,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
           this.appendLine(deviceId, '[serial port reopened]');
 
           try {
-            const runtimeInfo = await board.probeDeviceInfo(2500);
+            const runtimeInfo = await board.probeDeviceInfo(getTimeoutSettingMs(pyDeviceTimeoutSettings.pythonProbeRuntimeInfo));
             this.appendLine(deviceId, runtimeInfo.banner);
             this.appendLine(deviceId, 'Type "help()" for more information.');
           } catch {
@@ -257,7 +259,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
           this.appendLine(deviceId, '[soft reboot complete]');
 
           try {
-            const runtimeInfo = await board.probeDeviceInfo(2500);
+            const runtimeInfo = await board.probeDeviceInfo(getTimeoutSettingMs(pyDeviceTimeoutSettings.pythonProbeRuntimeInfo));
             this.appendLine(deviceId, runtimeInfo.banner);
             this.appendLine(deviceId, 'Type "help()" for more information.');
           } catch {

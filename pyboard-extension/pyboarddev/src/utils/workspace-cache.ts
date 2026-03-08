@@ -4,7 +4,8 @@
  */
 import * as vscode from 'vscode';
 import { posix } from 'path';
-import { configurationFileName, pydeviceDirectoryName } from './configuration';
+import { pyDeviceTimeoutSettings } from '../constants/timeout-constants';
+import { pydeviceDirectoryName } from './configuration';
 
 export const workspaceCacheFileName = `${pydeviceDirectoryName}/settings.json`;
 export const autoReconnectDevicesCacheKey = 'autoReconnectDevices';
@@ -12,11 +13,16 @@ export const loggerAutoStartCacheKey = 'loggerAutoStart';
 
 type WorkspaceCache = Record<string, unknown>;
 
+const defaultTimeoutSettingsCache: WorkspaceCache = Object.fromEntries(
+  Object.values(pyDeviceTimeoutSettings).map((setting) => [setting.settingKey, setting.defaultValueMs])
+);
+
 const defaultWorkspaceCache: WorkspaceCache = {
   [autoReconnectDevicesCacheKey]: false,
   [loggerAutoStartCacheKey]: true,
   reconnectDevicePaths: [],
-  replHistoryByDevice: {}
+  replHistoryByDevice: {},
+  ...defaultTimeoutSettingsCache
 };
 
 let cacheState: WorkspaceCache = {};
@@ -56,20 +62,6 @@ const loadCacheFromFile = async (fileName: string): Promise<WorkspaceCache | und
   }
 };
 
-const hasWorkspaceConfigurationFile = async (): Promise<boolean> => {
-  const fileUri = getWorkspaceFileUri(configurationFileName);
-  if (!fileUri) {
-    return false;
-  }
-
-  try {
-    await vscode.workspace.fs.stat(fileUri);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 const saveCacheToPrimaryFile = async (): Promise<void> => {
   const fileUri = getWorkspaceFileUri(workspaceCacheFileName);
   if (!fileUri) {
@@ -101,15 +93,17 @@ export const initialiseWorkspaceCache = async (): Promise<void> => {
 
   // Create default state
   cacheState = { ...defaultWorkspaceCache };
-  if (await hasWorkspaceConfigurationFile()) {
-    await saveCacheToPrimaryFile();
-  }
+  await saveCacheToPrimaryFile();
 };
 
 export const createDefaultWorkspaceCacheFile = async (): Promise<boolean> => {
   const primary = await loadCacheFromFile(workspaceCacheFileName);
   if (primary !== undefined) {
-    cacheState = primary;
+    const merged = { ...defaultWorkspaceCache, ...primary };
+    cacheState = merged;
+    if (JSON.stringify(primary) !== JSON.stringify(merged)) {
+      await saveCacheToPrimaryFile();
+    }
     return false;
   }
 

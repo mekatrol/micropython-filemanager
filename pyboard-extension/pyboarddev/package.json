@@ -610,6 +610,54 @@
           "default": 100,
           "minimum": 0,
           "description": "Maximum number of REPL history commands retained per device. Oldest entries are removed when limit is exceeded. Set to 0 to disable history retention."
+        },
+        "mekatrol.pydevice.serialPortOperationTimeoutMs": {
+          "type": "number",
+          "default": 3000,
+          "minimum": 500,
+          "description": "Maximum time to open or close a serial port during connect/probe/disconnect operations."
+        },
+        "mekatrol.pydevice.serialPortAggressiveRecoveryProbeTimeoutMs": {
+          "type": "number",
+          "default": 9000,
+          "minimum": 1000,
+          "description": "Timeout used for aggressive post-failure runtime probing that may include reboot-level recovery."
+        },
+        "mekatrol.pydevice.pythonProbeRuntimeInfoTimeoutMs": {
+          "type": "number",
+          "default": 2500,
+          "minimum": 500,
+          "description": "Timeout for lightweight runtime probing (banner/version/ID checks) used during detection and reconnect."
+        },
+        "mekatrol.pydevice.pythonGetRuntimeInfoTimeoutMs": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 1000,
+          "description": "Timeout for full runtime info reads that may include additional board operations."
+        },
+        "mekatrol.pydevice.pythonExecRawCaptureTimeoutMs": {
+          "type": "number",
+          "default": 10000,
+          "minimum": 1000,
+          "description": "Timeout for executing Python commands over raw REPL and waiting for command output completion."
+        },
+        "mekatrol.pydevice.pythonSoftRebootTimeoutMs": {
+          "type": "number",
+          "default": 8000,
+          "minimum": 1000,
+          "description": "Timeout for soft reboot sequences triggered via raw REPL control flow."
+        },
+        "mekatrol.pydevice.pythonHardRebootTimeoutMs": {
+          "type": "number",
+          "default": 1500,
+          "minimum": 150,
+          "description": "Timeout for hard reboot waits around DTR/RTS toggles or close/reopen restart paths."
+        },
+        "mekatrol.pydevice.pythonSerialWriteAckTimeoutMs": {
+          "type": "number",
+          "default": 2000,
+          "minimum": 250,
+          "description": "Timeout for serial write acknowledgement and drain completion before command flow continues."
         }
       }
     },

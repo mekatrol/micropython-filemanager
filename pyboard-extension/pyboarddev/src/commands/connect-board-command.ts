@@ -21,6 +21,8 @@ import {
 } from './connect-state';
 import { renderConnectHtml } from './connect-webview';
 import { emitPyDeviceLoggerEvent } from '../pydevice-logger-events';
+import { pyDeviceInternalTimeouts, pyDeviceTimeoutSettings } from '../constants/timeout-constants';
+import { getTimeoutSettingMs } from '../utils/timeout-settings';
 
 const reconnectDevicePathsStateKey = 'reconnectDevicePaths';
 const defaultBaudRate = 115200;
@@ -33,7 +35,6 @@ const runtimeInfoRecoveryProbeDelayMs = 300;
 const runtimeInfoRecoveryRebootAttempts = 2;
 const runtimeInfoRecoveryRebootDelayMs = 500;
 const connectionStateMonitorIntervalMs = 2000;
-const recoveryConnectAttemptTimeoutMs = 25000;
 const probeUnavailableConnectCooldownMs = 7000;
 const deviceDocumentScheme = 'pydevice-device';
 const pydeviceDebugType = 'pydevice';
@@ -157,12 +158,14 @@ const readBoardRuntimeInfoWithRecovery = async (
   board: PyDeviceConnection,
   devicePath: string
 ): Promise<PyDeviceRuntimeInfo | undefined> => {
+  const probeRuntimeTimeoutMs = getTimeoutSettingMs(pyDeviceTimeoutSettings.pythonProbeRuntimeInfo);
+  const aggressiveRecoveryTimeoutMs = getTimeoutSettingMs(pyDeviceTimeoutSettings.serialPortAggressiveRecoveryProbe);
   let lastError: unknown;
 
   // Probe-first: this path repeatedly issues Ctrl-C and enters raw REPL without soft reboot.
   for (let attempt = 1; attempt <= runtimeInfoRecoveryProbeAttempts; attempt += 1) {
     try {
-      return await board.probeDeviceInfo(3500);
+      return await board.probeDeviceInfo(Math.max(probeRuntimeTimeoutMs, pyDeviceInternalTimeouts.runtimeInfoRecoveryProbeTimeoutMinimumMs));
     } catch (error) {
       lastError = error;
       if (attempt < runtimeInfoRecoveryProbeAttempts) {
@@ -174,7 +177,7 @@ const readBoardRuntimeInfoWithRecovery = async (
   // Soft-reboot fallback for boards that only recover after a reset.
   for (let attempt = 1; attempt <= runtimeInfoRecoveryRebootAttempts; attempt += 1) {
     try {
-      return await board.getDeviceInfo(9000);
+      return await board.getDeviceInfo(Math.max(aggressiveRecoveryTimeoutMs, pyDeviceInternalTimeouts.runtimeInfoRecoveryGetInfoTimeoutMinimumMs));
     } catch (error) {
       lastError = error;
       if (attempt < runtimeInfoRecoveryRebootAttempts) {
@@ -509,9 +512,10 @@ export const closeConnectedPyDeviceByDeviceId = async (
   }
 
   try {
+    const serialPortOperationTimeoutMs = getTimeoutSettingMs(pyDeviceTimeoutSettings.serialPortOperation);
     await withTimeout(
       state.board.close(),
-      2500,
+      serialPortOperationTimeoutMs,
       `Close serial port for ${deviceId}`
     );
     boardRegistry.remove(deviceId);
@@ -805,7 +809,7 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true }
     );
-    panel.webview.html = renderConnectHtml([], recoveryConnectAttemptTimeoutMs);
+    panel.webview.html = renderConnectHtml([], pyDeviceInternalTimeouts.recoveryConnectAttemptTimeoutMs);
 
     let rowsById = new Map<string, ConnectRow>();
     const connectingPaths = new Set<string>();
@@ -1109,7 +1113,7 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
         try {
           await withTimeout(
             connectBoardForPath(initialRow.devicePath, defaultBaudRate, true, true),
-            recoveryConnectAttemptTimeoutMs,
+            pyDeviceInternalTimeouts.recoveryConnectAttemptTimeoutMs,
             `Connect attempt for ${initialRow.devicePath}`
           );
         } catch (error) {
@@ -1119,7 +1123,7 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
           await wait(350);
           await withTimeout(
             connectBoardForPath(initialRow.devicePath, defaultBaudRate, true, true),
-            recoveryConnectAttemptTimeoutMs,
+            pyDeviceInternalTimeouts.recoveryConnectAttemptTimeoutMs,
             `Retry connect attempt for ${initialRow.devicePath}`
           );
         }

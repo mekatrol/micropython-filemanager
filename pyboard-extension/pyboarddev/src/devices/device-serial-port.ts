@@ -7,9 +7,8 @@ import { MicroPythonDevice, PyDeviceRuntimeInfo } from './py-device';
 import { Disposable } from './disposable';
 import { PyDeviceTransport } from './py-device-transport';
 import { emitPyDeviceLoggerEvent } from '../pydevice-logger-events';
- 
-const probeSerialOperationTimeoutMs = 3000;
-const aggressiveProbeTimeoutMs = 9000;
+import { pyDeviceTimeoutSettings } from '../constants/timeout-constants';
+import { getTimeoutSettingMs, resolveTimeoutMs } from '../utils/timeout-settings';
 
 const withTimeout = async <T>(operation: Promise<T>, timeoutMs: number, label: string): Promise<T> => {
   return await new Promise<T>((resolve, reject) => {
@@ -115,18 +114,20 @@ export class DeviceSerialPort {
   }
 
   async probeRuntimeInfoDetailed(timeoutMs?: number): Promise<ProbeRuntimeInfoResult> {
+    const probeRuntimeTimeoutMs = resolveTimeoutMs(pyDeviceTimeoutSettings.pythonProbeRuntimeInfo, timeoutMs);
+    const serialPortOperationTimeoutMs = getTimeoutSettingMs(pyDeviceTimeoutSettings.serialPortOperation);
     if (this.transport) {
       emitPyDeviceLoggerEvent({
         source: 'ProbeDevices',
         level: 'debug',
         action: 'probe-runtime-existing-transport',
         message: `Using existing transport for ${this.path}.`,
-        details: { portPath: this.path, timeoutMs: timeoutMs ?? 2500 }
+        details: { portPath: this.path, timeoutMs: probeRuntimeTimeoutMs }
       });
       let runtimeInfo: PyDeviceRuntimeInfo | undefined;
       let reason: string | undefined;
       try {
-        runtimeInfo = await this.transport.probeBoardRuntimeInfo(timeoutMs);
+        runtimeInfo = await this.transport.probeBoardRuntimeInfo(probeRuntimeTimeoutMs);
       } catch (error) {
         reason = error instanceof Error ? error.message : String(error);
         emitPyDeviceLoggerEvent({
@@ -139,7 +140,7 @@ export class DeviceSerialPort {
       }
 
       if (!runtimeInfo) {
-        runtimeInfo = await this.tryAggressiveRecoveryProbe(this.transport, timeoutMs);
+        runtimeInfo = await this.tryAggressiveRecoveryProbe(this.transport, probeRuntimeTimeoutMs);
       }
 
       this.emit({ type: 'runtimeInfo', path: this.path, runtimeInfo });
@@ -158,12 +159,12 @@ export class DeviceSerialPort {
         level: 'debug',
         action: 'probe-open-started',
         message: `Opening serial port ${this.path} for probing.`,
-        details: { portPath: this.path, timeoutMs: probeSerialOperationTimeoutMs }
+        details: { portPath: this.path, timeoutMs: serialPortOperationTimeoutMs }
       });
       openPromise = transientTransport.open();
       await withTimeout(
         openPromise,
-        probeSerialOperationTimeoutMs,
+        serialPortOperationTimeoutMs,
         `Opening serial port ${this.path} for probing`
       );
       opened = true;
@@ -180,12 +181,12 @@ export class DeviceSerialPort {
         level: 'debug',
         action: 'probe-runtime-started',
         message: `Starting runtime probe on ${this.path}.`,
-        details: { portPath: this.path, timeoutMs: timeoutMs ?? 2500 }
+        details: { portPath: this.path, timeoutMs: probeRuntimeTimeoutMs }
       });
       let runtimeInfo: PyDeviceRuntimeInfo | undefined;
       let runtimeReason: string | undefined;
       try {
-        runtimeInfo = await transientTransport.probeBoardRuntimeInfo(timeoutMs);
+        runtimeInfo = await transientTransport.probeBoardRuntimeInfo(probeRuntimeTimeoutMs);
         emitPyDeviceLoggerEvent({
           source: 'ProbeDevices',
           level: 'debug',
@@ -205,7 +206,7 @@ export class DeviceSerialPort {
       }
 
       if (!runtimeInfo) {
-        runtimeInfo = await this.tryAggressiveRecoveryProbe(transientTransport, timeoutMs);
+        runtimeInfo = await this.tryAggressiveRecoveryProbe(transientTransport, probeRuntimeTimeoutMs);
       }
 
       this.emit({ type: 'runtimeInfo', path: this.path, runtimeInfo });
@@ -215,7 +216,7 @@ export class DeviceSerialPort {
     } catch (error) {
       this.emit({ type: 'error', path: this.path, error });
       const reason = error instanceof Error ? error.message : String(error);
-      openTimedOut = reason.includes(`timed out after ${probeSerialOperationTimeoutMs}ms`);
+      openTimedOut = reason.includes(`timed out after ${serialPortOperationTimeoutMs}ms`);
       if (openTimedOut && openPromise) {
         deferredClosePromise = openPromise.then(async () => {
           try {
@@ -270,11 +271,11 @@ export class DeviceSerialPort {
             level: 'debug',
             action: 'probe-close-started',
             message: `Closing serial port ${this.path} after probing.`,
-            details: { portPath: this.path, timeoutMs: probeSerialOperationTimeoutMs }
+            details: { portPath: this.path, timeoutMs: serialPortOperationTimeoutMs }
           });
           await withTimeout(
             transientTransport.close(),
-            probeSerialOperationTimeoutMs,
+            serialPortOperationTimeoutMs,
             `Closing serial port ${this.path} after probing`
           );
           emitPyDeviceLoggerEvent({
@@ -318,7 +319,9 @@ export class DeviceSerialPort {
     transport: PyDeviceTransport,
     timeoutMs?: number
   ): Promise<PyDeviceRuntimeInfo | undefined> {
-    const recoveryTimeoutMs = Math.max(timeoutMs ?? 2500, aggressiveProbeTimeoutMs);
+    const probeRuntimeTimeoutMs = resolveTimeoutMs(pyDeviceTimeoutSettings.pythonProbeRuntimeInfo, timeoutMs);
+    const aggressiveProbeTimeoutMs = getTimeoutSettingMs(pyDeviceTimeoutSettings.serialPortAggressiveRecoveryProbe);
+    const recoveryTimeoutMs = Math.max(probeRuntimeTimeoutMs, aggressiveProbeTimeoutMs);
     const startedAt = Date.now();
     emitPyDeviceLoggerEvent({
       source: 'ProbeDevices',
