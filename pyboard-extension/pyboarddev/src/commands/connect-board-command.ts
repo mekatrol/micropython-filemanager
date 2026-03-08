@@ -34,6 +34,7 @@ const runtimeInfoRecoveryRebootAttempts = 2;
 const runtimeInfoRecoveryRebootDelayMs = 500;
 const connectionStateMonitorIntervalMs = 2000;
 const recoveryConnectAttemptTimeoutMs = 25000;
+const probeUnavailableConnectCooldownMs = 7000;
 const deviceDocumentScheme = 'pydevice-device';
 const pydeviceDebugType = 'pydevice';
 const probeLoggerSource = 'ProbeDevices';
@@ -808,8 +809,12 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
 
     let rowsById = new Map<string, ConnectRow>();
     const connectingPaths = new Set<string>();
+    const queuedConnectPaths = new Set<string>();
     const probedRuntimeInfoByPath = new Map<string, PyDeviceRuntimeInfo>();
+    const probeUnavailableUntilByPath = new Map<string, number>();
+    const waitingForSerialPortClosePaths = new Set<string>();
     const serialDeviceProber = new SerialDeviceProber(defaultBaudRate);
+    let connectQueue: Promise<void> = Promise.resolve();
     let disposed = false;
     let reconcileInProgress = false;
     let reconcilePending = false;
@@ -840,6 +845,36 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
     ): void => {
       void panel.webview.postMessage({ type: 'probeStatus', state, message, current, total });
     };
+    const enqueueConnectOperation = (name: string, task: () => Promise<void>): Promise<void> => {
+      const run = async (): Promise<void> => {
+        emitPyDeviceLoggerEvent({
+          source: 'ConnectDevices',
+          level: 'debug',
+          action: 'connect-operation-started',
+          message: `Starting queued connect operation: ${name}.`
+        });
+        await task();
+        emitPyDeviceLoggerEvent({
+          source: 'ConnectDevices',
+          level: 'debug',
+          action: 'connect-operation-completed',
+          message: `Completed queued connect operation: ${name}.`
+        });
+      };
+
+      const next = connectQueue.then(run, run);
+      connectQueue = next.catch((error) => {
+        const reason = error instanceof Error ? error.message : String(error);
+        emitPyDeviceLoggerEvent({
+          source: 'ConnectDevices',
+          level: 'debug',
+          action: 'connect-operation-failed',
+          message: `Queued connect operation failed: ${name}.`,
+          details: { error: reason }
+        });
+      });
+      return next;
+    };
 
     const reconcileRows = async (knownPorts?: Awaited<ReturnType<typeof listSerialDevices>>): Promise<void> => {
       if (disposed) {
@@ -861,6 +896,30 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
           }
         }
         await pruneStaleConnectedDevices(activePorts);
+        const activePortPaths = new Set(activePorts.map((port) => port.path));
+        for (const cachedPortPath of [...probedRuntimeInfoByPath.keys()]) {
+          if (!activePortPaths.has(cachedPortPath)) {
+            probedRuntimeInfoByPath.delete(cachedPortPath);
+            emitPyDeviceLoggerEvent({
+              source: probeLoggerSource,
+              level: 'debug',
+              action: 'probe-cache-cleared',
+              message: `Cleared probe cache for disconnected port ${cachedPortPath}.`,
+              details: { portPath: cachedPortPath }
+            });
+          }
+        }
+        const now = Date.now();
+        for (const [blockedPortPath, blockedUntil] of [...probeUnavailableUntilByPath.entries()]) {
+          if (!activePortPaths.has(blockedPortPath) || blockedUntil <= now) {
+            probeUnavailableUntilByPath.delete(blockedPortPath);
+          }
+        }
+        for (const waitingPortPath of [...waitingForSerialPortClosePaths]) {
+          if (!activePortPaths.has(waitingPortPath)) {
+            waitingForSerialPortClosePaths.delete(waitingPortPath);
+          }
+        }
 
         const nextRows = new Map<string, ConnectRow>();
 
@@ -890,21 +949,28 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
             continue;
           }
 
-          const unconnectedRowId = `port:${port.path}`;
-          const unconnectedRow: ConnectRow = {
-            id: unconnectedRowId,
-            devicePath: port.path,
-            serialPortName,
-            deviceId: toDeviceId(port.path),
-            deviceName: '',
-            section: 'unconnected',
-            status: connectingPaths.has(port.path) ? ConnectStatus.Connecting : ConnectStatus.Ready,
-            details
-          };
-          nextRows.set(unconnectedRowId, unconnectedRow);
-
           const probedRuntimeInfo = probedRuntimeInfoByPath.get(port.path);
           if (!probedRuntimeInfo) {
+            const blockedUntil = probeUnavailableUntilByPath.get(port.path);
+            const isBlocked = typeof blockedUntil === 'number' && blockedUntil > Date.now();
+            const isWaitingForClose = waitingForSerialPortClosePaths.has(port.path);
+            const unconnectedRowId = `port:${port.path}`;
+            const unconnectedRow: ConnectRow = {
+              id: unconnectedRowId,
+              devicePath: port.path,
+              serialPortName,
+              deviceId: toDeviceId(port.path),
+              deviceName: '',
+              section: 'unconnected',
+              status: connectingPaths.has(port.path)
+                ? ConnectStatus.Connecting
+                : ((isWaitingForClose || isBlocked) ? ConnectStatus.NotConnected : ConnectStatus.Ready),
+              errorText: isWaitingForClose
+                ? 'Waiting for serial port...'
+                : (isBlocked ? 'Temporarily unavailable after probe timeout. Retry shortly.' : undefined),
+              details
+            };
+            nextRows.set(unconnectedRowId, unconnectedRow);
             continue;
           }
 
@@ -947,19 +1013,78 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
       const getLatestRow = (): ConnectRow => rowsById.get(rowId) ?? row;
 
       if (!row.devicePath) {
+        emitPyDeviceLoggerEvent({
+          source: 'ConnectDevices',
+          level: 'debug',
+          action: 'connect-row-skipped',
+          message: `Skipped connect for row without device path: ${row.id}.`,
+          details: { rowId: row.id }
+        });
         return;
       }
       if (connectingPaths.has(row.devicePath)) {
+        emitPyDeviceLoggerEvent({
+          source: 'ConnectDevices',
+          level: 'debug',
+          action: 'connect-row-skipped',
+          message: `Skipped connect because port is already connecting: ${row.devicePath}.`,
+          details: { rowId: row.id, portPath: row.devicePath }
+        });
+        return;
+      }
+      const unavailableUntil = probeUnavailableUntilByPath.get(row.devicePath);
+      const waitingForCloseCompletion = waitingForSerialPortClosePaths.has(row.devicePath);
+      if (waitingForCloseCompletion) {
+        emitPyDeviceLoggerEvent({
+          source: 'ConnectDevices',
+          level: 'debug',
+          action: 'connect-row-skipped',
+          message: `Skipped connect because probe cleanup is still closing serial port: ${row.devicePath}.`,
+          details: { rowId: row.id, portPath: row.devicePath }
+        });
+        const latestRow = getLatestRow();
+        latestRow.status = ConnectStatus.NotConnected;
+        latestRow.errorText = 'Waiting for serial port...';
+        updateRow(latestRow);
+        return;
+      }
+      if (typeof unavailableUntil === 'number' && unavailableUntil > Date.now()) {
+        emitPyDeviceLoggerEvent({
+          source: 'ConnectDevices',
+          level: 'debug',
+          action: 'connect-row-skipped',
+          message: `Skipped connect because port is cooling down after probe timeout: ${row.devicePath}.`,
+          details: { rowId: row.id, portPath: row.devicePath, unavailableUntil }
+        });
+        const latestRow = getLatestRow();
+        latestRow.status = ConnectStatus.NotConnected;
+        latestRow.errorText = 'Temporarily unavailable after probe timeout. Retry shortly.';
+        updateRow(latestRow);
         return;
       }
       const currentlyConnected = getConnectedPyDeviceByPortPath(row.devicePath);
       if (currentlyConnected) {
+        emitPyDeviceLoggerEvent({
+          source: 'ConnectDevices',
+          level: 'debug',
+          action: 'connect-row-already-connected',
+          message: `Port already connected: ${row.devicePath}.`,
+          details: { rowId: row.id, portPath: row.devicePath }
+        });
         const latestRow = getLatestRow();
         latestRow.status = ConnectStatus.Connected;
         updateRow(latestRow);
         return;
       }
 
+      const startedAt = Date.now();
+      emitPyDeviceLoggerEvent({
+        source: 'ConnectDevices',
+        level: 'debug',
+        action: 'connect-row-started',
+        message: `Starting connect for ${row.devicePath}.`,
+        details: { rowId: row.id, portPath: row.devicePath }
+      });
       connectingPaths.add(row.devicePath);
       {
         const latestRow = getLatestRow();
@@ -988,6 +1113,13 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
           );
         }
         await reconcileRows();
+        emitPyDeviceLoggerEvent({
+          source: 'ConnectDevices',
+          level: 'debug',
+          action: 'connect-row-completed',
+          message: `Connect succeeded for ${row.devicePath}.`,
+          details: { rowId: row.id, portPath: row.devicePath, elapsedMs: Date.now() - startedAt }
+        });
       } catch (error) {
         const latestRow = getLatestRow();
         latestRow.status = ConnectStatus.Error;
@@ -996,6 +1128,13 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
           ? 'Connect timed out. Device may not be running raw REPL.'
           : rawMessage;
         updateRow(latestRow);
+        emitPyDeviceLoggerEvent({
+          source: 'ConnectDevices',
+          level: 'debug',
+          action: 'connect-row-failed',
+          message: `Connect failed for ${row.devicePath}.`,
+          details: { rowId: row.id, portPath: row.devicePath, error: rawMessage, elapsedMs: Date.now() - startedAt }
+        });
       } finally {
         connectingPaths.delete(row.devicePath);
       }
@@ -1006,10 +1145,25 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
         (row) => row.devicePath.length > 0
           && (row.status === ConnectStatus.Ready || row.status === ConnectStatus.Error)
       );
+      const startedAt = Date.now();
+      emitPyDeviceLoggerEvent({
+        source: 'ConnectDevices',
+        level: 'debug',
+        action: 'connect-all-started',
+        message: 'Connect all requested.',
+        details: { totalCandidates: candidates.length }
+      });
       for (const row of candidates) {
         // Sequential connect to avoid multiple simultaneous serial handshake collisions.
         await connectRow(row);
       }
+      emitPyDeviceLoggerEvent({
+        source: 'ConnectDevices',
+        level: 'debug',
+        action: 'connect-all-completed',
+        message: 'Connect all completed.',
+        details: { totalCandidates: candidates.length, elapsedMs: Date.now() - startedAt }
+      });
     };
 
     const probeDisconnectedPorts = async (): Promise<void> => {
@@ -1119,8 +1273,9 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
 
           try {
             const detected = await serialDeviceProber.probePort(port);
-            if (detected?.runtimeInfo) {
+            if (detected.status === 'detected' && detected.runtimeInfo) {
               probedRuntimeInfoByPath.set(port.path, detected.runtimeInfo);
+              probeUnavailableUntilByPath.delete(port.path);
               emitPyDeviceLoggerEvent({
                 source: probeLoggerSource,
                 level: 'debug',
@@ -1134,8 +1289,45 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
                   machine: detected.runtimeInfo.machine
                 }
               });
+            } else if (detected.status === 'unavailable') {
+              probedRuntimeInfoByPath.delete(port.path);
+              if (detected.waitingForCloseCompletion && detected.waitForCloseCompletion) {
+                waitingForSerialPortClosePaths.add(port.path);
+                probeUnavailableUntilByPath.delete(port.path);
+                void detected.waitForCloseCompletion.finally(() => {
+                  waitingForSerialPortClosePaths.delete(port.path);
+                  if (!disposed) {
+                    void reconcileRows();
+                  }
+                  emitPyDeviceLoggerEvent({
+                    source: probeLoggerSource,
+                    level: 'debug',
+                    action: 'probe-port-ready-after-close',
+                    message: `Serial port close completed after probe timeout for ${port.path}.`,
+                    details: { portPath: port.path }
+                  });
+                });
+              } else {
+                const unavailableUntil = Date.now() + probeUnavailableConnectCooldownMs;
+                probeUnavailableUntilByPath.set(port.path, unavailableUntil);
+              }
+              emitPyDeviceLoggerEvent({
+                source: probeLoggerSource,
+                level: 'debug',
+                action: 'probe-port-unavailable',
+                message: `Port unavailable during probe on ${port.path}; connect temporarily blocked.`,
+                details: {
+                  index: index + 1,
+                  total: availablePorts.length,
+                  portPath: port.path,
+                  reason: detected.reason ?? '',
+                  cooldownMs: detected.waitingForCloseCompletion ? undefined : probeUnavailableConnectCooldownMs,
+                  waitingForCloseCompletion: !!detected.waitingForCloseCompletion
+                }
+              });
             } else {
               probedRuntimeInfoByPath.delete(port.path);
+              probeUnavailableUntilByPath.delete(port.path);
               emitPyDeviceLoggerEvent({
                 source: probeLoggerSource,
                 level: 'debug',
@@ -1202,40 +1394,102 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
       promptToSaveDirtyDeviceFiles: boolean = true,
       closeDeviceTabsAfterDisconnect: boolean = true
     ): Promise<void> => {
+      const startedAt = Date.now();
+      emitPyDeviceLoggerEvent({
+        source: 'DisconnectDevices',
+        level: 'debug',
+        action: 'disconnect-row-started',
+        message: `Starting disconnect for row ${row.id}.`,
+        details: { rowId: row.id, portPath: row.devicePath, reconcileAfter }
+      });
       const connectedByPath = row.devicePath ? getConnectedPyDeviceStateByPortPath(row.devicePath) : undefined;
       const targetDeviceId = connectedByPath?.deviceId ?? (row.deviceId ? boardRegistry.getByDeviceId(row.deviceId)?.deviceId : undefined);
       if (!targetDeviceId) {
+        emitPyDeviceLoggerEvent({
+          source: 'DisconnectDevices',
+          level: 'debug',
+          action: 'disconnect-row-skipped',
+          message: `No connected device found for row ${row.id}; skipping disconnect.`,
+          details: { rowId: row.id, portPath: row.devicePath }
+        });
         if (reconcileAfter) {
           await reconcileRows();
         }
         return;
       }
 
-      await closeConnectedPyDeviceByDeviceId(
-        targetDeviceId,
-        true,
-        false,
-        promptToSaveDirtyDeviceFiles,
-        closeDeviceTabsAfterDisconnect
-      );
-      if (reconcileAfter) {
-        await reconcileRows();
+      try {
+        await closeConnectedPyDeviceByDeviceId(
+          targetDeviceId,
+          true,
+          false,
+          promptToSaveDirtyDeviceFiles,
+          closeDeviceTabsAfterDisconnect
+        );
+        emitPyDeviceLoggerEvent({
+          source: 'DisconnectDevices',
+          level: 'debug',
+          action: 'disconnect-row-completed',
+          message: `Disconnect succeeded for device ${targetDeviceId}.`,
+          details: { rowId: row.id, deviceId: targetDeviceId, elapsedMs: Date.now() - startedAt }
+        });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        emitPyDeviceLoggerEvent({
+          source: 'DisconnectDevices',
+          level: 'debug',
+          action: 'disconnect-row-failed',
+          message: `Disconnect failed for device ${targetDeviceId}.`,
+          details: { rowId: row.id, deviceId: targetDeviceId, error: reason, elapsedMs: Date.now() - startedAt }
+        });
+        throw error;
+      } finally {
+        if (reconcileAfter) {
+          await reconcileRows();
+        }
       }
     };
 
     const disconnectAll = async (): Promise<void> => {
+      const startedAt = Date.now();
+      emitPyDeviceLoggerEvent({
+        source: 'DisconnectDevices',
+        level: 'debug',
+        action: 'disconnect-all-started',
+        message: 'Disconnect all requested.'
+      });
       const canClose = await saveDirtyDeviceDocumentsBeforeDisconnect();
       if (!canClose) {
+        emitPyDeviceLoggerEvent({
+          source: 'DisconnectDevices',
+          level: 'debug',
+          action: 'disconnect-all-cancelled',
+          message: 'Disconnect all cancelled because unsaved device files were not saved.'
+        });
         await reconcileRows();
         return;
       }
 
       const candidates = [...rowsById.values()].filter((row) => row.status === ConnectStatus.Connected);
+      emitPyDeviceLoggerEvent({
+        source: 'DisconnectDevices',
+        level: 'debug',
+        action: 'disconnect-all-candidates',
+        message: 'Resolved disconnect-all candidates.',
+        details: { totalCandidates: candidates.length }
+      });
       for (const row of candidates) {
         await disconnectRow(row, false, false, false);
       }
       await closeOpenDeviceTabsAfterDisconnect();
       await reconcileRows();
+      emitPyDeviceLoggerEvent({
+        source: 'DisconnectDevices',
+        level: 'debug',
+        action: 'disconnect-all-completed',
+        message: 'Disconnect all completed.',
+        details: { totalCandidates: candidates.length, elapsedMs: Date.now() - startedAt }
+      });
     };
 
     const runBulkTask = async (task: () => Promise<void>): Promise<void> => {
@@ -1257,7 +1511,7 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
         return;
       }
       if (typed.type === 'connectAll') {
-        void runBulkTask(connectAll);
+        void runBulkTask(async () => enqueueConnectOperation('connectAll', connectAll));
         return;
       }
       if (typed.type === 'disconnectAll') {
@@ -1286,7 +1540,28 @@ export const initRecoveryConnectCommand = (context: vscode.ExtensionContext) => 
         if (!row) {
           return;
         }
-        void connectRow(row);
+        if (row.devicePath && (queuedConnectPaths.has(row.devicePath) || connectingPaths.has(row.devicePath))) {
+          emitPyDeviceLoggerEvent({
+            source: 'ConnectDevices',
+            level: 'debug',
+            action: 'connect-row-skipped',
+            message: `Skipped connect request because it is already queued or connecting: ${row.devicePath}.`,
+            details: { rowId: row.id, portPath: row.devicePath }
+          });
+          return;
+        }
+        if (row.devicePath) {
+          queuedConnectPaths.add(row.devicePath);
+        }
+        void enqueueConnectOperation(`connectRow:${row.devicePath}`, async () => {
+          try {
+            await connectRow(row);
+          } finally {
+            if (row.devicePath) {
+              queuedConnectPaths.delete(row.devicePath);
+            }
+          }
+        });
         return;
       }
       if (typed.type === 'disconnect' && typeof typed.rowId === 'string') {

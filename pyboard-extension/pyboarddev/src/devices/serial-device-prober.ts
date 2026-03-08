@@ -15,15 +15,22 @@ import { ProbedSerialDevice } from './probed-serial-device';
 export class SerialDeviceProber {
   constructor(private readonly baudRate: number) {}
 
-  async probePort(port: PortInfo): Promise<ProbedSerialDevice | undefined> {
+  async probePort(port: PortInfo): Promise<ProbedSerialDevice> {
     const serialPort = new DeviceSerialPort(
       port.path,
       this.baudRate,
       false,
       (devicePath, baudRate) => new MicroPythonDevice(devicePath, baudRate, false)
     );
-    const runtimeInfo = await serialPort.probeRuntimeInfo();
-    return runtimeInfo ? { port, runtimeInfo } : undefined;
+    const probeResult = await serialPort.probeRuntimeInfoDetailed();
+    return {
+      port,
+      status: probeResult.status,
+      runtimeInfo: probeResult.runtimeInfo,
+      reason: probeResult.reason,
+      waitingForCloseCompletion: probeResult.waitingForCloseCompletion,
+      waitForCloseCompletion: probeResult.waitForCloseCompletion
+    };
   }
 }
 

@@ -165,8 +165,8 @@ export const renderConnectHtml = (rows: ConnectRow[], connectAttemptTimeoutMs: n
     </div>
     <div class="buttons">
       <button id="probeDevices" class="secondary">Probe devices</button>
-      <button id="connectAll" style="display:none;">Connect all</button>
-      <button id="disconnectAll" class="secondary" style="display:none;">Disconnect all</button>
+      <button id="connectAll">Connect all</button>
+      <button id="disconnectAll" class="secondary">Disconnect all</button>
       <button id="close" class="secondary">Close</button>
     </div>
   </div>
@@ -262,7 +262,8 @@ export const renderConnectHtml = (rows: ConnectRow[], connectAttemptTimeoutMs: n
           + '</span>';
       }
       if (row.status === status.notConnected) {
-        return '<span class="status-wrap secondary-text"><span class="icon">' + disconnectedIconSvg + '</span><span>Not connected</span></span>';
+        const notConnectedText = row.errorText || 'Not connected';
+        return '<span class="status-wrap secondary-text"><span class="icon">' + disconnectedIconSvg + '</span><span>' + notConnectedText + '</span></span>';
       }
       return '<button type="button" class="link" data-action="connect" data-id="' + row.id + '">Connect</button>';
     };

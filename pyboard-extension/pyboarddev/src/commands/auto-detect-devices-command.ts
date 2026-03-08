@@ -51,7 +51,7 @@ export const initAutoDetectDevicesCommand = (context: vscode.ExtensionContext): 
           for (const port of availablePorts) {
             progress.report({ increment, message: `Probing ${port.path}` });
             const detected = await serialDeviceProber.probePort(port);
-            if (detected) {
+            if (detected.status === 'detected' && detected.runtimeInfo) {
               results.push(detected);
             }
           }

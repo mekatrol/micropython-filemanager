@@ -5,6 +5,7 @@
 import * as vscode from 'vscode';
 import { SerialPort } from 'serialport';
 import { logChannelOutput } from '../output-channel';
+import { emitPyDeviceLoggerEvent } from '../pydevice-logger-events';
 import { PyDeviceIOEvent } from './py-device-io-event';
 import { PyDeviceRuntimeInfo } from './py-device-runtime-info';
 export class PyDeviceConnection {
@@ -362,9 +363,42 @@ export class PyDeviceConnection {
 
   async probeBoardRuntimeInfo(timeoutMs: number = 2500): Promise<PyDeviceRuntimeInfo> {
     return this.enqueueExclusive(async () => {
+      const startedAt = Date.now();
+      emitPyDeviceLoggerEvent({
+        source: 'ProbeDevices',
+        level: 'debug',
+        action: 'probe-runtime-script-started',
+        message: `Executing runtime info script on ${this.device}.`,
+        details: { portPath: this.device, timeoutMs }
+      });
       const { stdout, stderr } = await this.execRawCaptureUnlocked(`${this.buildRuntimeInfoScript()}\n`, timeoutMs);
       const runtimeInfo = this.parseRuntimeInfo(stdout, stderr);
+      emitPyDeviceLoggerEvent({
+        source: 'ProbeDevices',
+        level: 'debug',
+        action: 'probe-runtime-script-completed',
+        message: `Runtime info script completed on ${this.device}.`,
+        details: { portPath: this.device, elapsedMs: Date.now() - startedAt }
+      });
+      emitPyDeviceLoggerEvent({
+        source: 'ProbeDevices',
+        level: 'debug',
+        action: 'probe-uniqueid-started',
+        message: `Reading device ID on ${this.device}.`,
+        details: { portPath: this.device, timeoutMs }
+      });
       runtimeInfo.uniqueId = await this.tryReadBoardUniqueIdUnlocked(timeoutMs);
+      emitPyDeviceLoggerEvent({
+        source: 'ProbeDevices',
+        level: 'debug',
+        action: 'probe-uniqueid-completed',
+        message: `Device ID read finished on ${this.device}.`,
+        details: {
+          portPath: this.device,
+          hasDeviceId: !!runtimeInfo.uniqueId,
+          elapsedMs: Date.now() - startedAt
+        }
+      });
       return runtimeInfo;
     });
   }
@@ -850,4 +884,3 @@ export class PyDeviceConnection {
     this.serialPortCloseHandler = undefined;
   }
 }
-
