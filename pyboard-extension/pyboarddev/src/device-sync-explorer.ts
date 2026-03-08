@@ -201,6 +201,7 @@ class DeviceSyncModel {
   private hasWarnedNoWorkspaceFolder = false;
   private explorerReady = false;
   private hasConfigurationFile = false;
+  private hasWarnedMissingConfiguration = false;
   
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -276,7 +277,6 @@ class DeviceSyncModel {
       }
     }
     this.hasConfigurationFile = hasConfiguration;
-    this.hasSyncFolder = hasSyncFolder;
     this.explorerReady = hasWorkspace && hasConfiguration && hasSyncFolder;
     await vscode.commands.executeCommand('setContext', explorerHasWorkspaceContextKey, hasWorkspace);
     await vscode.commands.executeCommand('setContext', explorerHasConfigurationContextKey, hasConfiguration);
@@ -304,7 +304,12 @@ class DeviceSyncModel {
     }
     this.hasWarnedNoWorkspaceFolder = false;
     if (!hasConfiguration) {
-      this.hasWarnedMissingConfiguration = true;
+      if (!this.hasWarnedMissingConfiguration) {
+        const message = `Create "${configurationFileName}" to enable PyDevice Explorer.`;
+        this.hasWarnedMissingConfiguration = true;
+        vscode.window.showWarningMessage(message);
+        logChannelOutput(message, true);
+      }
       this.computerEntries = [{ relativePath: '', isDirectory: true }];
       this.deviceEntries = [{ relativePath: '', isDirectory: true }];
       this.syncStates = new Map();
@@ -2532,14 +2537,6 @@ class DeviceSyncModel {
       parent = path.posix.dirname(parent);
     }
     return false;
-  }
-
-  private isPathDirectlyExcludedFromSync(relativePath: string, deviceId?: string): boolean {
-    const normalised = toRelativePath(relativePath);
-    if (!normalised) {
-      return false;
-    }
-    return this.getDeviceSyncExclusionSet(deviceId).has(normalised);
   }
 
   private findNearestExcludedPath(relativePath: string, deviceId?: string): string | undefined {
