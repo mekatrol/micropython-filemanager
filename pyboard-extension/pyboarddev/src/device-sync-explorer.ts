@@ -39,7 +39,7 @@ import {
   toRelativePath,
   writeDeviceFile
 } from './utils/device-filesystem';
-import { FileWatcher, FileWatcherEvent } from './util/file-watcher';
+import { FileWatcher, FileWatcherEvent } from './utils/file-watcher';
 import { syncStateStore } from './sync-state-store';
 
 const syncViewId = 'mekatrol.pydevice.syncExplorer';

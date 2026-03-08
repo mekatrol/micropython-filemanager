@@ -24,7 +24,7 @@ import { initReplView } from './repl-view';
 import { initExtensionStatusView } from './extension-status-view';
 import { getWorkspaceCacheValue, initialiseWorkspaceCache, loggerAutoStartCacheKey, setWorkspaceCacheValue } from './utils/workspace-cache';
 import { initialisePyDeviceController, stopPyDeviceController } from './devices/py-device-controller-singleton';
-import { FileWatcher } from './util/file-watcher';
+import { FileWatcher } from './utils/file-watcher';
 import { disposePyDeviceLogger, initPyDeviceLogger, logPyDeviceLogger } from './pydevice-logger';
 import { initSetLoggerAutoStartCommand } from './commands/set-logger-autostart-command';
 

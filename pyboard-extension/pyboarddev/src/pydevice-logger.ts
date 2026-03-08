@@ -3,7 +3,7 @@
  * Provides a dedicated "PyDevice Logger" output channel for extension-wide logs.
  */
 import * as vscode from 'vscode';
-import { FileWatcherEvent } from './util/file-watcher';
+import { FileWatcherEvent } from './utils/file-watcher';
 
 let loggerChannel: vscode.OutputChannel | undefined;
 const recentFileWatcherLogs = new Map<string, number>();
