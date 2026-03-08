@@ -5,7 +5,7 @@
  * output ordering so command/UI layers can rely on deterministic state.
  */
 import * as assert from 'assert';
-import { ConnectedPyDeviceRegistry, ConnectedPyDeviceState } from '../../devices/connected-py-device-registry';
+import { ConnectedPyDeviceRegistry, ConnectedPyDeviceState } from '../../devices/registry/connected-py-device-registry';
 
 // Minimal board stub factory.
 // We only provide properties that registry logic reads (`device`, `baudrate`).

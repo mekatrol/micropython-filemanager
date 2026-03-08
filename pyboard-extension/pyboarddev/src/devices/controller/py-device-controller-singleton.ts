@@ -3,11 +3,11 @@
  * Owns creation, startup, access, and shutdown of the singleton
  * `PyDeviceController` instance.
  */
-import { loadConfiguration } from '../utils/configuration';
-import { listAllSerialPorts } from '../utils/serial-port';
-import { autoReconnectDevicesCacheKey, getWorkspaceCacheValue } from '../utils/workspace-cache';
-import { PyDeviceState } from './py-device';
-import { DeviceSerialPort } from './device-serial-port';
+import { loadConfiguration } from '../../utils/configuration';
+import { listAllSerialPorts } from '../../utils/serial-port';
+import { autoReconnectDevicesCacheKey, getWorkspaceCacheValue } from '../../utils/workspace-cache';
+import { PyDeviceState } from '../py-device';
+import { DeviceSerialPort } from '../connection/device-serial-port';
 import { PyDeviceController } from './py-device-controller';
 
 const defaultBaudRate = 115200;

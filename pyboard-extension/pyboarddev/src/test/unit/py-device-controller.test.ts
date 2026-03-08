@@ -1,6 +1,6 @@
 import * as assert from 'assert';
-import { DeviceSerialPort } from '../../devices/device-serial-port';
-import { PyDeviceController } from '../../devices/py-device-controller';
+import { DeviceSerialPort } from '../../devices/connection/device-serial-port';
+import { PyDeviceController } from '../../devices/controller/py-device-controller';
 import { PyDeviceRuntimeInfo } from '../../devices/py-device';
 
 suite('PyDeviceController', () => {

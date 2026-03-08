@@ -6,7 +6,7 @@
  * keys, map keys, and display usage.
  */
 import * as assert from 'assert';
-import { normaliseDeviceId, toDeviceId } from '../../devices/device-id';
+import { normaliseDeviceId, toDeviceId } from '../../devices/identity/device-id';
 
 suite('device-id', () => {
   test('normaliseDeviceId trims and sanitises input', () => {

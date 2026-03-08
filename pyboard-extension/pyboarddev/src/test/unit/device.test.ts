@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { DeviceSerialPort } from '../../devices/device-serial-port';
+import { DeviceSerialPort } from '../../devices/connection/device-serial-port';
 import { PyDevice } from '../../devices/py-device';
 
 suite('PyDevice', () => {

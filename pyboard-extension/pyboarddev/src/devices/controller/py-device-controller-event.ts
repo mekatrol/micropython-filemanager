@@ -1,4 +1,4 @@
-import { PyDeviceState } from './py-device-state';
+import { PyDeviceState } from '../model/py-device-state';
 
 export interface PyDeviceControllerEvent {
   type: 'devicesChanged' | 'deviceUpdated';

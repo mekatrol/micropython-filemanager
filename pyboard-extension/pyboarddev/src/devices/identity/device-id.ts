@@ -3,7 +3,7 @@
  * Generates stable, normalised device identifiers from runtime metadata
  * and fallback serial-port details.
  */
-import { PyDeviceRuntimeInfo } from './py-device';
+import { PyDeviceRuntimeInfo } from '../py-device';
 
 /**
  * Normalises device identifiers so they are safe and stable for keys/paths.

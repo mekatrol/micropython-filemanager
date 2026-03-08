@@ -10,12 +10,12 @@ import {
   endBoardExecution,
   getConnectedPyDevice,
   getConnectedPyDevices
-} from './commands/connect-board-command';
-import { logChannelOutput } from './output-channel';
-import { getDeviceHostFolderMappings, loadConfiguration } from './utils/configuration';
-import { toRelativePath } from './utils/device-filesystem';
-import { pyDeviceInternalTimeouts } from './constants/timeout-constants';
-import { showErrorMessage, t } from './utils/i18n';
+} from '../commands/connect-board-command';
+import { logChannelOutput } from '../logging/output-channel';
+import { getDeviceHostFolderMappings, loadConfiguration } from '../utils/configuration';
+import { toRelativePath } from '../utils/device-filesystem';
+import { pyDeviceInternalTimeouts } from '../constants/timeout-constants';
+import { showErrorMessage, t } from '../utils/i18n';
 
 const debugType = 'pydevice';
 const deviceDocumentScheme = 'pydevice-device';

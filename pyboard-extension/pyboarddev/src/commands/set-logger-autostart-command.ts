@@ -3,7 +3,7 @@
  * Command for toggling whether the PyDevice Logger auto-starts on extension activation.
  */
 import * as vscode from 'vscode';
-import { logChannelOutput } from '../output-channel';
+import { logChannelOutput } from '../logging/output-channel';
 import { getWorkspaceCacheValue, loggerAutoStartCacheKey, setWorkspaceCacheValue } from '../utils/workspace-cache';
 import { showInformationMessage, t } from '../utils/i18n';
 

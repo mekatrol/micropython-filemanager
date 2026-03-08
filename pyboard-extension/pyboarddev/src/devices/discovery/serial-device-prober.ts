@@ -3,9 +3,9 @@
  * Probes serial ports and returns runtime metadata for ports that respond
  * as supported Python devices.
  */
-import { MicroPythonDevice } from './py-device';
-import { PortInfo } from '../utils/serial-port';
-import { DeviceSerialPort } from './device-serial-port';
+import { MicroPythonDevice } from '../py-device';
+import { PortInfo } from '../../utils/serial-port';
+import { DeviceSerialPort } from '../connection/device-serial-port';
 import { ProbedSerialDevice } from './probed-serial-device';
 
 /**

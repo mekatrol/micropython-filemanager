@@ -3,7 +3,7 @@
  * Stores active connected-device state and exposes lookup/snapshot helpers
  * keyed by device ID and port path.
  */
-import { PyDeviceRuntimeInfo } from './py-device-runtime-info';
+import { PyDeviceRuntimeInfo } from '../model/py-device-runtime-info';
 import { ConnectedPyDeviceState } from './connected-py-device-state';
 import { ConnectedPyDeviceSnapshot } from './connected-py-device-snapshot';
 

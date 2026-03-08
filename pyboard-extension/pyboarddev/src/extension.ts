@@ -4,7 +4,7 @@
  * views, background services, and lifecycle cleanup.
  */
 import * as vscode from 'vscode';
-import { initOutputChannel, logChannelOutput as logChannelOutput } from './output-channel';
+import { initOutputChannel, logChannelOutput as logChannelOutput } from './logging/output-channel';
 import { initCreateConfigCommand } from './commands/create-config-command';
 import { initAutoDetectDevicesCommand } from './commands/auto-detect-devices-command';
 import {
@@ -18,14 +18,14 @@ import {
   initToggleBoardConnectionCommand,
   tryReconnectBoardOnStartup
 } from './commands/connect-board-command';
-import { initDeviceSyncExplorer } from './device-sync-explorer';
-import { initPyDeviceDebug } from './py-device-debug';
-import { initReplView } from './repl-view';
-import { initExtensionStatusView } from './extension-status-view';
+import { initDeviceSyncExplorer } from './views/device-sync-explorer';
+import { initPyDeviceDebug } from './debug/py-device-debug';
+import { initReplView } from './views/repl-view';
+import { initExtensionStatusView } from './views/extension-status-view';
 import { getWorkspaceCacheValue, initialiseWorkspaceCache, loggerAutoStartCacheKey, setWorkspaceCacheValue } from './utils/workspace-cache';
-import { initialisePyDeviceController, stopPyDeviceController } from './devices/py-device-controller-singleton';
+import { initialisePyDeviceController, stopPyDeviceController } from './devices/controller/py-device-controller-singleton';
 import { FileWatcher } from './utils/file-watcher';
-import { disposePyDeviceLogger, initPyDeviceLogger, logPyDeviceLogger } from './pydevice-logger';
+import { disposePyDeviceLogger, initPyDeviceLogger, logPyDeviceLogger } from './logging/pydevice-logger';
 import { initSetLoggerAutoStartCommand } from './commands/set-logger-autostart-command';
 
 // This method is called when your extension is activated

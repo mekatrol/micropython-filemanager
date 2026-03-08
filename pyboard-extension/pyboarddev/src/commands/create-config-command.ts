@@ -5,7 +5,7 @@
  */
 import * as vscode from 'vscode';
 import { configurationFileName, getConfigurationFullFileName, PyDeviceConfigurationResult, resetDefaultConfiguration } from '../utils/configuration';
-import { logChannelOutput } from '../output-channel';
+import { logChannelOutput } from '../logging/output-channel';
 import { showErrorMessage, showInformationMessage, showWarningMessage, t } from '../utils/i18n';
 
 export const initCreateConfigCommand = (context: vscode.ExtensionContext) => {

@@ -5,7 +5,7 @@
  * reconnect behavior remains predictable across sessions.
  */
 import * as assert from 'assert';
-import { ReconnectStateStore } from '../../devices/reconnect-state-store';
+import { ReconnectStateStore } from '../../devices/registry/reconnect-state-store';
 
 suite('ReconnectStateStore', () => {
   const pathsKey = 'paths';

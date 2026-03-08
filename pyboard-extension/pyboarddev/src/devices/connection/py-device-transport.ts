@@ -1,4 +1,4 @@
-import { PyDeviceRuntimeInfo } from './py-device-runtime-info';
+import { PyDeviceRuntimeInfo } from '../model/py-device-runtime-info';
 
 export interface PyDeviceTransport {
   device: string;

@@ -5,14 +5,14 @@
  */
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { logChannelOutput } from '../output-channel';
+import { logChannelOutput } from '../logging/output-channel';
 import { MicroPythonDevice, PyDeviceConnection, PyDeviceRuntimeInfo } from '../devices/py-device';
 import { listSerialDevices } from '../utils/serial-port';
 import { autoReconnectDevicesCacheKey, getWorkspaceCacheValue, setWorkspaceCacheValue } from '../utils/workspace-cache';
-import { ConnectedPyDeviceRegistry, ConnectedPyDeviceState, ConnectedPyDeviceSnapshot } from '../devices/connected-py-device-registry';
-import { ReconnectStateStore } from '../devices/reconnect-state-store';
-import { toDeviceId } from '../devices/device-id';
-import { SerialDeviceProber } from '../devices/serial-device-prober';
+import { ConnectedPyDeviceRegistry, ConnectedPyDeviceState, ConnectedPyDeviceSnapshot } from '../devices/registry/connected-py-device-registry';
+import { ReconnectStateStore } from '../devices/registry/reconnect-state-store';
+import { toDeviceId } from '../devices/identity/device-id';
+import { SerialDeviceProber } from '../devices/discovery/serial-device-prober';
 import { getDeviceNames, loadConfiguration, updateDeviceName } from '../utils/configuration';
 import {
   ConnectRow,
@@ -20,7 +20,7 @@ import {
   toDeviceInfoSummary
 } from './connect-state';
 import { renderConnectHtml } from './connect-webview';
-import { emitPyDeviceLoggerEvent } from '../pydevice-logger-events';
+import { emitPyDeviceLoggerEvent } from '../logging/pydevice-logger-events';
 import { pyDeviceInternalTimeouts, pyDeviceTimeoutSettings } from '../constants/timeout-constants';
 import { getTimeoutSettingMs } from '../utils/timeout-settings';
 import { showErrorMessage, showInformationMessage, showWarningMessage, t } from '../utils/i18n';
@@ -41,7 +41,7 @@ const deviceDocumentScheme = 'pydevice-device';
 const pydeviceDebugType = 'pydevice';
 const probeLoggerSource = 'ProbeDevices';
 
-export type { ConnectedPyDeviceSnapshot } from '../devices/connected-py-device-registry';
+export type { ConnectedPyDeviceSnapshot } from '../devices/registry/connected-py-device-registry';
 
 const boardRegistry = new ConnectedPyDeviceRegistry();
 const boardConnectionStateEmitter = new vscode.EventEmitter<boolean>();

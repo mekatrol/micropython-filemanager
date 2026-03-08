@@ -1,5 +1,5 @@
-import { PortInfo } from '../utils/serial-port';
-import { PyDeviceRuntimeInfo } from './py-device-runtime-info';
+import { PortInfo } from '../../utils/serial-port';
+import { PyDeviceRuntimeInfo } from '../model/py-device-runtime-info';
 
 export type ProbedSerialDeviceStatus = 'detected' | 'noDevice' | 'unavailable';
 

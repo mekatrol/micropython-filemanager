@@ -5,13 +5,13 @@
  */
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { getConnectedPyDevice, getConnectedPyDevices, onBoardConnectionsChanged } from './commands/connect-board-command';
-import { pyDeviceTimeoutSettings } from './constants/timeout-constants';
-import { createWebviewNonce, escapeJsonForHtml, getWebviewAssetUri, loadWebviewTemplate } from './utils/webview-template';
-import { configurationFileName, getDeviceNames, loadConfiguration, onPyDeviceConfigurationUpdated } from './utils/configuration';
-import { getTimeoutSettingMs } from './utils/timeout-settings';
-import { getWorkspaceCacheValue, setWorkspaceCacheValue } from './utils/workspace-cache';
-import { t } from './utils/i18n';
+import { getConnectedPyDevice, getConnectedPyDevices, onBoardConnectionsChanged } from '../commands/connect-board-command';
+import { pyDeviceTimeoutSettings } from '../constants/timeout-constants';
+import { createWebviewNonce, escapeJsonForHtml, getWebviewAssetUri, loadWebviewTemplate } from '../utils/webview-template';
+import { configurationFileName, getDeviceNames, loadConfiguration, onPyDeviceConfigurationUpdated } from '../utils/configuration';
+import { getTimeoutSettingMs } from '../utils/timeout-settings';
+import { getWorkspaceCacheValue, setWorkspaceCacheValue } from '../utils/workspace-cache';
+import { t } from '../utils/i18n';
 
 const openReplCommandId = 'mekatrol.pydevice.openrepl';
 const clearReplCommandId = 'mekatrol.pydevice.clearrepl';

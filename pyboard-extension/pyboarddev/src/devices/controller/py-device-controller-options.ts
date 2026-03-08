@@ -1,7 +1,7 @@
-import { PortInfo } from '../utils/serial-port';
-import { DeviceSerialPort } from './device-serial-port';
-import { PyDeviceRuntimeInfo } from './py-device-runtime-info';
-import { PyDeviceState } from './py-device-state';
+import { PortInfo } from '../../utils/serial-port';
+import { DeviceSerialPort } from '../connection/device-serial-port';
+import { PyDeviceRuntimeInfo } from '../model/py-device-runtime-info';
+import { PyDeviceState } from '../model/py-device-state';
 
 export interface PyDeviceControllerOptions {
   baudRate?: number;

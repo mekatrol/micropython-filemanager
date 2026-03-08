@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { PyDeviceRuntimeInfo } from '../../devices/py-device';
-import { DeviceSerialPort, PyDeviceTransport } from '../../devices/device-serial-port';
+import { DeviceSerialPort, PyDeviceTransport } from '../../devices/connection/device-serial-port';
 
 class FakeTransport implements PyDeviceTransport {
   opened = false;

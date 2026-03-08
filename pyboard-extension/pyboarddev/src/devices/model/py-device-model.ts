@@ -3,7 +3,7 @@ import type {
   DeviceSerialPortEvent,
   Disposable,
   PyDeviceTransport
-} from './device-serial-port';
+} from '../connection/device-serial-port';
 import { PyDeviceRuntimeInfo } from './py-device-runtime-info';
 import { PyDeviceState } from './py-device-state';
 

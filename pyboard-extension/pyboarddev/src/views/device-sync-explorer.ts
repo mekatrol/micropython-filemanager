@@ -8,8 +8,8 @@ import { createHash } from 'crypto';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { closeAllConnectedPyDevices, getConnectedPyDevice, getConnectedPyDevices, onBoardConnectionStateChanged, onBoardConnectionsChanged } from './commands/connect-board-command';
-import { logChannelOutput } from './output-channel';
+import { closeAllConnectedPyDevices, getConnectedPyDevice, getConnectedPyDevices, onBoardConnectionStateChanged, onBoardConnectionsChanged } from '../commands/connect-board-command';
+import { logChannelOutput } from '../logging/output-channel';
 import {
   createDefaultConfiguration,
   PyDeviceConfigurationResult,
@@ -24,8 +24,8 @@ import {
   updateDeviceSyncExcludedPaths,
   updateDeviceHostFolderMapping,
   updateDeviceSyncExclusion
-} from './utils/configuration';
-import { createDefaultWorkspaceCacheFile, workspaceCacheFileName } from './utils/workspace-cache';
+} from '../utils/configuration';
+import { createDefaultWorkspaceCacheFile, workspaceCacheFileName } from '../utils/workspace-cache';
 import {
   createDeviceDirectory,
   deleteDevicePath,
@@ -38,12 +38,12 @@ import {
   scanComputerSyncEntries,
   toRelativePath,
   writeDeviceFile
-} from './utils/device-filesystem';
-import { FileWatcher, FileWatcherEvent } from './utils/file-watcher';
-import { createWebviewNonce, escapeJsonForHtml, getWebviewAssetUri, loadWebviewTemplate } from './utils/webview-template';
-import { syncStateStore } from './sync-state-store';
-import { emitPyDeviceLoggerEvent } from './pydevice-logger-events';
-import { showErrorMessage, showInformationMessage, showWarningMessage, t } from './utils/i18n';
+} from '../utils/device-filesystem';
+import { FileWatcher, FileWatcherEvent } from '../utils/file-watcher';
+import { createWebviewNonce, escapeJsonForHtml, getWebviewAssetUri, loadWebviewTemplate } from '../utils/webview-template';
+import { syncStateStore } from '../sync/sync-state-store';
+import { emitPyDeviceLoggerEvent } from '../logging/pydevice-logger-events';
+import { showErrorMessage, showInformationMessage, showWarningMessage, t } from '../utils/i18n';
 
 const syncViewId = 'mekatrol.pydevice.syncExplorer';
 const commandRefreshId = 'mekatrol.pydevice.refreshsyncview';

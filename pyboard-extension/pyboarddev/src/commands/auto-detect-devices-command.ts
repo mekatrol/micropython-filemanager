@@ -4,10 +4,10 @@
  * and starts a connection for the selected detected device.
  */
 import * as vscode from 'vscode';
-import { logChannelOutput } from '../output-channel';
+import { logChannelOutput } from '../logging/output-channel';
 import { listAllSerialPorts } from '../utils/serial-port';
 import { getConnectedPyDeviceByPortPath } from './connect-board-command';
-import { ProbedSerialDevice, SerialDeviceProber } from '../devices/serial-device-prober';
+import { ProbedSerialDevice, SerialDeviceProber } from '../devices/discovery/serial-device-prober';
 import { showErrorMessage, showWarningMessage, t } from '../utils/i18n';
 
 const autoDetectDevicesCommandId = 'mekatrol.pydevice.autodetectdevices';

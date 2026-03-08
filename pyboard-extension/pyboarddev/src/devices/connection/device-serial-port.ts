@@ -3,12 +3,12 @@
  * Wraps a serial transport with connect/disconnect/runtime operations and
  * emits serial-port lifecycle events.
  */
-import { MicroPythonDevice, PyDeviceRuntimeInfo } from './py-device';
-import { Disposable } from './disposable';
+import { MicroPythonDevice, PyDeviceRuntimeInfo } from '../py-device';
+import { Disposable } from '../../core/disposable';
 import { PyDeviceTransport } from './py-device-transport';
-import { emitPyDeviceLoggerEvent } from '../pydevice-logger-events';
-import { pyDeviceTimeoutSettings } from '../constants/timeout-constants';
-import { getTimeoutSettingMs, resolveTimeoutMs } from '../utils/timeout-settings';
+import { emitPyDeviceLoggerEvent } from '../../logging/pydevice-logger-events';
+import { pyDeviceTimeoutSettings } from '../../constants/timeout-constants';
+import { getTimeoutSettingMs, resolveTimeoutMs } from '../../utils/timeout-settings';
 
 const withTimeout = async <T>(operation: Promise<T>, timeoutMs: number, label: string): Promise<T> => {
   return await new Promise<T>((resolve, reject) => {

@@ -8,7 +8,7 @@ import {
   getConnectedPyDevices,
   onBoardConnectionStateChanged,
   onBoardConnectionsChanged
-} from './commands/connect-board-command';
+} from '../commands/connect-board-command';
 
 const statusViewId = 'mekatrol.pydevice.statusView';
 const softRebootCommandId = 'mekatrol.pydevice.softreboot';

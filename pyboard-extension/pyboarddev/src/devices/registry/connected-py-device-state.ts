@@ -1,5 +1,5 @@
-import { PyDeviceConnection } from './py-device-connection';
-import { PyDeviceRuntimeInfo } from './py-device-runtime-info';
+import { PyDeviceConnection } from '../connection/py-device-connection';
+import { PyDeviceRuntimeInfo } from '../model/py-device-runtime-info';
 
 export interface ConnectedPyDeviceState {
   deviceId: string;

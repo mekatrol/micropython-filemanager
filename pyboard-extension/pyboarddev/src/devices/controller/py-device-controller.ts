@@ -3,9 +3,9 @@
  * Discovers available ports, maps them to logical devices, and publishes
  * device list/state change events.
  */
-import { toDeviceId } from './device-id';
-import { DeviceSerialPort, Disposable } from './device-serial-port';
-import { PyDevice, PyDeviceState } from './py-device';
+import { toDeviceId } from '../identity/device-id';
+import { DeviceSerialPort, Disposable } from '../connection/device-serial-port';
+import { PyDevice, PyDeviceState } from '../py-device';
 import { PyDeviceControllerEvent } from './py-device-controller-event';
 import { PyDeviceControllerOptions } from './py-device-controller-options';
 

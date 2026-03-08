@@ -4,13 +4,13 @@
  */
 import * as vscode from 'vscode';
 import { SerialPort } from 'serialport';
-import { logChannelOutput } from '../output-channel';
-import { emitPyDeviceLoggerEvent } from '../pydevice-logger-events';
-import { pyDeviceInternalTimeouts, pyDeviceTimeoutSettings } from '../constants/timeout-constants';
-import { getTimeoutSettingMs, resolveTimeoutMs } from '../utils/timeout-settings';
-import { showErrorMessage } from '../utils/i18n';
+import { logChannelOutput } from '../../logging/output-channel';
+import { emitPyDeviceLoggerEvent } from '../../logging/pydevice-logger-events';
+import { pyDeviceInternalTimeouts, pyDeviceTimeoutSettings } from '../../constants/timeout-constants';
+import { getTimeoutSettingMs, resolveTimeoutMs } from '../../utils/timeout-settings';
+import { showErrorMessage } from '../../utils/i18n';
 import { PyDeviceIOEvent } from './py-device-io-event';
-import { PyDeviceRuntimeInfo } from './py-device-runtime-info';
+import { PyDeviceRuntimeInfo } from '../model/py-device-runtime-info';
 export class PyDeviceConnection {
   device: string;
   baudrate: number;

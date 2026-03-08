@@ -4,7 +4,7 @@
  * components can consume host/device sync data.
  */
 import * as vscode from 'vscode';
-import { FileEntry, SyncState } from './utils/device-filesystem';
+import { FileEntry, SyncState } from '../utils/device-filesystem';
 
 export interface DeviceSyncStateSnapshot {
   deviceId: string;
