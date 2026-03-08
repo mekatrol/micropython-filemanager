@@ -100,8 +100,6 @@ strict digraph "dependency-cruiser output"{
     "src/repl-view.ts" -> "src/utils/configuration.ts"
     "src/repl-view.ts" -> "src/utils/workspace-cache.ts"
     subgraph "cluster_src" {label="src" "src/sync-state-store.ts" [label=<sync-state-store.ts> tooltip="sync-state-store.ts" URL="src/sync-state-store.ts" fillcolor="#ddfeff"] }
-    subgraph "cluster_src" {label="src" "src/terminal.ts" [label=<terminal.ts> tooltip="terminal.ts" URL="src/terminal.ts" fillcolor="#ddfeff"] }
-    "src/terminal.ts" -> "src/commands/connect-board-command.ts"
     subgraph "cluster_src" {label="src" subgraph "cluster_src/utils" {label="utils" "src/utils/configuration.ts" [label=<configuration.ts> tooltip="configuration.ts" URL="src/utils/configuration.ts" fillcolor="#ddfeff"] } }
     subgraph "cluster_src" {label="src" subgraph "cluster_src/utils" {label="utils" "src/utils/device-filesystem.ts" [label=<device-filesystem.ts> tooltip="device-filesystem.ts" URL="src/utils/device-filesystem.ts" fillcolor="#ddfeff"] } }
     subgraph "cluster_src" {label="src" subgraph "cluster_src/utils" {label="utils" "src/utils/file-watcher.ts" [label=<file-watcher.ts> tooltip="file-watcher.ts" URL="src/utils/file-watcher.ts" fillcolor="#ddfeff"] } }
