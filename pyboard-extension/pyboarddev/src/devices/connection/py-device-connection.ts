@@ -11,6 +11,13 @@ import { getTimeoutSettingMs, resolveTimeoutMs } from '../../utils/timeout-setti
 import { showErrorMessage } from '../../utils/i18n';
 import { PyDeviceIOEvent } from './py-device-io-event';
 import { PyDeviceRuntimeInfo } from '../model/py-device-runtime-info';
+import {
+  pyDeviceCommandSequences,
+  pyDeviceControlChars,
+  pyDeviceProtocolBuffers,
+  pyDeviceProtocolBytes,
+  pyDeviceProtocolText
+} from './py-device-commands';
 export class PyDeviceConnection {
   device: string;
   baudrate: number;
@@ -118,13 +125,13 @@ export class PyDeviceConnection {
   }
 
   async enterRawRepl(): Promise<boolean> {
-    await this.write('\r\x03');
+    await this.write(pyDeviceCommandSequences.interrupt);
     await this.delay(this.waitDelay);
     await this.readAll();
-    await this.write('\r\x01');
+    await this.write(pyDeviceCommandSequences.enterRawRepl);
     await this.delay(this.waitDelay);
 
-    return await this.readUntil('raw REPL; CTRL-B to exit\r\n>');
+    return await this.readUntil(`${pyDeviceProtocolText.rawReplPrompt}${pyDeviceProtocolText.rawReplPromptTail}`);
   }
 
   async rawPasteWrite(commandBytes: number[]): Promise<boolean> {
@@ -141,11 +148,11 @@ export class PyDeviceConnection {
         }
 
         switch (data[0]) {
-          case 0x01:
+          case pyDeviceProtocolBytes.rawPasteWindowIncrement:
             windowRemain += windowSize;
             continue;
-          case 0x04:
-            await this.write('\x04');
+          case pyDeviceProtocolBytes.ctrlD:
+            await this.write(pyDeviceControlChars.ctrlD);
             continue;
           default:
             throw this.reportError('Unexpected byte during raw paste', new Error(String(data[0])));
@@ -161,16 +168,16 @@ export class PyDeviceConnection {
 
     await this.delay(this.waitDelay);
     await this.readAllRaw();
-    await this.write('\x04');
+    await this.write(pyDeviceControlChars.ctrlD);
     await this.delay(this.waitDelay);
 
     const endResponse = await this.readNextRaw(1);
-    if (endResponse[endResponse.length - 1] !== 0x04) {
+    if (endResponse[endResponse.length - 1] !== pyDeviceProtocolBytes.ctrlD) {
       throw this.reportError('Raw paste did not complete successfully', new Error(String(endResponse)));
     }
 
     const data = await this.readAllRaw();
-    const str = String.fromCharCode(...data.filter((b) => b !== 0x04));
+    const str = String.fromCharCode(...data.filter((b) => b !== pyDeviceProtocolBytes.ctrlD));
     logChannelOutput(str, false);
 
     return true;
@@ -186,11 +193,11 @@ export class PyDeviceConnection {
     }
 
     if (this.useRawPaste) {
-      await this.write('\x05A\x01');
+      await this.write(pyDeviceCommandSequences.startRawPasteNegotiation);
       await this.delay(this.waitDelay);
 
       const response = await this.readNextRaw(2);
-      if (response.length < 2 || response[0] !== 'R'.charCodeAt(0)) {
+      if (response.length < 2 || response[0] !== pyDeviceProtocolBytes.rawPasteSupportsMarker) {
         this.useRawPaste = false;
       } else if (response[1] === 1) {
         return await this.rawPasteWrite(commandBytes);
@@ -199,7 +206,7 @@ export class PyDeviceConnection {
       }
     }
 
-    await this.write('\x04');
+    await this.write(pyDeviceControlChars.ctrlD);
     await this.delay(this.waitDelay);
 
     const response2 = await this.readAllRaw();
@@ -210,10 +217,10 @@ export class PyDeviceConnection {
 
   async exitRawRepl(): Promise<boolean> {
     await this.readAll();
-    await this.write('\r\x02');
+    await this.write(pyDeviceCommandSequences.exitRawRepl);
     await this.delay(this.waitDelay);
 
-    return await this.readUntil('>>> ');
+    return await this.readUntil(pyDeviceProtocolText.normalReplPrompt);
   }
 
   async readNextRaw(length: number): Promise<number[]> {
@@ -328,26 +335,30 @@ export class PyDeviceConnection {
     await this.enterRawReplUnlocked(effectiveTimeoutMs);
 
     await this.write(command);
-    await this.write('\x04');
+    await this.write(pyDeviceControlChars.ctrlD);
 
-    const response = await this.waitForDataEndingWith(Buffer.from([0x04, 0x3e]), effectiveTimeoutMs);
+    const response = await this.waitForDataEndingWith(pyDeviceProtocolBuffers.rawCaptureResponseSuffix, effectiveTimeoutMs);
 
-    await this.write('\r\x02', { drain: false });
+    await this.write(pyDeviceCommandSequences.exitRawRepl, { drain: false });
     await this.readUntilIdle(100, 600);
 
     let payload = response;
-    if (payload.length >= 2 && payload[0] === 'O'.charCodeAt(0) && payload[1] === 'K'.charCodeAt(0)) {
+    if (
+      payload.length >= pyDeviceProtocolText.rawCommandAcceptedPrefix.length
+      && payload[0] === pyDeviceProtocolText.rawCommandAcceptedPrefix.charCodeAt(0)
+      && payload[1] === pyDeviceProtocolText.rawCommandAcceptedPrefix.charCodeAt(1)
+    ) {
       payload = payload.slice(2);
     }
 
-    const firstEot = payload.indexOf(0x04);
+    const firstEot = payload.indexOf(pyDeviceProtocolBytes.ctrlD);
     if (firstEot < 0) {
       return { stdout: Buffer.from(payload).toString('utf8'), stderr: '' };
     }
 
     const stdoutBytes = payload.slice(0, firstEot);
     const remainder = payload.slice(firstEot + 1);
-    const secondEot = remainder.lastIndexOf(0x04);
+    const secondEot = remainder.lastIndexOf(pyDeviceProtocolBytes.ctrlD);
     const stderrBytes = secondEot >= 0 ? remainder.slice(0, secondEot) : remainder;
 
     return {
@@ -474,8 +485,8 @@ export class PyDeviceConnection {
   }
 
   private buildRuntimeInfoScript(): string {
-    const beginMarker = '__PYDEVICE_INFO_BEGIN__';
-    const endMarker = '__PYDEVICE_INFO_END__';
+    const beginMarker = pyDeviceProtocolText.runtimeInfoBeginMarker;
+    const endMarker = pyDeviceProtocolText.runtimeInfoEndMarker;
     return [
       'try:',
       '  import os',
@@ -504,8 +515,8 @@ export class PyDeviceConnection {
   }
 
   private buildUniqueIdScript(): string {
-    const beginMarker = '__PYDEVICE_UNIQUE_ID_BEGIN__';
-    const endMarker = '__PYDEVICE_UNIQUE_ID_END__';
+    const beginMarker = pyDeviceProtocolText.uniqueIdBeginMarker;
+    const endMarker = pyDeviceProtocolText.uniqueIdEndMarker;
     return [
       `print('${beginMarker}')`,
       'uid = ""',
@@ -538,8 +549,8 @@ export class PyDeviceConnection {
       throw new Error(stderr.trim());
     }
 
-    const beginMarker = '__PYDEVICE_INFO_BEGIN__';
-    const endMarker = '__PYDEVICE_INFO_END__';
+    const beginMarker = pyDeviceProtocolText.runtimeInfoBeginMarker;
+    const endMarker = pyDeviceProtocolText.runtimeInfoEndMarker;
     const normalised = stdout.replace(/\r/g, '\n');
     const start = normalised.indexOf(beginMarker);
     const end = normalised.indexOf(endMarker);
@@ -573,8 +584,8 @@ export class PyDeviceConnection {
       throw new Error(stderr.trim());
     }
 
-    const beginMarker = '__PYDEVICE_UNIQUE_ID_BEGIN__';
-    const endMarker = '__PYDEVICE_UNIQUE_ID_END__';
+    const beginMarker = pyDeviceProtocolText.uniqueIdBeginMarker;
+    const endMarker = pyDeviceProtocolText.uniqueIdEndMarker;
     const normalised = stdout.replace(/\r/g, '\n');
     const start = normalised.indexOf(beginMarker);
     const end = normalised.indexOf(endMarker);
@@ -604,20 +615,20 @@ export class PyDeviceConnection {
   private async softRebootRawUnlocked(timeoutMs: number): Promise<void> {
     await this.enterRawReplUnlocked(timeoutMs);
 
-    const rawPromptText = Buffer.from('raw REPL; CTRL-B to exit');
-    const softRebootText = Buffer.from('soft reboot');
+    const rawPromptText = pyDeviceProtocolBuffers.rawReplPrompt;
+    const softRebootText = pyDeviceProtocolBuffers.softRebootBanner;
 
-    await this.write('\x04');
+    await this.write(pyDeviceControlChars.ctrlD);
     await this.waitForDataContains([softRebootText, rawPromptText], timeoutMs);
 
-    await this.write('\r\x02', { drain: false });
+    await this.write(pyDeviceCommandSequences.exitRawRepl, { drain: false });
     await this.readUntilIdle(120, 800);
   }
 
   private async enterRawReplUnlocked(timeoutMs: number): Promise<void> {
-    const rawPromptText = Buffer.from('raw REPL; CTRL-B to exit');
-    const rawPromptPrefix = Buffer.from('raw REPL');
-    const rawPromptTail = Buffer.from('\r\n>');
+    const rawPromptText = pyDeviceProtocolBuffers.rawReplPrompt;
+    const rawPromptPrefix = pyDeviceProtocolBuffers.rawReplPromptPrefix;
+    const rawPromptTail = pyDeviceProtocolBuffers.rawReplPromptTail;
     const attempts = timeoutMs < pyDeviceInternalTimeouts.enterRawReplFastThresholdMs ? 2 : 3;
     const startedAt = Date.now();
     let lastError: unknown;
@@ -635,10 +646,10 @@ export class PyDeviceConnection {
       );
 
       try {
-        await this.write('\r\x03\x03', { drain: false });
+        await this.write(pyDeviceCommandSequences.interruptTwice, { drain: false });
         await this.readUntilIdle(pyDeviceInternalTimeouts.enterRawReplIdleReadMs, pyDeviceInternalTimeouts.enterRawReplIdleReadMaxMs);
 
-        await this.write('\r\x01', { drain: false });
+        await this.write(pyDeviceCommandSequences.enterRawRepl, { drain: false });
         await this.waitForDataContains([rawPromptText, rawPromptPrefix, rawPromptTail], promptTimeoutMs);
         return;
       } catch (error) {

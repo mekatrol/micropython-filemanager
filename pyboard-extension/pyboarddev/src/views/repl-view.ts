@@ -12,13 +12,14 @@ import { configurationFileName, getDeviceNames, loadConfiguration, onPyDeviceCon
 import { getTimeoutSettingMs } from '../utils/timeout-settings';
 import { getWorkspaceCacheValue, setWorkspaceCacheValue } from '../utils/workspace-cache';
 import { t } from '../utils/i18n';
+import { pyDeviceProtocolText, pyDeviceReplControlActions } from '../devices/connection/py-device-commands';
 
 const openReplCommandId = 'mekatrol.pydevice.openrepl';
 const clearReplCommandId = 'mekatrol.pydevice.clearrepl';
 const clearReplHistoryCommandId = 'mekatrol.pydevice.clearreplhistory';
 const replPanelContainerId = 'mekatrol-pydevice-panel';
 const replViewId = 'mekatrol.pydevice.replView';
-const replPrompt = '>>> ';
+const replPrompt = pyDeviceProtocolText.normalReplPrompt;
 const promptFallbackDelayMs = 1200;
 const maxRetainedLinesPerDevice = 2000;
 const replHistoryStateKey = 'replHistoryByDevice';
@@ -217,7 +218,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
           try {
             const runtimeInfo = await board.probeDeviceInfo(getTimeoutSettingMs(pyDeviceTimeoutSettings.pythonProbeRuntimeInfo));
             this.appendLine(deviceId, runtimeInfo.banner);
-            this.appendLine(deviceId, 'Type "help()" for more information.');
+            this.appendLine(deviceId, pyDeviceProtocolText.helpHint);
           } catch {
             // Port reopen can succeed even if runtime probe does not.
           }
@@ -247,26 +248,20 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
       }
 
       const control = message.type === 'interrupt' ? 'interrupt' : message.control;
-      const controlMap: Record<NonNullable<WebviewMessage['control']>, { byte: string; label: string; isSoftReset?: boolean }> = {
-        interrupt: { byte: '\x03', label: 'Ctrl-C' },
-        softReset: { byte: '\x04', label: 'Ctrl-D', isSoftReset: true },
-        pasteMode: { byte: '\x05', label: 'Ctrl-E' }
-      };
-      
-      const controlSpec = control ? controlMap[control] : undefined;
+      const controlSpec = control ? pyDeviceReplControlActions[control] : undefined;
       if (!controlSpec) {
         return;
       }
 
       try {
-        if (controlSpec.isSoftReset) {
+        if (control === 'softReset') {
           await board.softReboot();
           this.appendLine(deviceId, '[soft reboot complete]');
 
           try {
             const runtimeInfo = await board.probeDeviceInfo(getTimeoutSettingMs(pyDeviceTimeoutSettings.pythonProbeRuntimeInfo));
             this.appendLine(deviceId, runtimeInfo.banner);
-            this.appendLine(deviceId, 'Type "help()" for more information.');
+            this.appendLine(deviceId, pyDeviceProtocolText.helpHint);
           } catch {
             // Board rebooted, but runtime banner probe may fail on some transports/boards.
           }
@@ -444,7 +439,7 @@ class ReplViewProvider implements vscode.WebviewViewProvider, vscode.Disposable 
     if (snapshot.runtimeInfo) {
       this.clearPromptFallbackTimer(state);
       this.appendLine(deviceId, snapshot.runtimeInfo.banner);
-      this.appendLine(deviceId, 'Type "help()" for more information.');
+      this.appendLine(deviceId, pyDeviceProtocolText.helpHint);
       state.hasRenderedConnectedIntro = true;
       return;
     }
