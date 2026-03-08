@@ -105,7 +105,6 @@ strict digraph "dependency-cruiser output"{
     subgraph "cluster_src" {label="src" subgraph "cluster_src/utils" {label="utils" "src/utils/configuration.ts" [label=<configuration.ts> tooltip="configuration.ts" URL="src/utils/configuration.ts" fillcolor="#ddfeff"] } }
     subgraph "cluster_src" {label="src" subgraph "cluster_src/utils" {label="utils" "src/utils/device-filesystem.ts" [label=<device-filesystem.ts> tooltip="device-filesystem.ts" URL="src/utils/device-filesystem.ts" fillcolor="#ddfeff"] } }
     subgraph "cluster_src" {label="src" subgraph "cluster_src/utils" {label="utils" "src/utils/file-watcher.ts" [label=<file-watcher.ts> tooltip="file-watcher.ts" URL="src/utils/file-watcher.ts" fillcolor="#ddfeff"] } }
-    subgraph "cluster_src" {label="src" subgraph "cluster_src/utils" {label="utils" "src/utils/pyboard.ts" [label=<pyboard.ts> tooltip="pyboard.ts" URL="src/utils/pyboard.ts" fillcolor="#ccffcc"] } }
     subgraph "cluster_src" {label="src" subgraph "cluster_src/utils" {label="utils" "src/utils/serial-port.ts" [label=<serial-port.ts> tooltip="serial-port.ts" URL="src/utils/serial-port.ts" fillcolor="#ddfeff"] } }
     subgraph "cluster_src" {label="src" subgraph "cluster_src/utils" {label="utils" "src/utils/workspace-cache.ts" [label=<workspace-cache.ts> tooltip="workspace-cache.ts" URL="src/utils/workspace-cache.ts" fillcolor="#ddfeff"] } }
     "src/utils/workspace-cache.ts" -> "src/utils/configuration.ts"
